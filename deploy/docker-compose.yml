@@ -1,13 +1,13 @@
 # Phala Cloud (dstack, Intel TDX) deployment of the BUY-IN engine.
-# The image is pinned by digest: it is the v0.5.1 image built by GitHub Actions from this repository.
-# The build is reproducible — rebuilding tag v0.5.1 gives the same digest (README → "Rebuild the image yourself").
+# The image is pinned by digest: it is the v0.5.2 image built by GitHub Actions from this repository.
+# The build is reproducible — rebuilding tag v0.5.2 gives the same digest (README → "Rebuild the image yourself").
 # This file's hash is measured into the TEE (compose-hash in RTMR3), so anyone can recompute it and compare.
 # TEE_RPC_TOKEN is an encrypted secret: only the TEE can decrypt it. It decides who may call /rpc, nothing else.
 # TEE_CONSOLE_KEY is public: the console's key for seat tickets. Only tickets it signed can seat a player; it cannot see or move cards.
 # Hand records are kept on the TEE data disk (volume "records"), encrypted with a key only the TEE receives.
 services:
   engine:
-    image: ghcr.io/buyinofficial/buyin-engine@sha256:8957d00991368af599da7dc52cdb2d80f8715bb8f4a9a420f746c3443505939b
+    image: ghcr.io/buyinofficial/buyin-engine@sha256:4b016b0c8efa6d0575082e974f39d96a339cffa390e13cea52b63776fd60c1a1
     restart: always
     ports:
       - "3900:3900"
