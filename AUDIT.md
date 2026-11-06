@@ -58,6 +58,29 @@ Fetch `GET <engine>/info`. Then:
 - Phala Cloud's dstack OS image and KMS (measured; see `trust.phala.com`).
 - The correctness of this source code — which is exactly why it is public.
 
-## 4. Reporting
+## 4. What the operator's systems see, and when
+
+Cards are created, shuffled and dealt only inside the TEE engine. The game server relays messages between players and the engine; the admin console reads what the game server and the database hold.
+
+| When | Operator (game server, admin console) can see | Operator cannot see |
+|---|---|---|
+| During a hand | actions, bets and pots (everyone at the table sees these); board cards after they are dealt to the table; sealed hole-card envelopes (ciphertext) | any hole card (each is encrypted to one player's browser key); undealt board cards; the deck and the seed (they never leave the TEE) |
+| At showdown | the hands that are shown at the table | folded hands |
+| After the hand ends | the full signed record: every hole card, the seed, the deck, every action — kept in the TEE record chain, with a copy in the operator database | — |
+
+The engine writes the record only after the hand is closed (`Engine._closeHand`), so no API of the engine or the game server returns a hidden card while a hand is running. The game server's own test (`gameEngine.teeEngine.test.js`, "no hole cards in server memory during a hand") checks the relay side.
+
+## 5. The player's browser
+
+The browser code that holds the player's keys and opens the hole-card envelope is published in [`client/`](client/) (`tee-client.ts`, `tee-attest.ts`):
+
+- The player's keys are WebCrypto keys created in the browser and stored as non-extractable keys; only the public keys are sent.
+- The envelope is opened with ECDH (player key × engine key) → HKDF-SHA256 → AES-256-GCM, inside the browser.
+- Every revealed card is checked against the 52 commitments published at hand start.
+- The browser fetches `/info` directly from the TEE and checks that the engine key the game server uses is the attested key (`checkAttestation`); a mismatch is shown to the player.
+
+**Remaining trust — the web page itself.** The game web page is served by the operator. A modified page could send each player's own opened hole cards back to the operator, and across all players that would expose every hand. The engine, the TEE and the records cannot prevent that; it is the one place where the operator is still trusted. The next step is to serve the game client from a TEE as well (reproducible build of the published client, attested like the engine), so the page a player runs can be verified the same way as the engine.
+
+## 6. Reporting
 
 Security issues: open a private security advisory on this repository. Fixes are released with a new tag, image digest and attestation.

@@ -29,6 +29,8 @@ src/store.js        hand records kept on the TEE disk as an append-only hash cha
 src/verify.js       hand record verifier (CLI and module)
 RULES.md            development rules (Korean): no secrets, no backdoors, no dependencies
 Dockerfile          the image that runs in the TEE (built by GitHub Actions, see .github/workflows)
+client/             the player's browser side: keys, opening hole cards, checking commitments and the attestation
+AUDIT.md            step-by-step checks and the threat model, for human and AI reviewers
 ```
 
 There are no runtime dependencies; the engine uses only Node's built-in `crypto`.
