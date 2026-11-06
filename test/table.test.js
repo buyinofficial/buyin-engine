@@ -229,43 +229,26 @@ test('테이블: 이번 씨앗 약속에 무작위 값을 낸 좌석만 판에 �
     assert.ok(server.rooms.get('r1').hand.seats.includes(players[2].seat), 'back in after giving entropy');
 });
 
-test('테이블: 좌석표만으로는 앉을 수 없다 — 회원 ID 는 처음 쓴 브라우저 키에 고정, 다른 키는 콘솔의 새 기기 좌석표로만(공개 기록)', () => {
+test('테이블: 같은 회원이 본인 키로 새 세션에 들어오면 기존 자리 탈락(정산 뒤 다시 앉음), 앉은 뒤 서명 키가 바뀌어도 탈락', () => {
     const env = setup(0);
     const { server, consoleKeys, clock } = env;
     const R = { id: 'r1', name: 'T', sb: 1, bb: 2, maxPlayers: 9, rake: { percent: 5, minPot: 4 }, turnSec: 20, endsAt: 0 };
-    const mk = (extra) => signTicket({ v: 1, tid: 'tid_x_' + crypto.randomBytes(4).toString('hex'), exp: clock.now() + 60000, room: R,
-        player: { sessionId: 'sess_x_' + crypto.randomBytes(4).toString('hex'), odcId: 'victim', nickname: 'V' }, buyIn: 100, currency: 'USDT', ...extra }, consoleKeys.privateKey);
+    const mk = () => signTicket({ v: 1, tid: 'tid_x_' + crypto.randomBytes(4).toString('hex'), exp: clock.now() + 60000, room: R,
+        player: { sessionId: 'sess_x_' + crypto.randomBytes(4).toString('hex'), odcId: 'p1', nickname: 'P' }, buyIn: 100, currency: 'USDT' }, consoleKeys.privateKey);
     const auth = (tk, kp) => { const tb = JSON.parse(Buffer.from(tk.split('.')[0], 'base64url')); const jwk = C.publicJwk(kp.publicKey); return { sig: jwk, proof: C.sign(kp.privateKey, C.msgJoin(tb.tid, C.fingerprint(jwk))) }; };
-    const player = C.generateKeyPair(), operator = C.generateKeyPair();
-    // 서명 없는 입장은 거절
-    assert.throws(() => server.join(mk()), /join needs the player key/);
-    // 회원이 처음 앉는다 → 그 키로 고정
-    const t1 = mk(); const j1 = server.join(t1, auth(t1, player));
-    server.command(j1.token, { type: 'leave' }); clock.advance(100);
-    // 운영자가 그 회원의 새 좌석표를 들고 자기 키로 앉으려 하면 거절
-    const t2 = mk();
-    assert.throws(() => server.join(t2, auth(t2, operator)), /bound to another device key/);
-    // 다른 좌석표에 한 회원 서명을 다시 쓸 수 없다
-    assert.throws(() => server.join(t2, auth(t1, player)), /bad join signature/);
-    // 회원은 그대로 앉는다
-    const j2 = server.join(t2, auth(t2, player)); assert.ok(j2.token);
-    // 앉은 뒤 다른 서명 키로 바꿔 끼우기도 거절
-    const ecdh = C.generateKeyPair(); const oj = C.publicJwk(operator.publicKey), ej = C.publicJwk(ecdh.publicKey);
-    assert.throws(() => server.command(j2.token, { type: 'keys', sig: oj, ecdh: ej, proof: C.sign(operator.privateKey, C.msgRegister(j2.tableId, 'victim', C.fingerprint(oj), C.fingerprint(ej))) }), /account key used to join/);
-    // 인증값이 바뀐 자리는 탈락(정산) — 토큰도 사라진다
-    assert.throws(() => server.command(j2.token, { type: 'leave' }), /unknown token/);
-    assert.ok(env.out.some((x) => x.kind === 'settle' && x.note.odcId === 'victim' && x.note.reason === 'auth-changed'));
-    // 콘솔이 서명한 '새 기기' 좌석표로만 키가 바뀌고, 공개 기록에 남는다
-    const t4 = mk({ rebind: true }); const j4 = server.join(t4, auth(t4, operator)); assert.ok(j4.token);
-    const b = server.binding('victim');
-    assert.deepStrictEqual(b.history.map((h) => h.reason), ['first', 'new-device']);
-    assert.strictEqual(b.current, C.fingerprint(C.publicJwk(operator.publicKey)));
-    server.command(j4.token, { type: 'leave' }); clock.advance(100);
-    // 옛 기기(회원)는 이제 거절된다 — 바뀐 사실은 공개 기록에서 본다
-    const t5 = mk(); assert.throws(() => server.join(t5, auth(t5, player)), /bound to another device key/);
-    // 기록은 사슬에 남아 다시 떠도 같다
-    const again = new TableServer({ engine: env.engine, store: env.store, consoleKey: consoleKeys.publicKey, clock });
-    assert.deepStrictEqual(again.binding('victim').history.map((h) => h.reason), ['first', 'new-device']);
+    const me = C.generateKeyPair(), other = C.generateKeyPair();
+    const t1 = mk(); const j1 = server.join(t1, auth(t1, me));
+    // 다른 키로 같은 회원이 들어오려 하면 기존 자리는 그대로, 새 접속만 거절
+    const t2 = mk(); assert.throws(() => server.join(t2, auth(t2, other)), /already at this table/);
+    assert.ok(server.rooms.get('r1').seats.some((s) => s && s.token === j1.token));
+    // 본인 키로 새 세션 → 기존 자리 탈락, 정산 뒤 같은 좌석표로 다시 앉는다
+    const t3 = mk(); assert.throws(() => server.join(t3, auth(t3, me)), /previous session closed/);
+    assert.ok(env.out.some((x) => x.kind === 'settle' && x.note.reason === 'replaced'));
+    const j3 = server.join(t3, auth(t3, me)); assert.ok(j3.token);
+    // 앉은 뒤 다른 서명 키로 바꿔 끼우면 그 자리 탈락
+    const ecdh = C.generateKeyPair(); const oj = C.publicJwk(other.publicKey), ej = C.publicJwk(ecdh.publicKey);
+    assert.throws(() => server.command(j3.token, { type: 'keys', sig: oj, ecdh: ej, proof: C.sign(other.privateKey, C.msgRegister(j3.tableId, 'p1', C.fingerprint(oj), C.fingerprint(ej))) }), /signing key changed/);
+    assert.ok(env.out.some((x) => x.kind === 'settle' && x.note.reason === 'auth-changed'));
 });
 
 test('테이블: 한 명이 나가거나 끊겨도 판은 이어진다 — 끊긴 채 시간이 지나면 탈락, 올인이면 결과까지 유지', () => {

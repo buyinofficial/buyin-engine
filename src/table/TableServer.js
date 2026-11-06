@@ -1,9 +1,7 @@
 /**
  * 테이블 서버 — TEE 안에서 게임 진행 전부를 맡는다. 운영 게임서버를 거치지 않는다.
  *
- *   회원 ──좌석표(콘솔 서명) + 입장 서명(회원 키)──▶ join ──▶ 좌석·토큰
- *        회원 ID 는 처음 쓴 브라우저 서명 키에 고정된다(player-bind). 좌석표를 가진 쪽(운영자 포함)이라도 그 키가 없으면 앉을 수 없다.
- *        키를 바꾸려면 콘솔이 서명한 '새 기기' 좌석표(rebind)가 있어야 하고, 바뀐 기록은 공개된다(/table/binding/<회원>)
+ *   회원 ──좌석표(콘솔 서명)──▶ join ──▶ 좌석·토큰
  *   회원 ◀──이벤트(SSE)── 판 시작·내 홀카드 봉투·차례·액션·보드·결과      (카드는 TEE → 회원 직접)
  *   회원 ──명령(POST)──▶ 키 등록·무작위 값·액션(회원 서명)·자리 비움·일어나기
  *   콘솔 ◀── 정산서(엔진 서명, 금액만) · 판 기록(판이 끝난 뒤)                  (outbox)
@@ -46,7 +44,6 @@ class TableServer {
         this.tokens = new Map();         // token → { room, seat }
         this.usedTickets = new Set();
         this.liveSessions = new Set();   // sessionId — 같은 세션 두 번 앉기 금지
-        this.bindings = new Map();       // odcId → [{ sigFp, sig, at, reason }] (마지막이 지금 키)
         this.disconnectGraceMs = Number(o.disconnectGraceMs) > 0 ? Number(o.disconnectGraceMs) : DISCONNECT_GRACE_MS;
         if (this.store) this._recover();
     }
@@ -61,7 +58,7 @@ class TableServer {
         const open = new Map();      // sessionId → { seat-in 줄, 마지막 스택, 레이크, 판 수 }
         const active = new Map();    // tableId|odcId → sessionId (지금 앉아 있는 세션)
         for (const e of this.store.range(0, Number.MAX_SAFE_INTEGER)) {
-            if (e.kind === 'player-bind') { this._bindLocal(e.odcId, e); continue; }
+            if (e.kind === 'player-bind') continue;   // 0.5.5 의 회원 키 고정 기록 — 더 쓰지 않는다
             if (e.kind === 'seat-in') {
                 this.usedTickets.add(e.tid);
                 open.set(e.sessionId, { e, stack: e.buyIn, rake: 0, hands: 0 });
@@ -91,38 +88,6 @@ class TableServer {
 
     // ------------------------------------------------------------ 입장
 
-    _bindLocal(odcId, e) {
-        const id = String(odcId);
-        if (!this.bindings.has(id)) this.bindings.set(id, []);
-        this.bindings.get(id).push({ sigFp: e.sigFp, sig: e.sig, at: e.at, reason: e.reason });
-    }
-
-    /** 이 회원의 키 기록(공개) — 지금 키와 바뀐 이력 */
-    binding(odcId) {
-        const list = this.bindings.get(String(odcId)) || [];
-        return { odcId: String(odcId), current: list.length ? list[list.length - 1].sigFp : null, history: list.map(({ sigFp, at, reason }) => ({ sigFp, at, reason })) };
-    }
-
-    /**
-     * 입장 서명 확인 — 좌석표를 쓰는 브라우저가 이 회원의 고정 키를 가졌나.
-     *   처음 보는 회원이면 이 키로 고정한다. 다른 키면 거절 — 콘솔이 서명한 '새 기기' 좌석표일 때만 바꾸고 그 사실을 공개 기록에 남긴다.
-     */
-    _checkPlayerKey(t, auth) {
-        const a = auth || {};
-        let key, fp;
-        try { key = C.importPublicJwk(a.sig); fp = C.fingerprint(a.sig); } catch (_e) { throw new TableError('key', 'join needs the player key'); }
-        if (!C.verify(key, C.msgJoin(t.tid, fp), a.proof)) throw new TableError('key', 'bad join signature');
-        const id = String(t.player.odcId);
-        const cur = this.binding(id).current;
-        if (cur === fp) return { fp, sig: C.publicJwk(key) };
-        if (cur && !t.rebind) throw new TableError('key', 'this account is bound to another device key');
-        const e = { odcId: id, sigFp: fp, sig: C.publicJwk(key), reason: cur ? 'new-device' : 'first', prevFp: cur || null, tid: t.tid };
-        if (this.store) Object.assign(e, { at: this.store.appendEvent('player-bind', e).at });
-        else e.at = this.clock.now();
-        this._bindLocal(id, e);
-        return { fp, sig: e.sig };
-    }
-
     join(ticketStr, auth) {
         const t = verifyTicket(ticketStr, this.consoleKey, this.clock.now());
         if (this.usedTickets.has(t.tid)) throw new TableError('ticket', 'ticket already used');
@@ -142,13 +107,15 @@ class TableServer {
         }
         const seat = room.seats.findIndex((s) => !s);
         if (seat < 0) throw new TableError('full', 'table is full');
-        const bound = this._checkPlayerKey(t, auth);   // 좌석표만으로는 앉을 수 없다 — 이 회원의 키 서명
+        // 입장 서명(선택) — 이 브라우저의 서명 키. 같은 회원의 새 세션 판단과 '앉은 뒤 키가 바뀌면 탈락'의 기준이 된다
+        let joinFp = null;
+        try { const a = auth || {}; const fp = C.fingerprint(a.sig); if (C.verify(C.importPublicJwk(a.sig), C.msgJoin(t.tid, fp), a.proof)) joinFp = fp; } catch (_e) { /* 서명 없이 앉아도 된다 */ }
 
         const token = crypto.randomBytes(24).toString('base64url');
         const s = {
             seat, token, tid: t.tid, sessionId: t.player.sessionId, odcId: t.player.odcId,
             nickname: t.player.nickname, avatar: t.player.avatar, buyIn: t.buyIn, currency: t.currency, display: t.display,
-            stack: t.buyIn, rakePaid: 0, hands: 0, keys: false, sitout: false, timeouts: 0, leaving: false, boundFp: bound.fp,
+            stack: t.buyIn, rakePaid: 0, hands: 0, keys: false, sitout: false, timeouts: 0, leaving: false, boundFp: joinFp,
             clients: new Set(), joinedAt: this.clock.now(),
         };
         // 좌석표는 사슬에 먼저 남긴다 — 이후 엔진이 다시 떠도 이 돈은 정산된다
@@ -216,17 +183,18 @@ class TableServer {
     }
 
     _keys(room, s, m) {
-        // 게임에 쓰는 서명 키는 입장 때 확인한 이 회원의 고정 키여야 한다
+        // 이 자리의 서명 키는 입장 때(또는 처음 등록 때)의 키여야 한다
         let fp = null;
         try { fp = C.fingerprint(m.sig); } catch (_e) { /* 아래에서 거절 */ }
-        if (fp !== s.boundFp) {
+        if (!fp || (s.boundFp && fp !== s.boundFp)) {
             // 앉은 뒤 인증값(서명 키)이 바뀌었다 — 그 자리는 탈락(폴드 후 정산)
             this._leave(room, s, 'auth-changed');
-            throw new TableError('keys', 'signing key must be the account key used to join');
+            throw new TableError('keys', 'signing key changed after sitting down');
         }
         const r = this.engine.call('registerKeys', { tableId: room.tableId, odcId: s.odcId, sig: m.sig, ecdh: m.ecdh, proof: m.proof });
         if (!r.ok) throw new TableError(r.code || 'keys', r.error);
         s.keys = true;
+        s.boundFp = fp;
         this._maybeStart(room);
         return { ok: true, sigFp: r.sigFp, ecdhFp: r.ecdhFp, confirm: r.confirm, seedCommit: r.seedCommit };
     }
