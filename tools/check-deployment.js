@@ -8,7 +8,8 @@
  * 1. The TDX quote is genuine Intel (uploaded to Phala's TEE Attestation Explorer, which checks Intel's signature).
  * 2. The quote's report_data = SHA-256 of the engine's public keys → those keys were made inside this TEE.
  * 3. SHA-256(appCompose) = composeHash (the value dstack measures into RTMR3) and the compose pins an image digest.
- * 4. The engine reports the GitHub commit it was built from; this checkout is checked out at that commit.
+ * 4. The engine reports the GitHub commit it was built from; the GitHub Release of its version lists the same image digest and
+ *    commit (written by the build workflow, next to GitHub's signed build provenance); this checkout is at that commit.
  * 5. Every file the engine loads (/review/manifest) has the same SHA-256 as the file in this checkout.
  * It prints PASS / FAIL per step and exits 1 on any FAIL.
  */
@@ -53,7 +54,13 @@ const step = (ok, name, detail) => { if (!ok) failed++; console.log(`${ok ? 'PAS
     step(sha256(a.appCompose) === a.composeHash, 'SHA-256(appCompose) = composeHash (measured into RTMR3)', a.composeHash);
     const image = (String(a.appCompose).match(/ghcr\.io\/[\w./-]+@sha256:[0-9a-f]{64}/) || [])[0];
     step(!!image, 'compose pins the image by digest', image || 'no digest-pinned image');
-    console.log(`      rebuild check: the image above must be the one GitHub Actions built from commit ${info.commit}\n      (https://github.com/buyinofficial/buyin-engine/actions?query=${info.commit}) or rebuild it yourself (README).`);
+    // 3b. the image digest is the one GitHub built from the engine's commit (Release written by the workflow)
+    try {
+        const rel = await (await fetch(`https://api.github.com/repos/buyinofficial/buyin-engine/releases/tags/v${info.version}`, { headers: { Accept: 'application/vnd.github+json' } })).json();
+        const body = String(rel.body || '');
+        const ok = !!image && body.includes(image) && !!info.commit && body.includes(info.commit);
+        step(ok, `GitHub Release v${info.version} lists this image digest and commit`, `${rel.html_url || 'no release'}${ok ? '' : ' — release body does not match'}\n      signed provenance: gh attestation verify oci://${image} --repo buyinofficial/buyin-engine`);
+    } catch (e) { step(false, `GitHub Release v${info.version} lists this image digest and commit`, `GitHub API unreachable (${e.message})`); }
 
     // 4. this checkout is the engine's commit
     let head = '';

@@ -84,7 +84,7 @@ function auditReport(info, records, keyCount, base, opts = {}) {
     L.push('');
     L.push(`1. Intel signs the quote → its RTMR3 contains \`composeHash\` = SHA-256 of the deployment file (\`/info\` → \`attestation.appCompose\`).`);
     L.push(`2. That deployment file pins the image **by digest** (above) and sets the console's public seat-ticket key; nothing else runs.`);
-    L.push(`3. The image is built reproducibly from commit \`${ref}\` by ${src('.github/workflows/image.yml')} (pinned base image, fixed file times, no dependencies) — same commit, same digest; the public Actions log of that commit shows the digest.`);
+    L.push(`3. The image digest is tied to commit \`${ref}\` three ways: GitHub's **signed build provenance** for the digest (\`gh attestation verify oci://<image> --repo buyinofficial/buyin-engine\`), the **GitHub Release** ${REPO}/releases/tag/v${info.version} (digest, commit, build run — written by ${src('.github/workflows/image.yml')}), and a **reproducible rebuild** (same commit, same digest).`);
     L.push(`4. The engine's keys are bound to the quote (report_data), so its signatures and sealed cards come from this measured program.`);
     L.push(`5. \`${base}/review/manifest\` lists the SHA-256 of every file the engine loads; they equal the files at the commit. \`node tools/check-deployment.js ${base}\` in a checkout of the commit checks 1–5 automatically.`);
     L.push('');
@@ -97,12 +97,13 @@ function auditReport(info, records, keyCount, base, opts = {}) {
     L.push(`- **Deck:** a fresh seed per hand is drawn inside the TEE and committed (SHA-256) before the hand; every dealt-in player must add a signed random value for that commitment; the shuffle uses both; 52 card commitments are published at hand start and every revealed card is checked against them.`);
     L.push(`- **Cards during a hand:** exist only in the TEE; each player's hole cards are sealed to that player's non-extractable browser key and sent only to that player; board cards only when the betting round ends.`);
     L.push(`- **Operator during a hand:** receives nothing from the engine — \`/rpc\` answers only \`info\` in table mode; \`/records\` contains only finished hands. The table page is served by this TEE (\`connect-src 'self'\`, no framing); the seat token stays in the player's browser.`);
-    L.push(`- **Actions:** every bet/call/raise is signed by the player and checked by the engine; the TEE's own table server can only check/fold on timeout.`);
+    L.push(`- **Actions:** every bet/call/raise/all-in is signed by the player and checked by the engine. The only unsigned actions are check/fold on timeout and fold on leaving, made by the table server inside the TEE and marked in the record.`);
+    L.push(`- **The browser's badge** checks the engine key against the quote's report_data and every card (own and public) against its commitment; Intel's signature is checked outside the page (explorer, dcap-qvl, tools/check-deployment.js).`);
     L.push(`- **After the hand:** the engine signs the full record and appends it to a hash chain on the encrypted TEE disk; players fetch their own hands with their key and replay them at ${base}/table/verify.html.`);
     L.push('');
     L.push('## Assumptions (stated, not hidden)');
     L.push('');
-    L.push(`A1 Intel TDX and its quote signatures · A2 Phala dstack (measurement, disk key, TLS gateway in a TEE) · A3 standard cryptography · A4 the player is on this address (\`${base.replace(/^https?:\/\//, '')}\`) in an uncompromised browser. The operator still controls availability, money custody and who may sit (its own seats get only their own cards). A new deployment is a new measurement with new keys, visible here and in ${base}/records/keys.`);
+    L.push(`A1 Intel TDX and its quote signatures · A2 Phala dstack (measurement, disk key, TLS gateway in a TEE) · A3 standard cryptography · A4 the player is on this address (\`${base.replace(/^https?:\/\//, '')}\`) in an uncompromised browser. Outside the protocol the operator still controls availability, money custody and payouts (the engine signs what is owed) and who may sit (its own seats get only their own cards). A new deployment is a new measurement with new keys, visible here and in ${base}/records/keys.`);
     L.push('');
     return L.join('\n') + '\n';
 }

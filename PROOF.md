@@ -34,7 +34,10 @@ Nothing else is trusted: not the operator, its database, its game/console server
 
 1. **Quote → compose.** The TDX quote (`/info` → `attestation.quote`, signed by Intel) contains RTMR3, into which dstack measures the deployment file. `/info` → `attestation.appCompose` is that file and `composeHash` = `SHA-256(appCompose)`; the Phala explorer replays the event log to RTMR3. (`src/attest.js` `dstackAttestation` fetches these from the dstack socket inside the TEE.)
 2. **Compose → image.** `appCompose` pins the image **by digest** (`ghcr.io/buyinofficial/buyin-engine@sha256:…`). A digest names exact bytes; no other image can run under this compose.
-3. **Image → source.** The image is built by `.github/workflows/image.yml` from the release tag. The build is reproducible: file times are set to the commit time (`SOURCE_DATE_EPOCH`, `rewrite-timestamp`), the base image is pinned by digest (`Dockerfile`), there are no npm dependencies (`package.json`), and no labels or provenance are added. The same tag always gives the same digest — anyone can rebuild and compare, and the public Actions logs show independent builds of the same commit producing the same digest.
+3. **Image → source.** The image is built by `.github/workflows/image.yml` from the release commit. Three independent ways tie the digest to the commit:
+   - **Signed build provenance.** For every tag, GitHub signs (Sigstore, GitHub OIDC) a statement that this digest was built from this commit by this workflow (`actions/attest-build-provenance`). Check: `gh attestation verify oci://<image@digest> --repo buyinofficial/buyin-engine`.
+   - **The GitHub Release** of the version lists the digest, the commit and the build run (written by the workflow; `tools/check-deployment.js` compares it with the live values).
+   - **Rebuild.** The build is reproducible: file times are the commit time (`SOURCE_DATE_EPOCH`, `rewrite-timestamp`), the base image is pinned by digest (`Dockerfile`), there are no npm dependencies, and no build-time labels. The tag build and the branch build of the same commit produce the same digest.
 4. **Image contents.** The `Dockerfile` copies only `package.json` and `src/`, and records the source commit (`BUYIN_COMMIT`, shown in `/info`). There is no shell service, no debug container and no second process in the compose. The only non-public input is the encrypted environment variable `TEE_RPC_TOKEN` (§4.5), which cannot change code.
 5. **Keys → this TEE.** The engine creates its signing and encryption keys at start (`src/Engine.js` constructor, `crypto.generateKeyPairSync`) and asks dstack for a quote whose `report_data` = `SHA-256(stableStringify({ ecdh, sig }))` of the public keys (`src/attest.js` `reportDataFor`). So every signature and every hole-card envelope can be tied to code running inside this measured TEE. Private keys are never exported (no code path writes or returns them).
 6. **Every restart is recorded.** At each start the engine appends an `engine-key` line with its public keys, version and `composeHash` to the append-only record chain (`src/store.js` `appendEngineKey`), so the history of what ran is public at `/records/keys`.
@@ -55,6 +58,7 @@ Nothing else is trusted: not the operator, its database, its game/console server
 - **Session token.** `join` returns a random 24-byte token only in the HTTP response to the browser that joined. Every table command and the event stream require it (`src/table/http.js`, `Authorization: Bearer`, never in the URL).
 - **Player keys.** The browser creates two non-extractable WebCrypto key pairs (ECDSA for signing, ECDH for receiving cards) and stores them in IndexedDB on this TEE's origin (`src/public/table/js/vault.js` `loadKeys`). It registers the public keys with a self-signed proof (`register` message); the engine replies with an engine-signed confirmation that the browser verifies against the attested engine key (`src/public/table/js/app.js` `registerKeys`). The operator never sees the private keys, and cannot register keys for a seat because it does not hold the seat's token.
 - **The page itself** is served by the engine from the image (`src/public/table/`), with `Content-Security-Policy: connect-src 'self'; frame-ancestors 'none'` (`src/table/http.js` `PAGE_HEADERS`): it can only talk to this TEE and cannot be embedded by another site.
+- **The table's verification badge** checks, in the browser, that the engine key in use is the one in the quote's `report_data` and that every card matches its commitment (`vault.checkAttestation`, `checkOpening`). It does not verify Intel's signature on the quote; that is done outside the page (Phala explorer, `dcap-qvl`, `tools/check-deployment.js`), §8.
 
 ---
 
@@ -65,7 +69,7 @@ Implemented in `src/cards.js` and `src/Engine.js` `startHand`:
 1. For every hand the engine draws a fresh 32-byte seed inside the TEE (`cards.newSeed`, `crypto.randomBytes`) and publishes only its commitment `seedCommit = SHA-256(seed)` **before** the hand (`Engine.openTable`, and `nextSeedCommit` after every hand).
 2. Each player adds their own random value, signed against that `seedCommit` (`vault.msg.entropy`, `Engine.addEntropy`). **A seat that has not added a value for the current commitment is not dealt in** (`TableServer._eligible`). Values received after the commitment cannot influence the already-fixed seed, and the seed is unknown to players, so neither side can steer the result.
 3. The deck order is `shuffledDeck(seed, handId, entropies)`: an HMAC-SHA-256 key over the seat-ordered entropies drives an unbiased Fisher–Yates shuffle (`cards.shuffleKey`, `Drbg.below`).
-4. The engine publishes 52 card commitments `SHA-256("pz-card-v1|handId|i|card|salt")` at the start of the hand (`cards.commitDeck`, broadcast in the `hand` event). Every card later revealed (to its owner or to the table) comes with its salt and is checked against its commitment in the browser (`vault.checkOpening`).
+4. The engine publishes 52 card commitments `SHA-256("pz-card-v1|handId|i|card|salt")` at the start of the hand (`cards.commitDeck`, broadcast in the `hand` event). Every card later revealed comes with its salt and is checked against its commitment in the browser: the player's own hole cards (`app.js` `openHole`) and every public card — board, run-out, showdown and the after-hand board peek (`app.js` `checkPublic`), all via `vault.checkOpening`. A mismatch turns the table's verification badge to "check needed".
 5. After the hand the record contains the seed, the entropies with their signatures and the deck; `src/verify.js` recomputes the commitment, the shuffle and all 52 commitments and fails on any difference.
 
 Nobody, including the TEE code, can change the deck after the commitments are published, and the code that draws the seed is the measured code of §1.
@@ -103,11 +107,11 @@ The operator issues tickets, so it can seat its own accounts like any player. Su
 
 ---
 
-## 5. Nobody can act for a player
+## 5. Nobody can bet for a player
 
-- Every chip-moving action carries the player's signature over `["pz-act-v1", handId, turnNumber, action, amount]` and the engine verifies it against the key fixed at hand start (`src/HandCore.js` `apply`, `C.verify`). A signature cannot be replayed on another turn or hand.
+- Nobody but the player can bet, call, raise or go all-in for them. Every chip-moving action carries the player's signature over `["pz-act-v1", handId, turnNumber, action, amount]` and the engine verifies it against the key fixed at hand start (`src/HandCore.js` `apply`, `C.verify`). A signature cannot be replayed on another turn or hand.
 - Turn order is enforced (`strictOrder`): only the seat to act may act.
-- The only non-player actions are made by the table server **inside the TEE**: check or fold on timeout and fold when a player leaves (`TableServer._timeout`, `_leave`); `HandCore` refuses anything else from the host (`host can only fold or check`). They are written in the record.
+- The only actions without the player's signature are **check or fold on timeout** and **fold when the player leaves**, made by the table server inside the TEE (`TableServer._timeout`, `_leave`); `HandCore` refuses anything else from the host (`host can only fold or check`), and the record marks them as `host`. The turn timer runs in the TEE. The operator is not on the network path between the browser and the TEE (TLS via the dstack gateway, A2), so it cannot delay or drop one player's messages; it can only stop the whole service (availability).
 - Keys used in a hand are fixed when it starts; a key change applies only from the next hand and is confirmed by an engine signature the browser checks.
 
 ---
@@ -117,7 +121,8 @@ The operator issues tickets, so it can seat its own accounts like any player. Su
 - Results, pots, side pots, rake and payouts are computed by the engine (`HandCore.showdown` / `uncontested`, `PotManager`, `HandEvaluator`) with the rake rule from the seat ticket.
 - The full hand record is signed with the attested engine key (`Engine._closeHand`) and appended to a SHA-256 hash chain on the TEE disk (`src/store.js`); `/records/head` only grows and any finished hand has a public receipt (`/records/receipt/<id>`, no cards).
 - The player's own browser can fetch its hands with its own key (`POST /records/mine`, no operator token) and replay them with the engine's own files (`/table/verify.html`). It remembers the chain length it has seen and warns if it ever shrinks.
-- Payouts: the operator pays from engine-signed settlement notes (`TableServer._settle`, amounts only).
+- Payouts: the engine signs what each seat leaves with (`TableServer._settle`, amounts only) and keeps it in the chain. The operator holds the money and pays out; the protocol makes any short payment provable (the signed note), it does not force payment.
+- Removal of history: the chain detects any change or removal inside it. Deleting the whole store (or rolling it back) is prevented by A2 (the disk is the app's, encrypted with its key) and detected by anyone who saved an earlier `/records/head` — every player's verification page saves the length it has seen and warns if it shrinks.
 
 ---
 

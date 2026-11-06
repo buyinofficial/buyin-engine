@@ -164,8 +164,12 @@ function listen() {
     on('hole', (d) => openHole(d));
     on('turn', (d) => { S.turn = d; if (S.hand) { S.hand.toAct = d.seat; S.hand.q = d.q; } render(); });
     on('action', onAction);
-    on('board', (d) => { if (!S.hand) return; S.hand.board.push(...d.cards); S.hand.stage = d.stage; clearBets(); render(); });
-    on('runout', (d) => { if (!S.hand) return; Object.assign(S.reveal, d.holes || {}); for (const x of d.stages || []) S.hand.board.push(...x.cards); clearBets(); render(); });
+    on('board', (d) => { if (!S.hand) return; checkPublic(d.handId, d.cards); S.hand.board.push(...d.cards); S.hand.stage = d.stage; clearBets(); render(); });
+    on('runout', (d) => {
+        if (!S.hand) return;
+        checkPublic(d.handId, [...Object.values(d.holes || {}).flat(), ...(d.stages || []).flatMap((x) => x.cards)]);
+        Object.assign(S.reveal, d.holes || {}); for (const x of d.stages || []) S.hand.board.push(...x.cards); clearBets(); render();
+    });
     on('result', onResult);
     on('aborted', () => { S.hand = null; S.turn = null; render(); });
     on('settled', (d) => { sessionStorage.removeItem('buyin.token'); es.close(); gate(`${t('settled')} ${dmCur(d.cashOut)}`); });
@@ -247,8 +251,22 @@ function onAction(d) {
     render();
 }
 
+/**
+ * 공개된 카드(보드·런아웃·쇼다운·판 뒤 보기)도 판 시작 때 받은 카드 약속 52개와 대조한다 — 어긋나면 배지가 '확인 필요'
+ * (내 홀카드는 openHole 에서 같은 방법으로 대조한다)
+ */
+async function checkPublic(handId, list) {
+    const commits = S.hand && S.hand.handId === handId ? S.hand.commitments : null;
+    for (const op of list || []) {
+        if (!op || typeof op !== 'object') continue;
+        if (!commits || !(await V.checkOpening(handId, commits, op))) { S.cardsOk = false; renderBadge(); return; }
+    }
+    if (S.cardsOk !== false) S.cardsOk = true;
+}
+
 function onResult(d) {
     if (!S.hand) return;
+    checkPublic(d.handId, [...Object.values(d.holes || {}).flat(), ...(d.board || []), ...(d.peekBoard || [])]);
     if (d.holes) Object.assign(S.reveal, d.holes);
     if (d.board) S.hand.board = d.board.map(codeOf);
     S.hand.peekBoard = d.peekBoard;
@@ -716,8 +734,8 @@ function wireButtons() {
 
 function renderBadge() {
     const b = $('.verify-badge');
-    const bad = S.att === 'mismatch' || S.holeOk === false;
-    const ok = S.att === 'ok' && S.holeOk !== false;
+    const bad = S.att === 'mismatch' || S.holeOk === false || S.cardsOk === false;
+    const ok = S.att === 'ok' && S.holeOk !== false && S.cardsOk !== false;
     b.classList.toggle('warn', bad);
     $('.vb-state').textContent = bad ? t('warn') : ok ? t('verified') : t('checking');
 }
