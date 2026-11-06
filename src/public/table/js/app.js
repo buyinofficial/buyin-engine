@@ -119,9 +119,44 @@ async function checkEngine() {
     renderBadge();
 }
 
+/**
+ * 이벤트 흐름 — fetch 스트림으로 SSE 를 읽는다. 좌석 토큰은 Authorization 헤더로만 보낸다(주소에 싣지 않는다).
+ * 끊기면 잠시 뒤 다시 붙는다(snapshot 이 지금 상태를 다시 준다).
+ */
+function sseStream(token) {
+    const handlers = new Map();
+    const ctl = new AbortController();
+    let closed = false;
+    const es = { addEventListener: (ev, f) => handlers.set(ev, f), close: () => { closed = true; ctl.abort(); }, onopen: null };
+    (async function run(delay) {
+        if (delay) await new Promise((r) => setTimeout(r, delay));
+        if (closed) return;
+        try {
+            const res = await fetch('/table/events', { headers: { Authorization: 'Bearer ' + token }, cache: 'no-store', signal: ctl.signal });
+            if (es.onopen) es.onopen();
+            const reader = res.body.getReader(), dec = new TextDecoder();
+            let buf = '';
+            for (;;) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buf += dec.decode(value, { stream: true });
+                let i;
+                while ((i = buf.indexOf('\n\n')) >= 0) {
+                    const block = buf.slice(0, i); buf = buf.slice(i + 2);
+                    const ev = (block.match(/^event: (.*)$/m) || [])[1], data = (block.match(/^data: (.*)$/m) || [])[1];
+                    const f = ev && handlers.get(ev);
+                    if (f && data) f({ data });
+                }
+            }
+        } catch (_e) { /* 끊김 — 아래에서 다시 */ }
+        if (!closed) run(1500);
+    })(0);
+    return es;
+}
+
 function listen() {
     if (S.es) S.es.close();
-    const es = S.es = new EventSource('/table/events?token=' + encodeURIComponent(S.token));
+    const es = S.es = sseStream(S.token);
     const on = (ev, f) => es.addEventListener(ev, (e) => { try { f(JSON.parse(e.data)); } catch (err) { console.error(ev, err); } });
     on('snapshot', onSnapshot);
     on('seat', (d) => { const x = d.seat; S.seats[x.seat] = x.empty ? null : x; if (S.me && x.seat === S.me.seat && !x.empty) Object.assign(S.me, x); render(); });

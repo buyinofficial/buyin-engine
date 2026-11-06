@@ -24,6 +24,7 @@ const L = {
         mine: '내가 받은 카드와 기록이 같다', mineD: (c) => `판 도중 받은 카드 ${c}`, mineNone: '이 브라우저에 이 판의 카드가 남아 있지 않습니다(다른 기기·지운 기록)',
         seat: '자리', at: '끝난 시각', table: '테이블', version: '버전', mode: '모드', sigFp: '서명 키', att: '하드웨어 증명',
         attOk: 'Intel TDX 증명서와 키가 묶여 있음', attNone: '없음(개발 모드)', attBad: '증명서와 키가 다름', records: '보관된 판',
+        chainLen: '기록 사슬 줄 수', rollback: '이 브라우저가 전에 본 것보다 적습니다(되돌리기 의심)',
     },
     en: {
         title: 'Verify my hands', lead: 'After a hand ends, this page fetches your hand record straight from the TEE and recomputes it in your browser. The operator is not involved.',
@@ -38,6 +39,7 @@ const L = {
         mine: 'The cards I received match the record', mineD: (c) => `cards received during the hand: ${c}`, mineNone: 'This browser no longer has the cards of this hand (other device or cleared)',
         seat: 'Seat', at: 'Ended', table: 'Table', version: 'Version', mode: 'Mode', sigFp: 'Signing key', att: 'Hardware attestation',
         attOk: 'key bound to the Intel TDX quote', attNone: 'none (development)', attBad: 'key differs from the quote', records: 'Hands stored',
+        chainLen: 'Record chain lines', rollback: 'fewer than this browser saw before (possible rollback)',
     },
 };
 const lang = (navigator.language || 'en').startsWith('ko') ? 'ko' : 'en';
@@ -101,6 +103,15 @@ function renderEngine() {
     add(t('sigFp'), (i.keys && i.keys.sigFp) || '—');
     add(t('att'), state.att === 'ok' ? t('attOk') : state.att === 'mismatch' ? t('attBad') : t('attNone'), state.att === 'ok' ? 'ok' : state.att === 'mismatch' ? 'bad' : 'warn');
     if (i.records) add(t('records'), String(i.records.hands));
+    // 되돌리기 감시 — 이 브라우저가 본 사슬 줄 수보다 줄어들면 경고(사슬은 늘기만 해야 한다)
+    if (i.records) {
+        let seen = 0;
+        try { seen = Number(localStorage.getItem('buyin.chainSeen') || 0); } catch (_e) { /* 사생활 보호 모드 */ }
+        const now = Number(i.records.count) || 0;
+        if (seen && now < seen) add(t('chainLen'), `${now} < ${seen} — ${t('rollback')}`, 'bad');
+        else add(t('chainLen'), `${now}${seen ? ` (≥ ${seen})` : ''}`, 'ok');
+        try { localStorage.setItem('buyin.chainSeen', String(Math.max(seen, now))); } catch (_e) { /* 사생활 보호 모드 */ }
+    }
 }
 
 const reportDataOf = (keys) => E.sha256hex(C.stableStringify({ ecdh: keys.ecdh, sig: keys.sig }));

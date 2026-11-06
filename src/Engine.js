@@ -64,6 +64,7 @@ class Engine {
         return {
             name: pkg.name,
             version: pkg.version,
+            commit: process.env.BUYIN_COMMIT || null,   // 이 이미지를 만든 GitHub 커밋 (Dockerfile GIT_COMMIT)
             mode: this.mode,
             startedAt: this.startedAt,
             allowUnsigned: this.allowUnsigned,

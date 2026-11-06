@@ -10,6 +10,10 @@ COPY src ./src
 # Hand records stay on the TEE data disk (encrypted with a key only the TEE gets). The volume is mounted here.
 RUN mkdir -p /data/records && chown -R node:node /data
 
+# 소스 커밋 — /info 의 commit. 같은 커밋이면 같은 값이라 재현 빌드는 그대로다
+ARG GIT_COMMIT=unknown
+ENV BUYIN_COMMIT=$GIT_COMMIT
+
 ENV NODE_ENV=production \
     TEE_MODE=dstack \
     TEE_HOST=0.0.0.0 \

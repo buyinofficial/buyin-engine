@@ -162,6 +162,8 @@ class TableServer {
     _entropy(room, s, m) {
         const r = this.engine.call('addEntropy', { tableId: room.tableId, odcId: s.odcId, seedCommit: m.seedCommit, hex: m.hex, sig: m.sig });
         if (!r.ok) throw new TableError(r.code || 'entropy', r.error);
+        s.entropyFor = String(m.seedCommit);   // 이 씨앗 약속으로 섞는 판에 들 수 있다
+        this._maybeStart(room);
         return { ok: true };
     }
 
@@ -195,8 +197,12 @@ class TableServer {
 
     // ------------------------------------------------------------ 판 진행
 
+    /**
+     * 다음 판에 들 좌석 — 키를 등록했고, 이번 씨앗 약속(room.seedCommit)에 자기 무작위 값을 냈다.
+     * 덱은 TEE 의 씨앗 + 판에 든 모든 회원의 무작위 값으로 섞인다(cards.shuffleKey). 값을 내지 않은 좌석은 그 판을 쉰다.
+     */
     _eligible(room) {
-        return room.seats.filter((s) => s && s.keys && !s.sitout && !s.leaving && s.stack > 0);
+        return room.seats.filter((s) => s && s.keys && s.entropyFor === room.seedCommit && !s.sitout && !s.leaving && s.stack > 0);
     }
 
     _maybeStart(room) {

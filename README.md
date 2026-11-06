@@ -33,6 +33,8 @@ RULES.md            development rules (Korean): no secrets, no backdoors, no dep
 Dockerfile          the image that runs in the TEE (built by GitHub Actions, see .github/workflows)
 client/             the player's browser side: keys, opening hole cards, checking commitments and the attestation
 AUDIT.md            step-by-step checks and the threat model, for human and AI reviewers
+PROOF.md            why the game cannot be manipulated before a hand is played — each claim with the code that enforces it
+tools/              check-deployment.js: checks the live engine against a checkout of its commit (no dependencies)
 ```
 
 There are no runtime dependencies; the engine uses only Node's built-in `crypto`.
@@ -83,7 +85,7 @@ The records form a hash chain: each line holds the hash of the line before it, s
 The image build is reproducible: file times are the commit time and the image has no build-time labels.
 
 ```
-git checkout v0.5.2
+git checkout v0.5.3
 SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) docker buildx build --platform linux/amd64   --provenance=false --sbom=false --output type=oci,dest=engine.tar,rewrite-timestamp=true .
 ```
 
@@ -105,6 +107,7 @@ The test suite covers:
 ## Status
 
 - **Stage 1–2:** the engine runs as a separate process (`mode: "dev"`). The cryptographic guarantees above hold, but there is no hardware attestation.
+- **0.5.3:** the engine reports its source commit and the SHA-256 of every file it loads (`/review/manifest`); `/` is a pre-game brief that asks an AI to investigate this repository at that commit and check `PROOF.md`; `tools/check-deployment.js` checks the live engine against a checkout. Every dealt-in player must add random for the hand; the table event stream takes its token in a header.
 - **0.5.2:** table mode closes the operator's game RPC (`/rpc` answers only `info`); the live audit report at `/` is written to be pasted into an AI reviewer as is.
 - **0.5.0:** the TEE serves its own pages — the table at `/table/` and **Verify my hands** at `/table/verify.html`. A player's hand records come straight from the TEE to that page (`POST /records/mine`, signed with the player's key; no operator token), and the page replays them with the engine's own files. Public receipts: `GET /records/receipt/<handId>`.
 - **Table server (in progress):** with `TEE_CONSOLE_KEY` set, the engine also runs the table and serves the table screen at `/table/`. The player's browser talks only to the TEE (`connect-src 'self'`, no framing): seat ticket in, cards and turns out over SSE, signed actions back. The operator's server sees settlement notes (amounts) and, after each hand, the signed hand record.

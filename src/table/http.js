@@ -4,7 +4,7 @@
  *   GET  /table/                  테이블 화면 (src/public/table — 공개 소스, 이 TEE 가 내보낸다)
  *   GET  /table/<파일>            화면 파일(js·css·그림·글꼴)
  *   POST /table/join              { ticket } → { token, seat, tableId, seedCommit }
- *   GET  /table/events?token=     이벤트 흐름(SSE) — 접속하자마자 snapshot, 이후 판 진행
+ *   GET  /table/events            이벤트 흐름(SSE, Authorization: Bearer <좌석 토큰>) — 접속하자마자 snapshot, 이후 판 진행
  *   POST /table/cmd               { token, type, ... } — 키 등록·무작위 값·액션·자리 비움·일어나기
  *   GET  /table/verify.html       내 판 기록 검증하기 (공개 화면)
  *   GET  /table/engine/<파일>     검증 화면이 그대로 돌리는 엔진 소스(지금 도는 그 파일)
@@ -80,7 +80,8 @@ function tableRoutes(tables) {
         }
 
         if (req.method === 'GET' && p === '/table/events') {
-            const token = url.searchParams.get('token') || '';
+            const h = String(req.headers.authorization || '');
+            const token = h.startsWith('Bearer ') ? h.slice(7) : '';   // 주소(쿼리)로는 받지 않는다
             let ka = null;
             const client = {
                 send: (ev, data) => res.write(`event: ${ev}\ndata: ${JSON.stringify(data)}\n\n`),

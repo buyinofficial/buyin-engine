@@ -46,6 +46,14 @@ function client(server, ticket) {
     me.odcId = odcId;
     const k = server.command(me.token, { type: 'keys', sig: sigJwk, ecdh: ecdhJwk, proof: C.sign(sig.privateKey, C.msgRegister(j.tableId, odcId, C.fingerprint(sigJwk), C.fingerprint(ecdhJwk))) });
     assert.ok(k.ok);
+    // 브라우저처럼 — 지금 씨앗 약속에, 그리고 판이 열릴 때마다 다음 약속에 무작위 값을 낸다
+    me.entropy = (seedCommit) => {
+        const hex = crypto.randomBytes(32).toString('hex');
+        try { server.command(me.token, { type: 'entropy', seedCommit, hex, sig: C.sign(sig.privateKey, C.msgEntropy(j.tableId, seedCommit, hex)) }); } catch (_e) { /* 자리를 떴다 */ }
+    };
+    const send0 = me.conn.send;
+    me.conn.send = (ev, data) => { send0(ev, data); if (ev === 'hand' && data && data.nextSeedCommit && !me.noEntropy) me.entropy(data.nextSeedCommit); };
+    me.entropy(k.seedCommit);
     return me;
 }
 
@@ -192,4 +200,27 @@ test('테이블: 엔진이 다시 떠도 좌석의 돈은 마지막으로 끝난
     assert.ok(settles.every((x) => x.note.reason === 'engine-restart'));
     assert.ok(server2.usedTickets.has(usedTid));
     void store; void ticket;
+});
+
+test('테이블: 이번 씨앗 약속에 무작위 값을 낸 좌석만 판에 든다 — 덱은 TEE 씨앗 + 판에 든 모든 회원의 값', () => {
+    const rnd = () => 1;   // 콜·체크만 — 아무도 파산하지 않게
+    const env = setup(3);
+    const { server, clock, players } = env;
+    players[2].noEntropy = true;   // 셋째는 다음 판부터 값을 내지 않는다
+    clock.advance(8000);
+    const r1 = server.rooms.get('r1').hand;
+    assert.ok(r1 && r1.seats.length === 3, 'first hand: all three gave entropy');
+    playOne(env, rnd);
+    clock.advance(8000);
+    const r2 = server.rooms.get('r1').hand;
+    assert.ok(r2, 'second hand started');
+    assert.ok(!r2.seats.includes(players[2].seat), 'seat without entropy sits the hand out');
+    // 판 기록의 entropy 에 판에 든 회원 전원의 값이 있다
+    playOne(env, rnd);
+    const rec = env.out.filter((x) => x.kind === 'hand-record').pop().record;
+    assert.deepStrictEqual(rec.entropy.map((e) => e.odcId).sort(), rec.seats.map((s) => s.odcId).sort());
+    // 다시 값을 내면 다음 판에 든다
+    players[2].entropy(server.rooms.get('r1').seedCommit);
+    clock.advance(8000);
+    assert.ok(server.rooms.get('r1').hand.seats.includes(players[2].seat), 'back in after giving entropy');
 });

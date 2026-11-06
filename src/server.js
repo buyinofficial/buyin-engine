@@ -5,6 +5,7 @@
  *   GET  /                    감사 보고서(markdown) — 사람·AI 가 이것만 읽어도 확인 방법과 지금 값이 나온다   누구나
  *   GET  /info                엔진 공개키·버전·증명서·기록 사슬 끝         누구나 (브라우저가 키·증명서를 직접 확인한다)
  *   GET  /records/head        기록 사슬 끝 { count, head, hands }        누구나 — 지금까지 남긴 기록의 지문
+ *   GET  /review/manifest     지금 이 엔진이 싣고 도는 파일 목록과 SHA-256(sha256sum 형식) 누구나 — GitHub 커밋의 파일과 대조
  *   GET  /records/keys        엔진 키 줄 전부(뜰 때마다 하나)            누구나 — 옛 기록을 옛 키로 검증
  *   GET  /records/hand/<id>   판 기록 한 줄 (사슬 위치·해시 포함)        운영 서버만 — 지난 판의 카드가 들어 있다
  *   GET  /records?from=&limit= 사슬 줄 내보내기(백업·감사)              운영 서버만 — 콘솔은 여기서 정산서·판 기록을 가져간다(TEE 는 밖으로 연결하지 않는다)
@@ -76,9 +77,27 @@ function send(res, code, obj, extra) {
     res.end(body);
 }
 
+/**
+ * 지금 도는 파일 목록 — package.json 과 src/ 아래 모든 파일의 SHA-256 (sha256sum 출력과 같은 모양).
+ * GitHub 의 그 커밋에서 `sha256sum package.json $(git ls-files src)` 를 돌린 결과와 같아야 한다. 뜰 때 한 번 계산한다.
+ */
+const fs = require('fs');
+const path = require('path');
+const MANIFEST = (() => {
+    const root = path.join(__dirname, '..');
+    const files = ['package.json'];
+    const walk = (d) => { for (const f of fs.readdirSync(path.join(root, d), { withFileTypes: true })) { const r = d + '/' + f.name; if (f.isDirectory()) walk(r); else files.push(r); } };
+    walk('src');
+    files.sort();
+    const lines = files.map((f) => `${crypto.createHash('sha256').update(fs.readFileSync(path.join(root, f))).digest('hex')}  ${f}`);
+    const body = lines.join('\n') + '\n';
+    return { body, treeHash: crypto.createHash('sha256').update(body).digest('hex'), count: files.length };
+})();
+
 function info() {
     const i = engine.call('info');
-    return store ? { ...i, records: store.headInfo() } : i;
+    const out = { ...i, review: { files: MANIFEST.count, treeHash: MANIFEST.treeHash } };
+    return store ? { ...out, records: store.headInfo() } : out;
 }
 
 function handleGet(req, res) {
@@ -88,9 +107,13 @@ function handleGet(req, res) {
     if (p === '/' || p === '/audit') {
         // 사람·AI 가 읽는 감사 보고서 (평문 markdown) — 값은 /info 와 같다
         const base = `https://${String(req.headers.host || '').replace(/[^\w.:-]/g, '')}`;
-        const text = auditReport(engine.call('info'), store ? store.headInfo() : null, store ? store.engineKeys().length : 0, base, { tableMode: !!tables });
+        const text = auditReport(engine.call('info'), store ? store.headInfo() : null, store ? store.engineKeys().length : 0, base, { tableMode: !!tables, review: { files: MANIFEST.count, treeHash: MANIFEST.treeHash } });
         res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8', ...PUBLIC_HEADERS });
         return res.end(text);
+    }
+    if (p === '/review/manifest') {
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', ...PUBLIC_HEADERS });
+        return res.end(MANIFEST.body);
     }
     if (p === '/records/head') return store ? send(res, 200, { ok: true, ...store.headInfo() }, PUBLIC_HEADERS) : send(res, 404, { ok: false, error: 'no record store' }, PUBLIC_HEADERS);
     if (p === '/records/keys') return store ? send(res, 200, { ok: true, keys: store.engineKeys() }, PUBLIC_HEADERS) : send(res, 404, { ok: false, error: 'no record store' }, PUBLIC_HEADERS);

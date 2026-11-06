@@ -57,6 +57,7 @@ jobs:
           outputs: type=registry,rewrite-timestamp=true
           provenance: false
           sbom: false
+          build-args: GIT_COMMIT=${{ github.sha }}
 
       - name: Summary
         run: |
