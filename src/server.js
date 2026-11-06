@@ -20,6 +20,10 @@
  *   TEE_ALLOW_UNSIGNED  1 이면 키 없는 좌석의 평문 카드·서명 없는 액션 허용 (시험 전용, dev 모드만)
  *
  * 토큰은 "누가 RPC 를 부르나"만 정한다. 토큰이 있어도 카드를 보거나 회원 서명 없이 칩을 움직일 수는 없다(RULES.md 3장).
+ *
+ * 테이블 모드(TEE_CONSOLE_KEY 가 있을 때): 판은 전부 이 TEE 안의 테이블 서버가 돌린다. 그래서 /rpc 는 'info' 말고 모두 닫는다
+ * — 운영 서버가 판을 열거나, 액션을 넣거나, 회원 키를 바꿔 끼우거나, 판을 무효로 하는 길이 없다.
+ * 운영 서버에 남는 엔진 길은 끝난 판의 기록 읽기(/records, 토큰)뿐이다. 진행 중인 판은 사슬에 없다.
  */
 
 const http = require('http');
@@ -84,7 +88,7 @@ function handleGet(req, res) {
     if (p === '/' || p === '/audit') {
         // 사람·AI 가 읽는 감사 보고서 (평문 markdown) — 값은 /info 와 같다
         const base = `https://${String(req.headers.host || '').replace(/[^\w.:-]/g, '')}`;
-        const text = auditReport(engine.call('info'), store ? store.headInfo() : null, store ? store.engineKeys().length : 0, base);
+        const text = auditReport(engine.call('info'), store ? store.headInfo() : null, store ? store.engineKeys().length : 0, base, { tableMode: !!tables });
         res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8', ...PUBLIC_HEADERS });
         return res.end(text);
     }
@@ -145,6 +149,8 @@ function handleMine(req, res) {
 }
 
 let tables = null, tableHandler = null;
+/** 테이블 모드에서 운영 서버가 부를 수 있는 엔진 메서드 — 공개 정보뿐 */
+const RPC_IN_TABLE_MODE = new Set(['info']);
 
 const server = http.createServer((req, res) => {
     if (tableHandler && tableHandler(req, res, new URL(req.url, 'http://engine'))) return;
@@ -163,6 +169,9 @@ const server = http.createServer((req, res) => {
     req.on('end', () => {
         let msg;
         try { msg = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch (_e) { return send(res, 400, { ok: false, error: 'bad json' }); }
+        if (tables && !RPC_IN_TABLE_MODE.has(String(msg && msg.m))) {
+            return send(res, 403, { ok: false, code: 'table-mode', error: 'game RPC is closed: every hand runs inside the TEE table server (src/table)' });
+        }
         send(res, 200, engine.call(msg && msg.m, msg && msg.p));
     });
 });

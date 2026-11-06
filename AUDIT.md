@@ -60,15 +60,16 @@ Fetch `GET <engine>/info`. Then:
 
 ## 4. What the operator's systems see, and when
 
-Cards are created, shuffled and dealt only inside the TEE engine. The game server relays messages between players and the engine; the admin console reads what the game server and the database hold.
+Since 0.5.x every hand runs in the TEE table server (`src/table/`, "table mode", on when `TEE_CONSOLE_KEY` is set in the measured compose). The operator's servers issue seat tickets and pay out; they are not on the game path.
 
 | When | Operator (game server, admin console) can see | Operator cannot see |
 |---|---|---|
-| During a hand | actions, bets and pots (everyone at the table sees these); board cards after they are dealt to the table; sealed hole-card envelopes (ciphertext) | any hole card (each is encrypted to one player's browser key); undealt board cards; the deck and the seed (they never leave the TEE) |
-| At showdown | the hands that are shown at the table | folded hands |
-| After the hand ends | the full signed record: every hole card, the seed, the deck, every action — kept in the TEE record chain, with a copy in the operator database | — |
+| Sitting down | the buy-in it took and the seat ticket it signed | the player's keys or table session token |
+| During a hand | nothing from the engine — `/rpc` accepts only `info` in table mode (`src/server.js` `RPC_IN_TABLE_MODE`), and the running hand is not yet in the record chain | any hole card, the deck, the seed, undealt board cards, the actions as they happen |
+| After the hand ends | the full signed record (every hole card, seed, deck, action) via `/records` with its token | — |
+| Leaving | the engine-signed settlement note (amounts only) | — |
 
-The engine writes the record only after the hand is closed (`Engine._closeHand`), so no API of the engine or the game server returns a hidden card while a hand is running. The game server's own test (`gameEngine.teeEngine.test.js`, "no hole cards in server memory during a hand") checks the relay side.
+The engine writes a record only when the hand is closed (`Engine._closeHand`), and `test/server.test.js` checks that game RPC is refused in table mode. The engine prints no cards to its logs.
 
 ## 5. The player's browser
 
