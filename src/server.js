@@ -37,13 +37,22 @@ const { auditReport } = require('./audit');
 const C = require('./crypto');
 const { TableServer } = require('./table/TableServer');
 const { tableRoutes } = require('./table/http');
+const { RateLimiter } = require('./limits');
+
+// 요청 폭주 막기(서비스 거부 방지) — 넘치면 429
+const LIMIT = {
+    rpc: new RateLimiter(50, 100),     // 운영 서버 /rpc · /records
+    mine: new RateLimiter(20, 40),     // 내 판 기록(서명 확인 비용)
+};
+// 모든 응답에 붙는 보안 헤더
+const BASE_HEADERS = { 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' };
 
 const MODE = process.env.TEE_MODE || 'dev';
 const PORT = Number(process.env.TEE_PORT || 3900);
 const HOST = process.env.TEE_HOST || '127.0.0.1';
 const TOKEN = process.env.TEE_RPC_TOKEN || '';
 const RECORD_DIR = process.env.TEE_RECORD_DIR || '';
-const MAX_BODY = 1024 * 1024;
+const MAX_BODY = 64 * 1024;   // /rpc 는 테이블 모드에서 info 만 받는다
 const CONSOLE_KEY = process.env.TEE_CONSOLE_KEY ? C.importPublicJwk(JSON.parse(process.env.TEE_CONSOLE_KEY)) : null;
 
 if (MODE !== 'dev' && MODE !== 'dstack') throw new Error(`unknown TEE_MODE ${MODE}`);
@@ -148,6 +157,7 @@ function handleGet(req, res) {
  */
 const MINE_WINDOW_MS = 5 * 60 * 1000;
 function handleMine(req, res) {
+    if (!LIMIT.mine.take()) { req.resume(); return send(res, 429, { ok: false, error: 'too many requests' }); }
     let size = 0;
     const chunks = [];
     req.on('data', (c) => { size += c.length; if (size > 16 * 1024) req.destroy(); else chunks.push(c); });
@@ -177,11 +187,13 @@ let tables = null, tableHandler = null;
 const RPC_IN_TABLE_MODE = new Set(['info']);
 
 const server = http.createServer((req, res) => {
+    for (const [k, v] of Object.entries(BASE_HEADERS)) res.setHeader(k, v);
     if (tableHandler && tableHandler(req, res, new URL(req.url, 'http://engine'))) return;
     if (req.method === 'OPTIONS') { res.writeHead(204, { ...PUBLIC_HEADERS, 'Access-Control-Allow-Methods': 'GET' }); return res.end(); }
     if (req.method === 'GET') return handleGet(req, res);
     if (req.method === 'POST' && req.url === '/records/mine') return handleMine(req, res);
     if (req.method !== 'POST' || req.url !== '/rpc') return send(res, 404, { ok: false, error: 'not found' });
+    if (!LIMIT.rpc.take()) { req.resume(); return send(res, 429, { ok: false, error: 'too many requests' }); }
     if (!authorized(req)) { req.resume(); return send(res, 401, { ok: false, error: 'unauthorized' }); }
     let size = 0;
     const chunks = [];
@@ -200,7 +212,11 @@ const server = http.createServer((req, res) => {
     });
 });
 
-server.keepAliveTimeout = 65000;
+// 느린 요청으로 연결을 붙잡아 두는 공격 막기 — 요청은 30초 안에, 머리글은 20초 안에 다 와야 한다(이벤트 흐름은 응답이 길 뿐 요청은 짧다)
+server.keepAliveTimeout = 15000;
+server.headersTimeout = 20000;
+server.requestTimeout = 30000;
+server.maxConnections = 4000;
 
 async function start() {
     if (MODE === 'dstack') {

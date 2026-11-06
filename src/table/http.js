@@ -27,6 +27,10 @@ const PAGE_HEADERS = {
     'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff',
 };
 const MAX_BODY = 64 * 1024;
+const { RateLimiter } = require('../limits');
+// 요청 폭주 막기 — 입장은 전체, 명령은 좌석 토큰마다
+const JOIN_LIMIT = new RateLimiter(30, 60);
+const CMD_LIMIT = new RateLimiter(20, 40);
 const KEEPALIVE_MS = 15000;
 
 function readJson(req) {
@@ -68,6 +72,8 @@ function tableRoutes(tables) {
         }
         if (req.method === 'POST' && (p === '/table/join' || p === '/table/cmd')) {
             readJson(req).then((m) => {
+                const ok = p === '/table/join' ? JOIN_LIMIT.take() : CMD_LIMIT.take(String(m && m.token || ''));
+                if (!ok) return json(res, 429, { ok: false, code: 'rate', error: 'too many requests' });
                 try {
                     if (p === '/table/join') return json(res, 200, { ok: true, ...tables.join(m.ticket, m.auth) });
                     const { token, ...msg } = m;

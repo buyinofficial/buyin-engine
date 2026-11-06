@@ -32,3 +32,22 @@ test('서버: 테이블 모드에서 /rpc 는 info 만 — 판 열기·키 등�
         srv.kill();
     }
 });
+
+/** 기본 보안 — 모든 응답에 보안 헤더, 요청 폭주는 429 */
+test('서버: 보안 헤더(nosniff·no-referrer)와 요청 횟수 제한(429)', async () => {
+    const port = 3980 + Math.floor(Math.random() * 9);
+    const srv = spawn(process.execPath, [path.join(__dirname, '..', 'src', 'server.js')], {
+        env: { ...process.env, TEE_MODE: 'dev', TEE_PORT: String(port), TEE_RPC_TOKEN: 'test-token', TEE_RECORD_DIR: require('fs').mkdtempSync(path.join(require('os').tmpdir(), 'buyin-sec-')) },
+        stdio: 'ignore',
+    });
+    try {
+        let info;
+        for (let i = 0; i < 40; i++) { try { info = await fetch(`http://127.0.0.1:${port}/info`); break; } catch (_e) { await new Promise((r) => setTimeout(r, 100)); } }
+        assert.strictEqual(info.headers.get('x-content-type-options'), 'nosniff');
+        assert.strictEqual(info.headers.get('referrer-policy'), 'no-referrer');
+        const codes = await Promise.all(Array.from({ length: 80 }, () => fetch(`http://127.0.0.1:${port}/records/mine`, { method: 'POST', body: '{}' }).then((r) => r.status)));
+        assert.ok(codes.includes(429), 'burst of /records/mine is limited');
+    } finally {
+        srv.kill();
+    }
+});

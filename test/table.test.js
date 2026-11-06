@@ -275,3 +275,12 @@ test('테이블: 한 명이 나가거나 끊겨도 판은 이어진다 — 끊�
     clock.advance(61000);
     assert.ok(env.out.some((x) => x.kind === 'settle' && x.note.odcId === drop.odcId && x.note.reason === 'disconnected'), '끊긴 채 시간이 지나 탈락');
 });
+
+test('테이블: 한 좌석에 붙는 이벤트 연결은 3개까지', () => {
+    const env = setup(1);
+    const { server, players } = env;
+    const p = players[0];
+    const conn = () => ({ send: () => {}, end: () => {}, onClose: () => {} });
+    server.subscribe(p.token, conn()); server.subscribe(p.token, conn());   // 이미 1개 + 2개 = 3개
+    assert.throws(() => server.subscribe(p.token, conn()), /too many connections/);
+});

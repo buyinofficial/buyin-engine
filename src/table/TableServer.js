@@ -17,7 +17,8 @@ const { verifyTicket, TicketError } = require('./ticket');
 const START_DELAY_MS = 3000;       // 판과 판 사이
 const RESULT_PAUSE_MS = 4000;      // 결과를 보여 주는 시간
 const EMPTY_ROOM_MS = 10 * 60 * 1000;
-const DISCONNECT_GRACE_MS = 60 * 1000;   // 연결이 끊긴 뒤 이 시간 안에 다시 붙지 않으면 탈락(배포 설정 TEE_DISCONNECT_GRACE_MS)
+const DISCONNECT_GRACE_MS = 60 * 1000;
+const MAX_CLIENTS_PER_SEAT = 3;          // 한 좌석에 붙는 이벤트 연결 상한(탭 여러 개 정도)   // 연결이 끊긴 뒤 이 시간 안에 다시 붙지 않으면 탈락(배포 설정 TEE_DISCONNECT_GRACE_MS)
 
 class TableError extends Error {
     constructor(code, msg) { super(msg); this.code = code; }
@@ -456,6 +457,7 @@ class TableServer {
 
     subscribe(token, client) {
         const { room, s } = this._auth(token);
+        if (s.clients.size >= MAX_CLIENTS_PER_SEAT) throw new TableError('busy', 'too many connections for this seat');
         s.clients.add(client);
         if (s.goneTimer) { this.clock.clearTimeout(s.goneTimer); s.goneTimer = null; }   // 다시 붙었다
         client.onClose(() => {
