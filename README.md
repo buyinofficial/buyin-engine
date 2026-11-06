@@ -85,7 +85,7 @@ The records form a hash chain: each line holds the hash of the line before it, s
 The image build is reproducible: file times are the commit time and the image has no build-time labels.
 
 ```
-git checkout v0.5.7
+git checkout v0.5.8
 SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) docker buildx build --platform linux/amd64   --provenance=false --sbom=false --output type=oci,dest=engine.tar,rewrite-timestamp=true .
 ```
 
@@ -107,6 +107,7 @@ The test suite covers:
 ## Status
 
 - **Stage 1–2:** the engine runs as a separate process (`mode: "dev"`). The cryptographic guarantees above hold, but there is no hardware attestation.
+- **0.5.8:** the pre-game brief asks four closed questions (YES/NO) about card secrecy and one TRUE/FALSE conclusion.
 - **0.5.7:** the 0.5.5 player-key binding is removed (seating and impersonation are checked after the fact from the records, not by the program); a player's new session closes the old seat; a seat whose signing key changes is closed.
 - **0.5.6:** the pre-game brief at `/` asks one question — can anyone but the player see the cards during a hand — and `PROOF.md` opens with that claim. Table flow: a player who does not act on their turn folds and leaves; a player disconnected longer than the grace time (`TEE_DISCONNECT_GRACE_MS`) leaves; all-in players stay to the result; the game continues for the others.
 - **0.5.4:** tag builds carry GitHub's signed build provenance and a Release listing digest, commit and build run; the table page checks every public card (board, run-out, showdown) against its commitment.
