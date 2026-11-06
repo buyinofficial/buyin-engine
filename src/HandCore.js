@@ -45,6 +45,7 @@ class HandCore {
      * @param {number} o.smallBlind @param {number} o.bigBlind
      * @param {boolean} [o.peek]    폴드승 뒤 남은 보드 보기를 줄지 (토너먼트는 false)
      * @param {boolean} [o.allowUnsigned]  키를 등록하지 않은 좌석의 서명 없는 액션을 받을지 (시험 전용)
+     * @param {boolean} [o.strictOrder]  차례 순서를 엔진이 강제한다 — TEE 테이블 서버가 켠다. 판 기록에 남고 verify 도 같은 규칙으로 돈다
      * @param {{percent:number, minPot:number}} [o.rake]  테이블 레이크 규칙 — 판 시작 때 정해 공개한다(콘솔·파트너가 바꾸지 않는다)
      */
     constructor(o) {
@@ -56,6 +57,7 @@ class HandCore {
         this.bigBlind = Number(o.bigBlind);
         this.peek = !!o.peek;
         this.allowUnsigned = !!o.allowUnsigned;
+        this.strictOrder = !!o.strictOrder;
         const rk = o.rake || {};
         this.rake = { percent: Number(rk.percent) || 0, minPot: Number(rk.minPot) || 0 };
 
@@ -87,6 +89,8 @@ class HandCore {
         this.dealer = o.dealer;
         this.sb = o.sb;
         this.bb = o.bb;
+        // 차례 표시 — 마지막으로 차례를 쓴 좌석. 프리플랍은 BB 다음부터(헤즈업이면 딜러=SB 부터), 플랍부터는 딜러 다음부터
+        this.pointer = o.bb;
 
         this.stage = 'preflop';
         this.pot = 0;
@@ -186,6 +190,22 @@ class HandCore {
         return 'continue';
     }
 
+    /**
+     * 지금 차례인 좌석 — 베팅이 남았을 때(status=continue)만. 마지막 차례 좌석 다음부터 시계 방향으로,
+     * 폴드·올인이 아니고 아직 행동하지 않았거나 콜할 금액이 남은 첫 좌석.
+     */
+    toAct() {
+        if (!this.isBetting() || this.status() !== 'continue') return null;
+        const n = this.order.length;
+        const start = this.order.indexOf(this.pointer);
+        for (let i = 1; i <= n; i++) {
+            const p = this.seats.get(this.order[(start + i) % n]);
+            if (p.isFolded || p.isAllIn) continue;
+            if (!this.acted.has(p.seat) || roundMoney(p.currentBet) < roundMoney(this.currentBet)) return p.seat;
+        }
+        return null;
+    }
+
     calculateMinRaise() {
         return this.currentBet + Math.max(this.lastRaiseAmount, this.bigBlind);
     }
@@ -227,6 +247,7 @@ class HandCore {
         if (!['act', 'pre', 'rc', 'host'].includes(k)) throw new HandError('kind', `unknown kind ${k}`);
         if (Number(e.q) !== this.turns) throw new HandError('turn', `stale turn q=${e.q} (engine ${this.turns})`);
         if (p.isFolded || p.isAllIn) throw new HandError('state', 'Invalid player state');
+        if (this.strictOrder && p.seat !== this.toAct()) throw new HandError('turn', `seat ${p.seat} is not to act (seat ${this.toAct()} is)`);
         const action = String(e.action || '');
         const amount = Number(e.amount) || 0;
         const auth = this._authorize(k, p, e, action, amount);
@@ -234,6 +255,7 @@ class HandCore {
         const res = this._resolve(p, action, amount);
         this._checkRes(e, res);
         this.turns++;
+        this.pointer = p.seat;
         const entry = { k, q: Number(e.q), seat: p.seat, action, amount, res };
         if (auth) entry.auth = auth;
         if (e.reason) entry.reason = String(e.reason);
@@ -410,6 +432,7 @@ class HandCore {
         this.currentBet = 0;
         this.lastRaiseAmount = 0;
         this.acted = new Set();
+        this.pointer = this.dealer;
     }
 
     _dealBoard(n) {

@@ -7,7 +7,8 @@
  *   GET  /records/head        기록 사슬 끝 { count, head, hands }        누구나 — 지금까지 남긴 기록의 지문
  *   GET  /records/keys        엔진 키 줄 전부(뜰 때마다 하나)            누구나 — 옛 기록을 옛 키로 검증
  *   GET  /records/hand/<id>   판 기록 한 줄 (사슬 위치·해시 포함)        운영 서버만 — 지난 판의 카드가 들어 있다
- *   GET  /records?from=&limit= 사슬 줄 내보내기(백업·감사)              운영 서버만
+ *   GET  /records?from=&limit= 사슬 줄 내보내기(백업·감사)              운영 서버만 — 콘솔은 여기서 정산서·판 기록을 가져간다(TEE 는 밖으로 연결하지 않는다)
+ *   /table/...                테이블 서버 — 회원이 TEE 와 직접 게임한다 (table/http.js)
  *
  * 환경 변수
  *   TEE_MODE            dev(기본) | dstack — dstack 은 Phala Cloud(dstack) TDX 안. 뜨기 전에 증명서를 받는다
@@ -15,6 +16,7 @@
  *   TEE_HOST            기본 127.0.0.1. 컨테이너 안에서는 0.0.0.0 (밖에서는 TEE 게이트웨이 TLS 로만 들어온다)
  *   TEE_RPC_TOKEN       /rpc 접근 토큰. dstack 모드에서는 반드시 있어야 한다(32자 이상). 암호화 환경변수로만 넣는다
  *   TEE_RECORD_DIR      판 기록 보관 폴더(TEE 데이터 디스크). dstack 모드에서는 반드시 있어야 한다
+ *   TEE_CONSOLE_KEY     콘솔 좌석표 공개키(JWK JSON). 있으면 테이블 서버를 켠다. 배포 설정(측정됨)에 공개로 둔다
  *   TEE_ALLOW_UNSIGNED  1 이면 키 없는 좌석의 평문 카드·서명 없는 액션 허용 (시험 전용, dev 모드만)
  *
  * 토큰은 "누가 RPC 를 부르나"만 정한다. 토큰이 있어도 카드를 보거나 회원 서명 없이 칩을 움직일 수는 없다(RULES.md 3장).
@@ -26,6 +28,9 @@ const Engine = require('./Engine');
 const { dstackAttestation } = require('./attest');
 const { RecordStore } = require('./store');
 const { auditReport } = require('./audit');
+const C = require('./crypto');
+const { TableServer } = require('./table/TableServer');
+const { tableRoutes } = require('./table/http');
 
 const MODE = process.env.TEE_MODE || 'dev';
 const PORT = Number(process.env.TEE_PORT || 3900);
@@ -33,6 +38,7 @@ const HOST = process.env.TEE_HOST || '127.0.0.1';
 const TOKEN = process.env.TEE_RPC_TOKEN || '';
 const RECORD_DIR = process.env.TEE_RECORD_DIR || '';
 const MAX_BODY = 1024 * 1024;
+const CONSOLE_KEY = process.env.TEE_CONSOLE_KEY ? C.importPublicJwk(JSON.parse(process.env.TEE_CONSOLE_KEY)) : null;
 
 if (MODE !== 'dev' && MODE !== 'dstack') throw new Error(`unknown TEE_MODE ${MODE}`);
 if (MODE === 'dstack' && TOKEN.length < 32) throw new Error('TEE_RPC_TOKEN (32+ chars) is required in dstack mode');
@@ -101,7 +107,10 @@ function handleGet(req, res) {
     return send(res, 404, { ok: false, error: 'not found' });
 }
 
+let tables = null, tableHandler = null;
+
 const server = http.createServer((req, res) => {
+    if (tableHandler && tableHandler(req, res, new URL(req.url, 'http://engine'))) return;
     if (req.method === 'OPTIONS') { res.writeHead(204, { ...PUBLIC_HEADERS, 'Access-Control-Allow-Methods': 'GET' }); return res.end(); }
     if (req.method === 'GET') return handleGet(req, res);
     if (req.method !== 'POST' || req.url !== '/rpc') return send(res, 404, { ok: false, error: 'not found' });
@@ -129,11 +138,17 @@ async function start() {
     }
     // 이번에 뜬 엔진의 키를 사슬에 남긴다 — 이 키로 서명될 판 기록을 나중에도 검증할 수 있게
     if (store) store.appendEngineKey(engine.call('info'));
+    // 테이블 서버 — 사슬에서 정산 안 된 좌석을 먼저 정산하고(재시작 복구) 연다
+    if (CONSOLE_KEY) {
+        tables = new TableServer({ engine, store, consoleKey: CONSOLE_KEY });
+        tableHandler = tableRoutes(tables);
+        setInterval(() => tables.sweep(), 30000).unref();
+    }
     server.listen(PORT, HOST, () => {
         const i = info();
         console.log(`[tee-engine] ${i.name} ${i.version} mode=${i.mode} listening ${HOST}:${PORT} sigFp=${i.keys.sigFp}`
             + `${attestation ? ` reportData=${attestation.reportData}` : ''}${tokenHash ? ' rpc=token' : ''}`
-            + `${store ? ` records=${store.count}` : ''}${engine.allowUnsigned ? ' ALLOW_UNSIGNED' : ''}`);
+            + `${store ? ` records=${store.count}` : ''}${tables ? ' tables=on' : ''}${engine.allowUnsigned ? ' ALLOW_UNSIGNED' : ''}`);
     });
 }
 

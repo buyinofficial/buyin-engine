@@ -19,7 +19,7 @@ const pkg = require('../package.json');
 
 const { HandError } = HandCore;
 
-const MAX_SEATS = 10;
+const MAX_SEATS = 11;   // 11인 방까지 (카드 2×11 + 보드 5 + 번 3 = 30장)
 const MAX_ID_LEN = 64;
 const MAX_MONEY = 1e12;
 
@@ -70,6 +70,14 @@ class Engine {
             keys,
             attestation: this.attest ? this.attest(keys) : null,
         };
+    }
+
+    /**
+     * 콘솔로 보내는 통지(정산서 등) 서명 — 판 기록 서명과 섞이지 않게 앞에 'buyin-note-v1|' 를 붙인다.
+     * 확인: C.verify(엔진 서명키, 'buyin-note-v1|' + stableStringify(note), sig)
+     */
+    signNote(note) {
+        return C.sign(this.sigKeys.privateKey, 'buyin-note-v1|' + C.stableStringify(note));
     }
 
     _signRecord(record) {
@@ -159,14 +167,14 @@ class Engine {
      * 새 판. 운영 서버가 좌석·스택·버튼 위치를 넘긴다. 엔진이 블라인드를 걷고 카드를 나눈다.
      * @returns 판 번호, 공개 약속, 좌석별 홀카드 봉투, 다음 판 씨앗 약속
      */
-    startHand({ tableId, handNo, seats, dealer, sb, bb, smallBlind, bigBlind, peek, rake }) {
+    startHand({ tableId, handNo, seats, dealer, sb, bb, smallBlind, bigBlind, peek, rake, strictOrder }) {
         const t = this._table(tableId);
         if (t.liveHandId) {
             const live = this.hands.get(t.liveHandId);
             if (live && live.core.stage !== 'done' && live.core.stage !== 'aborted') throw new HandError('busy', 'previous hand is still running');
         }
         // RULES.md 5장 — 운영 서버가 보낸 값은 전부 의심한다
-        if (!Array.isArray(seats) || seats.length < 2 || seats.length > MAX_SEATS) throw new HandError('input', 'seats must be 2..10');
+        if (!Array.isArray(seats) || seats.length < 2 || seats.length > MAX_SEATS) throw new HandError('input', 'seats must be 2..11');
         const list = seats.map(s => ({ seat: Number(s && s.seat), odcId: String(s && s.odcId), stack: Number(s && s.stack) }));
         for (const s of list) {
             if (!Number.isInteger(s.seat) || s.seat < 0 || s.seat >= MAX_SEATS) throw new HandError('input', 'bad seat');
@@ -199,7 +207,7 @@ class Engine {
 
         const core = new HandCore({
             handId, seed, deck, seats: list, dealer: Number(dealer), sb: Number(sb), bb: Number(bb),
-            smallBlind, bigBlind, peek: !!peek, allowUnsigned: this.allowUnsigned, rake: rakeRule,
+            smallBlind, bigBlind, peek: !!peek, allowUnsigned: this.allowUnsigned, rake: rakeRule, strictOrder: !!strictOrder,
         });
 
         // 다음 판 씨앗은 지금 정해 약속만 알린다 — 이번 판 동안 회원들이 그 약속에 무작위 값을 보탠다
@@ -307,6 +315,7 @@ class Engine {
             deckCommit: h.deckCommit,
             dealer: s.dealer, sb: s.sb, bb: s.bb, smallBlind: s.smallBlind, bigBlind: s.bigBlind, peek: h.core.peek, rake: h.core.rake,
             allowUnsigned: h.core.allowUnsigned,
+            ...(h.core.strictOrder ? { strictOrder: true } : {}),
             blinds: s.blinds,
             holes: s.holes,
             board: s.board,

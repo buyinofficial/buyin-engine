@@ -7,6 +7,8 @@
  *   한 줄 = { i, prev, hash, kind, ... }            하루 파일 records-YYYY-MM-DD.jsonl 에 덧붙인다(append only)
  *   hash  = SHA-256( prev + "\n" + stableStringify(본문) )   본문 = 줄에서 i·prev·hash 를 뺀 나머지
  *   kind  = "engine-key"  엔진이 뜰 때 공개키·증명서 report_data — 옛 기록을 옛 키로 검증할 수 있게
+ *           "seat-in"     좌석표로 앉음(좌석표 번호·세션·바이인) — 같은 좌석표 재사용 금지, 재시작 정산
+ *           "settle"      정산서(엔진 서명) — 금액만
  *           "hand"        { record, sig } — 엔진이 서명한 판 기록 (판이 끝난 뒤에만)
  *
  * 중간 줄을 지우거나 바꾸면 그 뒤 hash 가 모두 어긋난다(verifyChain). 지금 사슬 끝(head)은 /records/head 로 공개한다.
@@ -92,6 +94,12 @@ class RecordStore {
         const { entry, file } = this._append({ kind: 'hand', at: Date.now(), record, sig });
         this.byHand.set(String(record.handId), { file, i: entry.i });
         return entry;
+    }
+
+    /** 테이블 서버 사건 — 'seat-in'(좌석표로 앉음), 'settle'(정산서). 판 기록과 같은 사슬에 남아 재시작 뒤에도 돈이 정산된다 */
+    appendEvent(kind, body) {
+        if (!['seat-in', 'settle'].includes(kind)) throw new Error('unknown event kind');
+        return this._append({ kind, at: Date.now(), ...body }).entry;
     }
 
     headInfo() {

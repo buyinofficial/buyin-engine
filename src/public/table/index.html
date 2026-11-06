@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BUY-IN</title>
+<link rel="stylesheet" href="table.css">
+<script type="module" src="js/app.js"></script>
+</head>
+<body>
+<main id="table" class="pc" data-testid="tee-table">
+  <div class="bg"><img class="bg-img" alt=""><div class="bg-shade"></div></div>
+  <div id="stage">
+  <div id="board-area">
+    <div class="pot-wrap">
+      <div class="pot-chips" aria-hidden="true"></div>
+      <div class="pot-panel" data-testid="pot">
+        <span class="pot-title" data-i18n="pot"></span>
+        <span class="pot-total">0</span>
+        <div class="pot-grid">
+          <div><div class="pk main" data-i18n="potMain"></div><div class="pv main-v">0</div></div>
+          <div class="side"><div class="pk">SIDE 1</div><div class="pv">—</div></div>
+          <div class="side"><div class="pk">SIDE 2</div><div class="pv">—</div></div>
+        </div>
+        <div class="pot-uncalled"><span class="pk" data-i18n="uncalled"></span><span class="pv">—</span></div>
+        <i class="pot-glow"></i>
+      </div>
+    </div>
+    <div class="board" data-testid="board"></div>
+  </div>
+  <div id="seats"></div>
+  <div id="bets"></div>
+  <div class="turnbar" hidden><i></i></div>
+  </div>
+
+  <div class="corner tl">
+    <button type="button" class="round" id="btn-leave" data-i18n-title="leave"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg></button>
+  </div>
+  <div class="corner tr">
+    <button type="button" class="round" id="btn-sound" data-i18n-title="sound"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg></button>
+    <button type="button" class="round" id="btn-verify" data-i18n-title="verify"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg></button>
+  </div>
+
+  <div id="actions" hidden>
+    <div class="act-top">
+      <div class="presets"></div>
+      <div class="gauge">
+        <div class="gauge-bubble" hidden><b>0</b><span class="cur"></span></div>
+        <div class="gauge-well"><span class="gauge-fill"></span></div>
+        <input type="range" class="gauge-input" min="0" max="1000" step="1" value="0" aria-label="raise amount">
+        <div class="gauge-handle"><i></i><i></i><i></i></div>
+      </div>
+    </div>
+    <div class="act-main">
+      <button type="button" class="a-fold" data-act="FOLD"><span class="t" data-i18n="fold"></span></button>
+      <button type="button" class="a-call" data-act="CALL"><span class="t"></span><span class="s"></span></button>
+      <button type="button" class="a-raise" data-act="RAISE"><span class="t"></span><span class="s"></span></button>
+    </div>
+  </div>
+
+  <div class="verify-badge" data-testid="tee-badge"><button type="button"><span class="lock" aria-hidden="true">🔒</span><span data-i18n="cardCheck"></span><b class="vb-state"></b></button></div>
+  <div class="room-label"></div>
+  <div id="toast" hidden></div>
+  <div id="gate" hidden><div class="gate-box"><p class="gate-msg"></p></div></div>
+</main>
+</body>
+</html>

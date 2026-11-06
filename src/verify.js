@@ -48,7 +48,7 @@ function verifyRecord(record, sig, engineSigJwk) {
             seats: record.seats.map(s => ({ seat: s.seat, odcId: s.odcId, stack: record.stacksStart[s.seat], sigJwk: s.keys ? s.keys.sig : null })),
             dealer: record.dealer, sb: record.sb, bb: record.bb,
             smallBlind: record.smallBlind, bigBlind: record.bigBlind,
-            peek: record.peek, allowUnsigned: record.allowUnsigned, rake: record.rake,
+            peek: record.peek, allowUnsigned: record.allowUnsigned, rake: record.rake, strictOrder: !!record.strictOrder,
         });
         for (const e of record.log || []) {
             if (e.k === 'board') { core.advance(); continue; }
