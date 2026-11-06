@@ -44,6 +44,7 @@ export const msg = {
     keyConfirm: (tableId, odcId, sigFp, ecdhFp) => JSON.stringify(['pz-key-v1', String(tableId), String(odcId), sigFp, ecdhFp]),
     action: (handId, q, action, amount) => JSON.stringify(['pz-act-v1', String(handId), Number(q), String(action), Number(amount) || 0]),
     entropy: (tableId, seedCommit, entropyHex) => JSON.stringify(['pz-ent-v1', String(tableId), String(seedCommit), String(entropyHex)]),
+    join: (tid, sigFp) => JSON.stringify(['pz-join-v1', String(tid), String(sigFp)]),
     mine: (sigFp, ts, handId) => JSON.stringify(['pz-mine-v1', String(sigFp), Number(ts), String(handId || '')]),
 };
 

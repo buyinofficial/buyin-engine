@@ -109,6 +109,11 @@ function msgEntropy(tableId, seedCommit, entropyHex) {
     return JSON.stringify(['pz-ent-v1', String(tableId), String(seedCommit), String(entropyHex)]);
 }
 
+/** 입장 — 이 좌석표를 이 키(회원 브라우저의 서명 키)로 쓴다. 회원 키가 고정된 뒤에는 이 서명 없이 앉을 수 없다 */
+function msgJoin(tid, sigFp) {
+    return JSON.stringify(['pz-join-v1', String(tid), String(sigFp)]);
+}
+
 /** 내 판 기록 요청 — 그 판에 앉았던 키로만 받는다. ts 는 요청 시각(ms), 5분 안에서만 받는다 */
 function msgMine(sigFp, ts, handId) {
     return JSON.stringify(['pz-mine-v1', String(sigFp), Number(ts), String(handId || '')]);
@@ -144,6 +149,6 @@ module.exports = {
     b64u, fromB64u, sha256, sha256hex, stableStringify,
     generateKeyPair, publicJwk, importPublicJwk, fingerprint,
     sign, verify,
-    msgRegister, msgKeyConfirm, msgAction, msgPreAction, msgRaiseCommit, msgEntropy, msgMine,
+    msgRegister, msgKeyConfirm, msgAction, msgPreAction, msgRaiseCommit, msgEntropy, msgMine, msgJoin,
     sealEnvelope, openEnvelope,
 };

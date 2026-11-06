@@ -85,7 +85,7 @@ The records form a hash chain: each line holds the hash of the line before it, s
 The image build is reproducible: file times are the commit time and the image has no build-time labels.
 
 ```
-git checkout v0.5.4
+git checkout v0.5.5
 SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) docker buildx build --platform linux/amd64   --provenance=false --sbom=false --output type=oci,dest=engine.tar,rewrite-timestamp=true .
 ```
 
@@ -107,6 +107,7 @@ The test suite covers:
 ## Status
 
 - **Stage 1–2:** the engine runs as a separate process (`mode: "dev"`). The cryptographic guarantees above hold, but there is no hardware attestation.
+- **0.5.5:** a seat ticket alone no longer seats anyone: the player's browser key signs the join, the TEE binds each player id to its key (public record), and a key change needs a console-signed new-device ticket.
 - **0.5.4:** tag builds carry GitHub's signed build provenance and a Release listing digest, commit and build run; the table page checks every public card (board, run-out, showdown) against its commitment.
 - **0.5.3:** the engine reports its source commit and the SHA-256 of every file it loads (`/review/manifest`); `/` is a pre-game brief that asks an AI to investigate this repository at that commit and check `PROOF.md`; `tools/check-deployment.js` checks the live engine against a checkout. Every dealt-in player must add random for the hand; the table event stream takes its token in a header.
 - **0.5.2:** table mode closes the operator's game RPC (`/rpc` answers only `info`); the live audit report at `/` is written to be pasted into an AI reviewer as is.

@@ -3,7 +3,8 @@
  *
  *   GET  /table/                  테이블 화면 (src/public/table — 공개 소스, 이 TEE 가 내보낸다)
  *   GET  /table/<파일>            화면 파일(js·css·그림·글꼴)
- *   POST /table/join              { ticket } → { token, seat, tableId, seedCommit }
+ *   POST /table/join              { ticket, auth: { sig, proof } } → { token, seat, tableId, seedCommit }   auth = 회원 키 입장 서명
+ *   GET  /table/binding/<회원>    회원 ID ↔ 브라우저 키 고정 기록(공개) — 키가 언제 왜 바뀌었는지
  *   GET  /table/events            이벤트 흐름(SSE, Authorization: Bearer <좌석 토큰>) — 접속하자마자 snapshot, 이후 판 진행
  *   POST /table/cmd               { token, type, ... } — 키 등록·무작위 값·액션·자리 비움·일어나기
  *   GET  /table/verify.html       내 판 기록 검증하기 (공개 화면)
@@ -69,7 +70,7 @@ function tableRoutes(tables) {
         if (req.method === 'POST' && (p === '/table/join' || p === '/table/cmd')) {
             readJson(req).then((m) => {
                 try {
-                    if (p === '/table/join') return json(res, 200, { ok: true, ...tables.join(m.ticket) });
+                    if (p === '/table/join') return json(res, 200, { ok: true, ...tables.join(m.ticket, m.auth) });
                     const { token, ...msg } = m;
                     return json(res, 200, tables.command(token, msg));
                 } catch (e) {
@@ -77,6 +78,12 @@ function tableRoutes(tables) {
                 }
             }, () => json(res, 400, { ok: false, error: 'bad json' }));
             return true;
+        }
+
+        const bm = p.match(/^\/table\/binding\/([A-Za-z0-9_.:-]{1,64})$/);
+        if (req.method === 'GET' && bm) {
+            if (!tables) return json(res, 503, { ok: false, code: 'off' });
+            return json(res, 200, { ok: true, ...tables.binding(bm[1]) });
         }
 
         if (req.method === 'GET' && p === '/table/events') {

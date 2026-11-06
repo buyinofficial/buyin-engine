@@ -81,6 +81,7 @@ async function boot() {
     setLang(qs.get('lang') || navigator.language.slice(0, 2));
     applyStatic();
     S.ticket = qs.get('t') || sessionStorage.getItem('buyin.ticket') || '';
+    S.back = qs.get('back') || '';   // 로비(운영자) 게임 화면 — '새 기기 등록' 링크에만 쓴다
     if (history.replaceState) history.replaceState(null, '', location.pathname);   // 주소창·기록에 좌석표를 남기지 않는다
     layoutMode();
     addEventListener('resize', () => { layoutMode(); render(); });
@@ -92,7 +93,12 @@ async function boot() {
     if (!S.ticket) return gate(t('noTicket'));
     gate(t('joining'));
     try {
-        const r = await post('/table/join', { ticket: S.ticket });
+        // 좌석표의 회원 ID 로 이 브라우저의 키를 꺼내 입장에 서명한다 — 좌석표만 가진 쪽(운영자 포함)은 이 서명을 만들 수 없다
+        const body = JSON.parse(new TextDecoder().decode(V.fromB64u(S.ticket.split('.')[0])));
+        S.keys = await V.loadKeys(String(body.player.odcId));
+        const auth = { sig: S.keys.sigJwk, proof: await V.sign(S.keys, V.msg.join(body.tid, S.keys.sigFp)) };
+        const r = await post('/table/join', { ticket: S.ticket, auth });
+        if (!r.ok && r.code === 'key') return keyGate(String(body.player.odcId));
         if (!r.ok) return gate(r.error || 'join failed');
         S.token = r.token; S.tableId = r.tableId;
         sessionStorage.setItem('buyin.token', r.token);
@@ -185,7 +191,7 @@ async function onSnapshot(d) {
     S.turn = d.turn; S.reveal = (d.hand && d.hand.reveal) || {};
     $('.room-label').textContent = `${d.room.name} · ${dm(d.room.sb)}/${dm(d.room.bb)}`;
     hideGate();
-    if (!d.me.keys || !S.keys) await registerKeys();
+    if (!d.me.keys || !S.keys || !S.keys.sigJwk) await registerKeys();
     if (d.hole && d.hole.envelope) await openHole(d.hole);
     await sendEntropy(d.hand ? d.hand.nextSeedCommit : d.seedCommit);
     render();
@@ -761,6 +767,21 @@ function toast(msg, ms = 2600) {
     toastTimer = setTimeout(() => { n.hidden = true; }, ms);
 }
 function gate(msg) { $('.gate-msg').textContent = msg; $('#gate').hidden = false; }
+
+/** 이 회원 ID 가 다른 기기 키에 고정돼 있다 — 언제 바뀌었는지 공개 기록을 보여 주고, 이 기기로 바꾸려면 '새 기기 등록'(공개 기록에 남는다) */
+async function keyGate(odcId) {
+    let hist = [];
+    try { hist = (await (await fetch('/table/binding/' + encodeURIComponent(odcId), { cache: 'no-store' })).json()).history || []; } catch (_e) { /* 없음 */ }
+    const last = hist[hist.length - 1];
+    const when = last ? new Date(last.at).toLocaleString() : '—';
+    gate(`${t('keyBound')} (${t('keyLast')}: ${when}${last && last.reason === 'new-device' ? ' · ' + t('keyNewDevice') : ''})`);
+    if (S.back) {
+        const a = document.createElement('a');
+        const u = new URL(S.back); u.searchParams.set('rebind', '1');
+        a.href = u.toString(); a.textContent = t('keyRebind'); a.className = 'gate-link';
+        $('.gate-box').appendChild(a);
+    }
+}
 function hideGate() { $('#gate').hidden = true; }
 
 let actx = null;

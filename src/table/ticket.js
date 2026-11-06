@@ -8,6 +8,7 @@
  *   v: 1, tid: 좌석표 번호(한 번만 쓴다), exp: 만료(ms),
  *   room: { id, name, sb, bb, maxPlayers, rake: { percent, minPot }, turnSec, endsAt },
  *   display: { currency, rate }   (선택) 화면 표시 환산 — 금액 × rate 를 currency 로 보여 준다
+ *   rebind: true                  (선택) 이 회원의 브라우저 키를 새 기기 키로 바꾼다 — 공개 기록에 남고 옛 기기에 보인다
  *   player: { sessionId, odcId, nickname, avatar },
  *   buyIn: 칩(=잠근 금액), currency
  * }
@@ -74,7 +75,7 @@ function verifyTicket(ticket, consoleKey, now = Date.now()) {
     // 화면 표시용 환산(예: 칩은 USDT, 화면은 원화) — 게임·정산 금액에는 쓰지 않는다
     const d = p.display || {};
     const display = { currency: String(d.currency || p.currency || '').slice(0, 8), rate: Number(d.rate) > 0 && Number(d.rate) < 1e7 ? Number(d.rate) : 1 };
-    return { tid: String(p.tid), exp: Number(p.exp), room, player, buyIn, currency: String(p.currency || '').slice(0, 8), display };
+    return { tid: String(p.tid), exp: Number(p.exp), room, player, buyIn, currency: String(p.currency || '').slice(0, 8), display, rebind: p.rebind === true };
 }
 
 /** 시험·콘솔 구현 참고용 — 콘솔 개인키로 좌석표를 만든다 */
