@@ -6,6 +6,8 @@
  *
  *   한 줄 = { i, prev, hash, kind, ... }            하루 파일 records-YYYY-MM-DD.jsonl 에 덧붙인다(append only)
  *   hash  = SHA-256( prev + "\n" + stableStringify(본문) )   본문 = 줄에서 i·prev·hash 를 뺀 나머지
+ *   영수증(공개): 판 번호 → 사슬 위치·줄 해시·기록 해시. 카드는 없다 — 콘솔이 준 사본이 TEE 원본과 같은지 누구나 맞춰 본다
+ *   내 판(회원 키로): 판 기록의 좌석 키 지문으로 색인 — 그 키로 서명한 회원만 자기 판 기록을 받는다
  *   kind  = "engine-key"  엔진이 뜰 때 공개키·증명서 report_data — 옛 기록을 옛 키로 검증할 수 있게
  *           "seat-in"     좌석표로 앉음(좌석표 번호·세션·바이인) — 같은 좌석표 재사용 금지, 재시작 정산
  *           "settle"      정산서(엔진 서명) — 금액만
@@ -42,6 +44,7 @@ class RecordStore {
         this.count = 0;
         this.head = GENESIS;
         this.byHand = new Map();   // handId → { file, i }
+        this.byKey = new Map();    // 회원 서명 키 지문 → [handId] (오래된 것부터)
         this._load();
     }
 
@@ -58,7 +61,7 @@ class RecordStore {
                 }
                 this.count += 1;
                 this.head = entry.hash;
-                if (entry.kind === 'hand' && entry.record) this.byHand.set(String(entry.record.handId), { file: f, i: entry.i });
+                if (entry.kind === 'hand' && entry.record) this._index(entry.record, f, entry.i);
             }
         }
     }
@@ -92,8 +95,32 @@ class RecordStore {
     /** 판이 끝났을 때 — 엔진이 서명한 기록. 실패하면 던진다(그 판은 무효가 된다) */
     appendHand(record, sig) {
         const { entry, file } = this._append({ kind: 'hand', at: Date.now(), record, sig });
-        this.byHand.set(String(record.handId), { file, i: entry.i });
+        this._index(record, file, entry.i);
         return entry;
+    }
+
+    _index(record, file, i) {
+        const id = String(record.handId);
+        this.byHand.set(id, { file, i });
+        for (const s of record.seats || []) {
+            if (!s.keys || !s.keys.sig) continue;
+            const fp = C.fingerprint(s.keys.sig);
+            if (!this.byKey.has(fp)) this.byKey.set(fp, []);
+            this.byKey.get(fp).push(id);
+        }
+    }
+
+    /** 이 키로 앉았던 판 — 최근 것부터 */
+    handsOfKey(sigFp, limit = 50) {
+        return (this.byKey.get(String(sigFp)) || []).slice(-limit).reverse();
+    }
+
+    /** 공개 영수증 — 카드 없이 사슬 위치와 해시만 */
+    receipt(handId) {
+        const e = this.getHand(handId);
+        if (!e) return null;
+        return { i: e.i, prev: e.prev, hash: e.hash, at: e.at, handId: String(e.record.handId), tableId: e.record.tableId,
+            endedAt: e.record.endedAt, recordHash: C.sha256hex(C.stableStringify(e.record)), engineSigFp: e.record.engine && e.record.engine.sigFp };
     }
 
     /** 테이블 서버 사건 — 'seat-in'(좌석표로 앉음), 'settle'(정산서). 판 기록과 같은 사슬에 남아 재시작 뒤에도 돈이 정산된다 */

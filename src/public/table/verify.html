@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BUY-IN · 내 판 기록 검증</title>
+<link rel="stylesheet" href="verify.css">
+<!-- 엔진 소스 — 지금 이 TEE 에서 도는 바로 그 파일을 감싸기만 해서 싣는다 -->
+<script src="js/nodeshim.js"></script>
+<script src="engine/money.js"></script>
+<script src="engine/HandEvaluator.js"></script>
+<script src="engine/PotManager.js"></script>
+<script src="engine/crypto.js"></script>
+<script src="engine/cards.js"></script>
+<script src="engine/HandCore.js"></script>
+<script src="engine/verify.js"></script>
+<script type="module" src="js/verify-page.js"></script>
+</head>
+<body>
+<main class="wrap" data-testid="verify-page">
+  <header class="head">
+    <div class="brand">BUY-IN</div>
+    <h1 data-v="title"></h1>
+    <p class="lead" data-v="lead"></p>
+  </header>
+
+  <section class="engine card-box" data-testid="engine-box">
+    <h2 data-v="engineTitle"></h2>
+    <dl class="kv"></dl>
+  </section>
+
+  <section class="hands card-box">
+    <h2 data-v="handsTitle"></h2>
+    <p class="muted" data-v="handsNote"></p>
+    <ul class="hand-list" data-testid="hand-list"></ul>
+  </section>
+
+  <section class="detail card-box" hidden data-testid="detail">
+    <h2><span data-v="detailTitle"></span> <code class="hid"></code></h2>
+    <ol class="checks"></ol>
+    <div class="cards-row"></div>
+    <div class="actions">
+      <button type="button" class="dl" data-v="download"></button>
+      <span class="muted" data-v="cli"></span>
+    </div>
+  </section>
+
+  <footer class="foot muted" data-v="foot"></footer>
+</main>
+</body>
+</html>

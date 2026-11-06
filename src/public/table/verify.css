@@ -1,0 +1,49 @@
+/* 내 판 기록 검증하기 — BUY-IN 골드 */
+:root {
+  --bg: #07080b; --panel: #0e1016; --line: rgba(217, 180, 106, .28); --gold: #e9c46a; --gold-hi: #fde68a; --text: #f3ecdc; --muted: #a59d8c;
+  --ok: #34d399; --bad: #f87171; --warn: #fbbf24;
+  --sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 var(--sans); }
+body { background: radial-gradient(1200px 500px at 50% -200px, rgba(233, 196, 106, .14), transparent 70%), var(--bg); min-height: 100vh; }
+.wrap { max-width: 860px; margin: 0 auto; padding: 32px 16px 48px; }
+.head { text-align: center; margin-bottom: 24px; }
+.brand { font: 900 34px/1 Georgia, 'Times New Roman', serif; letter-spacing: .04em; color: transparent;
+  background: linear-gradient(180deg, #fff8d9 0%, #ffe18a 32%, #b97514 68%, #ffe9a5 100%); -webkit-background-clip: text; background-clip: text; }
+h1 { margin: 10px 0 6px; font-size: 22px; }
+h2 { margin: 0 0 10px; font-size: 16px; color: var(--gold-hi); }
+.lead { margin: 0 auto; max-width: 620px; color: var(--muted); }
+.muted { color: var(--muted); font-size: 13px; }
+.card-box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-top: 16px; box-shadow: 0 10px 30px rgba(0, 0, 0, .35); }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; overflow-wrap: anywhere; }
+.kv dd.ok { color: var(--ok); } .kv dd.bad { color: var(--bad); } .kv dd.warn { color: var(--warn); }
+.hand-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.hand-list .empty { color: var(--muted); padding: 8px 0; }
+.hand { width: 100%; display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; text-align: left; padding: 10px 12px; border-radius: 10px;
+  background: #12151d; border: 1px solid rgba(255, 255, 255, .06); color: var(--text); font: inherit; cursor: pointer; }
+.hand:hover, .hand.on { border-color: var(--gold); background: #171a23; }
+.hand .when { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.hand .id { font-size: 12px; color: var(--gold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hand .tbl { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.hid { font-size: 12px; color: var(--muted); }
+.checks { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.check { position: relative; padding: 10px 12px 10px 40px; border-radius: 10px; background: #12151d; border: 1px solid rgba(255, 255, 255, .06); }
+.check b { display: block; font-weight: 700; }
+.check .d { display: block; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.check::before { position: absolute; left: 12px; top: 11px; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font: 700 12px/1 var(--sans); }
+.check.run::before { content: '…'; color: var(--muted); }
+.check.ok { border-color: rgba(52, 211, 153, .35); } .check.ok::before { content: '✓'; background: var(--ok); color: #04130d; }
+.check.bad { border-color: rgba(248, 113, 113, .5); } .check.bad::before { content: '✕'; background: var(--bad); color: #1a0505; }
+.check.warn::before { content: '!'; background: var(--warn); color: #1a1405; }
+.cards-row { display: flex; flex-wrap: wrap; gap: 16px; margin: 14px 0 4px; }
+.grp { display: flex; align-items: center; gap: 4px; }
+.grp .lbl { color: var(--muted); font-size: 12px; margin-right: 4px; }
+.pc { display: inline-grid; place-items: center; min-width: 34px; height: 44px; padding: 0 4px; border-radius: 5px; background: #fff; color: #111; font: 700 15px/1 Georgia, serif; }
+.pc.red { color: #dc2626; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 14px; }
+.dl { padding: 9px 16px; border-radius: 10px; border: 1px solid var(--gold); background: linear-gradient(180deg, #2a2210, #120e05); color: var(--gold-hi); font: 700 14px var(--sans); cursor: pointer; }
+.foot { margin-top: 24px; text-align: center; }
+@media (max-width: 560px) { .hand { grid-template-columns: 1fr; gap: 2px; } .kv { grid-template-columns: 1fr; } }

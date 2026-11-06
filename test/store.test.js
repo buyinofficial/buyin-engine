@@ -78,3 +78,25 @@ test('기록 보관소: 엔진 키 줄에 증명서 report_data 가 들어간다
     assert.strictEqual(e.attestation.quote, undefined, 'quote itself is not stored (it is large and re-fetchable)');
     assert.strictEqual(e.keys.sigFp, C.fingerprint(keys.sig));
 });
+
+test('기록 보관소: 공개 영수증은 카드 없이 위치·해시만, 내 판은 내 키 지문으로만 찾는다(다시 열어도)', () => {
+    const dir = tmpDir();
+    const store = new RecordStore(dir);
+    const a = C.publicJwk(C.generateKeyPair().publicKey), b = C.publicJwk(C.generateKeyPair().publicKey);
+    const rec = (handId, seats) => ({ v: 1, handId, tableId: 't1', endedAt: 1, engine: { sigFp: 'x' }, deck: ['As'], seats });
+    store.appendHand(rec('h1', [{ seat: 0, odcId: 'a', keys: { sig: a } }, { seat: 1, odcId: 'b', keys: { sig: b } }]), 'sig1');
+    store.appendHand(rec('h2', [{ seat: 0, odcId: 'a', keys: { sig: a } }, { seat: 1, odcId: 'c', keys: null }]), 'sig2');
+
+    const r = store.receipt('h1');
+    assert.strictEqual(r.handId, 'h1');
+    assert.strictEqual(r.hash, store.getHand('h1').hash);
+    assert.strictEqual(r.recordHash, C.sha256hex(C.stableStringify(store.getHand('h1').record)));
+    assert.ok(!JSON.stringify(r).includes('"As"'), 'receipt has no cards');
+    assert.strictEqual(store.receipt('nope'), null);
+
+    assert.deepStrictEqual(store.handsOfKey(C.fingerprint(a)), ['h2', 'h1']);
+    assert.deepStrictEqual(store.handsOfKey(C.fingerprint(b)), ['h1']);
+    assert.deepStrictEqual(store.handsOfKey('someone-else'), []);
+    const again = new RecordStore(dir);
+    assert.deepStrictEqual(again.handsOfKey(C.fingerprint(a)), ['h2', 'h1']);
+});

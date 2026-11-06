@@ -109,6 +109,11 @@ function msgEntropy(tableId, seedCommit, entropyHex) {
     return JSON.stringify(['pz-ent-v1', String(tableId), String(seedCommit), String(entropyHex)]);
 }
 
+/** 내 판 기록 요청 — 그 판에 앉았던 키로만 받는다. ts 는 요청 시각(ms), 5분 안에서만 받는다 */
+function msgMine(sigFp, ts, handId) {
+    return JSON.stringify(['pz-mine-v1', String(sigFp), Number(ts), String(handId || '')]);
+}
+
 // ---------------------------------------------------------------- 홀카드 봉투
 
 function _envelopeKey(corePrivateKey, playerEcdhPublic, handId) {
@@ -139,6 +144,6 @@ module.exports = {
     b64u, fromB64u, sha256, sha256hex, stableStringify,
     generateKeyPair, publicJwk, importPublicJwk, fingerprint,
     sign, verify,
-    msgRegister, msgKeyConfirm, msgAction, msgPreAction, msgRaiseCommit, msgEntropy,
+    msgRegister, msgKeyConfirm, msgAction, msgPreAction, msgRaiseCommit, msgEntropy, msgMine,
     sealEnvelope, openEnvelope,
 };

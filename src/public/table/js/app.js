@@ -193,6 +193,7 @@ async function openHole(d) {
         let ok = !!commits;
         for (const c of cards) ok = ok && await V.checkOpening(d.handId, commits, c);
         S.hole = cards; S.holeOk = ok; S.holeHandId = d.handId;
+        V.saveHole(d.handId, cards);   // 판이 끝난 뒤 '내 판 기록 검증하기'가 기록과 맞춰 본다
     } catch (e) { S.holeOk = false; console.error('hole', e); }
     render();
 }
@@ -662,7 +663,7 @@ function wireButtons() {
         if (r.ok && r.pending) toast(t('leftAfter'));
     };
     $('#btn-sound').onclick = (e) => { S.sound = !S.sound; e.currentTarget.classList.toggle('on', !S.sound); };
-    $('#btn-verify').onclick = () => showProof();
+    $('#btn-verify').onclick = () => window.open('verify.html', '_blank', 'noopener');
     $('.verify-badge button').onclick = () => showProof();
     S.timerTick = setInterval(() => {
         const bar = $('.turnbar');

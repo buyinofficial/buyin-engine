@@ -6,6 +6,8 @@
  *   POST /table/join              { ticket } → { token, seat, tableId, seedCommit }
  *   GET  /table/events?token=     이벤트 흐름(SSE) — 접속하자마자 snapshot, 이후 판 진행
  *   POST /table/cmd               { token, type, ... } — 키 등록·무작위 값·액션·자리 비움·일어나기
+ *   GET  /table/verify.html       내 판 기록 검증하기 (공개 화면)
+ *   GET  /table/engine/<파일>     검증 화면이 그대로 돌리는 엔진 소스(지금 도는 그 파일)
  *
  * 테이블 화면은 다른 사이트의 틀(iframe) 안에서 열리지 않는다(frame-ancestors 'none') — 운영 화면이 덮어씌우지 못하게.
  * 화면이 부를 수 있는 곳은 이 TEE 뿐이다(connect-src 'self').
@@ -15,6 +17,9 @@ const fs = require('fs');
 const path = require('path');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public', 'table');
+const SRC_DIR = path.join(__dirname, '..');
+/** 검증 화면이 브라우저에서 그대로 돌리는 엔진 파일 — 지금 이 TEE 에서 도는 바로 그 파일이다 */
+const ENGINE_FILES = new Set(['verify.js', 'crypto.js', 'cards.js', 'HandCore.js', 'HandEvaluator.js', 'PotManager.js', 'money.js']);
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json',
     '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg' };
 const PAGE_HEADERS = {
@@ -90,6 +95,15 @@ function tableRoutes(tables) {
             return true;
         }
 
+        const ef = p.match(/^\/table\/engine\/([A-Za-z]+\.js)$/);
+        if (req.method === 'GET' && ef && ENGINE_FILES.has(ef[1])) {
+            // 파일 글자를 그대로 감싸기만 한다(CSP 가 eval 을 막으므로 <script> 로 싣는다). 가운데 줄은 저장소의 파일과 같다
+            const data = Buffer.concat([Buffer.from(`__engineModule(${JSON.stringify(ef[1])}, function (require, module, exports, Buffer) {\n`),
+                fs.readFileSync(path.join(SRC_DIR, ef[1])), Buffer.from('\n});\n')]);
+            res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Content-Length': data.length, 'Cache-Control': 'no-store', ...PAGE_HEADERS });
+            res.end(data);
+            return true;
+        }
         if (req.method === 'GET' && p.startsWith('/table/')) {
             if (serveFile(res, decodeURIComponent(p.slice('/table/'.length)))) return true;
             json(res, 404, { ok: false, error: 'not found' });

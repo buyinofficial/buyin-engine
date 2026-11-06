@@ -44,6 +44,7 @@ export const msg = {
     keyConfirm: (tableId, odcId, sigFp, ecdhFp) => JSON.stringify(['pz-key-v1', String(tableId), String(odcId), sigFp, ecdhFp]),
     action: (handId, q, action, amount) => JSON.stringify(['pz-act-v1', String(handId), Number(q), String(action), Number(amount) || 0]),
     entropy: (tableId, seedCommit, entropyHex) => JSON.stringify(['pz-ent-v1', String(tableId), String(seedCommit), String(entropyHex)]),
+    mine: (sigFp, ts, handId) => JSON.stringify(['pz-mine-v1', String(sigFp), Number(ts), String(handId || '')]),
 };
 
 /** 카드 약속 확인 — 엔진 src/cards.js */
@@ -52,21 +53,43 @@ export async function checkOpening(handId, commitments, op) {
     return hex(await sha256('pz-card-v1|' + handId + '|' + op.i + '|' + op.c + '|' + op.s)) === commitments[op.i];
 }
 
-// ---- 키 보관
-const DB = 'buyin-table', STORE = 'keys';
+// ---- 키 보관 · 내가 받은 홀카드(판이 끝난 뒤 검증 화면이 기록과 맞춰 본다)
+const DB = 'buyin-table', STORE = 'keys', HOLES = 'holes';
 function idb() {
     return new Promise((resolve, reject) => {
-        const r = indexedDB.open(DB, 1);
-        r.onupgradeneeded = () => r.result.createObjectStore(STORE);
+        const r = indexedDB.open(DB, 2);
+        r.onupgradeneeded = () => {
+            if (!r.result.objectStoreNames.contains(STORE)) r.result.createObjectStore(STORE);
+            if (!r.result.objectStoreNames.contains(HOLES)) r.result.createObjectStore(HOLES);
+        };
         r.onsuccess = () => resolve(r.result);
         r.onerror = () => reject(r.error);
     });
 }
-async function idbGet(key) {
-    try { const db = await idb(); return await new Promise((res) => { const q = db.transaction(STORE, 'readonly').objectStore(STORE).get(key); q.onsuccess = () => res(q.result); q.onerror = () => res(undefined); }); } catch (_e) { return undefined; }
+async function idbGet(key, store = STORE) {
+    try { const db = await idb(); return await new Promise((res) => { const q = db.transaction(store, 'readonly').objectStore(store).get(key); q.onsuccess = () => res(q.result); q.onerror = () => res(undefined); }); } catch (_e) { return undefined; }
 }
-async function idbPut(key, value) {
-    try { const db = await idb(); await new Promise((res) => { const tx = db.transaction(STORE, 'readwrite'); tx.objectStore(STORE).put(value, key); tx.oncomplete = res; tx.onerror = res; }); } catch (_e) { /* 사생활 보호 모드 — 이번 접속 동안만 */ }
+async function idbPut(key, value, store = STORE) {
+    try { const db = await idb(); await new Promise((res) => { const tx = db.transaction(store, 'readwrite'); tx.objectStore(store).put(value, key); tx.oncomplete = res; tx.onerror = res; }); } catch (_e) { /* 사생활 보호 모드 — 이번 접속 동안만 */ }
+}
+async function idbKeys(store) {
+    try { const db = await idb(); return await new Promise((res) => { const q = db.transaction(store, 'readonly').objectStore(store).getAllKeys(); q.onsuccess = () => res(q.result || []); q.onerror = () => res([]); }); } catch (_e) { return []; }
+}
+
+/** 판 도중 받은 내 홀카드(봉투를 연 그대로) */
+export const saveHole = (handId, cards) => idbPut(String(handId), { cards, at: Date.now() }, HOLES);
+export const getHole = (handId) => idbGet(String(handId), HOLES);
+
+/** 이 브라우저에 있는 회원 키 전부 — 검증 화면용(새로 만들지 않는다) */
+export async function existingKeys() {
+    const out = [];
+    for (const k of await idbKeys(STORE)) {
+        const pair = await idbGet(k);
+        if (!pair || !pair.sig) continue;
+        const sigJwk = pubJwk(await crypto.subtle.exportKey('jwk', pair.sig.publicKey));
+        out.push({ odcId: String(k).replace(/^u:/, ''), sig: pair.sig, sigJwk, sigFp: await fingerprint(sigJwk) });
+    }
+    return out;
 }
 
 const pubJwk = (j) => ({ kty: String(j.kty), crv: String(j.crv), x: String(j.x), y: String(j.y) });

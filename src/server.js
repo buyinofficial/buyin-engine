@@ -90,6 +90,12 @@ function handleGet(req, res) {
     }
     if (p === '/records/head') return store ? send(res, 200, { ok: true, ...store.headInfo() }, PUBLIC_HEADERS) : send(res, 404, { ok: false, error: 'no record store' }, PUBLIC_HEADERS);
     if (p === '/records/keys') return store ? send(res, 200, { ok: true, keys: store.engineKeys() }, PUBLIC_HEADERS) : send(res, 404, { ok: false, error: 'no record store' }, PUBLIC_HEADERS);
+    const rc = p.match(/^\/records\/receipt\/([A-Za-z0-9_.:-]{1,128})$/);
+    if (rc) {
+        if (!store) return send(res, 404, { ok: false, error: 'no record store' }, PUBLIC_HEADERS);
+        const r = store.receipt(rc[1]);
+        return r ? send(res, 200, { ok: true, receipt: r, head: store.headInfo() }, PUBLIC_HEADERS) : send(res, 404, { ok: false, error: 'not found' }, PUBLIC_HEADERS);
+    }
     if (p.startsWith('/records')) {
         if (!authorized(req)) return send(res, 401, { ok: false, error: 'unauthorized' });
         if (!store) return send(res, 404, { ok: false, error: 'no record store' });
@@ -107,12 +113,44 @@ function handleGet(req, res) {
     return send(res, 404, { ok: false, error: 'not found' });
 }
 
+/**
+ * 내 판 기록 — 운영 토큰 없이, 그 판에 앉았던 회원 키의 서명으로만 준다.
+ *   { sig: 회원 서명 공개키 JWK, ts, proof = sign(msgMine(지문, ts, handId)), handId? }
+ *   handId 가 없으면 이 키로 앉았던 판 목록(최근 50), 있으면 그 판의 사슬 줄 전체(카드 포함 — 판이 끝난 뒤의 기록뿐이다)
+ */
+const MINE_WINDOW_MS = 5 * 60 * 1000;
+function handleMine(req, res) {
+    let size = 0;
+    const chunks = [];
+    req.on('data', (c) => { size += c.length; if (size > 16 * 1024) req.destroy(); else chunks.push(c); });
+    req.on('end', () => {
+        let m;
+        try { m = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch (_e) { return send(res, 400, { ok: false, error: 'bad json' }); }
+        if (!store) return send(res, 404, { ok: false, error: 'no record store' });
+        let fp;
+        try {
+            const key = C.importPublicJwk(m.sig);
+            fp = C.fingerprint(m.sig);
+            if (!(Math.abs(Date.now() - Number(m.ts)) < MINE_WINDOW_MS)) return send(res, 400, { ok: false, error: 'stale request' });
+            if (!C.verify(key, C.msgMine(fp, m.ts, m.handId), m.proof)) return send(res, 401, { ok: false, error: 'bad proof' });
+        } catch (_e) { return send(res, 400, { ok: false, error: 'bad key' }); }
+        const mine = store.handsOfKey(fp);
+        if (!m.handId) {
+            const hands = mine.map((id) => store.receipt(id)).filter(Boolean);
+            return send(res, 200, { ok: true, sigFp: fp, hands });
+        }
+        if (!mine.includes(String(m.handId))) return send(res, 404, { ok: false, error: 'not your hand' });
+        return send(res, 200, { ok: true, entry: store.getHand(m.handId) });
+    });
+}
+
 let tables = null, tableHandler = null;
 
 const server = http.createServer((req, res) => {
     if (tableHandler && tableHandler(req, res, new URL(req.url, 'http://engine'))) return;
     if (req.method === 'OPTIONS') { res.writeHead(204, { ...PUBLIC_HEADERS, 'Access-Control-Allow-Methods': 'GET' }); return res.end(); }
     if (req.method === 'GET') return handleGet(req, res);
+    if (req.method === 'POST' && req.url === '/records/mine') return handleMine(req, res);
     if (req.method !== 'POST' || req.url !== '/rpc') return send(res, 404, { ok: false, error: 'not found' });
     if (!authorized(req)) { req.resume(); return send(res, 401, { ok: false, error: 'unauthorized' }); }
     let size = 0;
