@@ -1,15 +1,22 @@
 # Phala Cloud (dstack, Intel TDX) deployment of the BUY-IN engine.
-# The image is pinned by digest: it is the v0.3.0 image built by GitHub Actions from this repository.
+# The image is pinned by digest: it is the v0.4.0 image built by GitHub Actions from this repository.
+# The build is reproducible — rebuilding tag v0.4.0 gives the same digest (README → "Rebuild the image yourself").
 # This file's hash is measured into the TEE (compose-hash in RTMR3), so anyone can recompute it and compare.
 # TEE_RPC_TOKEN is an encrypted secret: only the TEE can decrypt it. It decides who may call /rpc, nothing else.
+# Hand records are kept on the TEE data disk (volume "records"), encrypted with a key only the TEE receives.
 services:
   engine:
-    image: ghcr.io/buyinofficial/buyin-engine@sha256:14cf36f48ca1ea69299d11d035f2846b1371935146304839dfcaa3c8c6cba1fc
+    image: ghcr.io/buyinofficial/buyin-engine@sha256:facee44d2b5db8eb3c7b249250d7f7c5162b08328ff4b56ccd087013a31bec49
     restart: always
     ports:
       - "3900:3900"
     environment:
       - TEE_MODE=dstack
+      - TEE_RECORD_DIR=/data/records
       - TEE_RPC_TOKEN=${TEE_RPC_TOKEN}
     volumes:
       - /var/run/dstack.sock:/var/run/dstack.sock
+      - records:/data
+
+volumes:
+  records:
