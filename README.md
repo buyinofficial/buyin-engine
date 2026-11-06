@@ -75,12 +75,12 @@ The records form a hash chain: each line holds the hash of the line before it, s
 
 | Endpoint | Who | What |
 |---|---|---|
-| `GET /records/head` | anyone | `{ count, head, hands, base, storage, retentionDays }` — the current end of the chain (save it; `count` can only grow), where the kept part starts, and how much is stored |
+| `GET /records/head` | anyone | `{ count, head, hands, first, sent, storage, retentionDays }` — the current end of the chain (save it; `count` can only grow), the first kept line, how far the console has received, and how much is stored |
 | `GET /records/keys` | anyone | every engine key the chain has seen |
-| `GET /records/hand/<handId>` | operator (token) | one hand record with its chain position — past cards are in it |
-| `GET /records?from=&limit=` | operator (token) | chain export for backup and audit. `from=N` also tells the engine the console has stored everything before `N` |
 
-**Retention.** Finished records are kept on the TEE disk for `TEE_RETENTION_DAYS` days (90 in `deploy/docker-compose.yml`, measured). A day file is deleted only when it is past that age, the console has already read past it, and it holds no seat that is still unsettled. Before deleting, the engine appends a `prune` line (range, hash of the last deleted line, file names, number of hands) and writes a checkpoint, so the kept chain still verifies from that hash (`verifyChain(entries, lastHash, upTo)`). Engine keys from deleted files stay listed at `/records/keys`. The console keeps every record with the engine's signature, so a deleted hand can still be verified from the console's copy.
+**Sending to the console.** The operator cannot read records out of the engine. Each line the engine writes to the chain (engine key, seat-in, settlement note, finished signed hand) is sent by the engine to `TEE_CONSOLE_URL` (in the measured compose — the only place the engine connects to), in order (`src/outbox.js`). The console answers with the next line number it expects; if one is missing the engine sends again from there, and failed sends are retried. A hand in play is not in the chain, so it cannot be sent.
+
+**Retention.** Records are kept on the TEE disk for `TEE_RETENTION_DAYS` days (90, measured). Day files past that age that were already sent are deleted; the kept chain continues from the `prev` hash of its first line. The console keeps every record with the engine's signature.
 
 ## Rebuild the image yourself
 
@@ -109,7 +109,7 @@ The test suite covers:
 ## Status
 
 - **Stage 1–2:** the engine runs as a separate process (`mode: "dev"`). The cryptographic guarantees above hold, but there is no hardware attestation.
-- **0.6.0:** record retention — the engine notes how far the console has read (`/records?from=`), deletes day files older than `TEE_RETENTION_DAYS` only behind that point and behind any unsettled seat, leaves a `prune` line and a checkpoint, and publishes storage (bytes, files, oldest day, console position, free disk) at `/records/head` and `/info`. Chain export skips files that end before `from`.
+- **0.7.0:** the engine sends its records to the console (`TEE_CONSOLE_URL`, retried, resent from the console's next number if one is missing); the operator's record export (`/records`, `/records/hand/<id>`) is removed. Records older than `TEE_RETENTION_DAYS` (90) that were sent are deleted. `/records/head` and `/info` show storage (bytes, files, oldest day, free disk) and how far the console has received.
 - **0.5.9:** basic hardening — HTTP time limits and connection cap, rate limits (join, commands per seat, own-records, operator RPC), at most 3 event connections per seat, security headers on every response; the container runs with no Linux capabilities, no privilege escalation and a read-only root filesystem.
 - **0.5.8:** the pre-game brief asks four closed questions (YES/NO) about card secrecy and one TRUE/FALSE conclusion.
 - **0.5.7:** the 0.5.5 player-key binding is removed (seating and impersonation are checked after the fact from the records, not by the program); a player's new session closes the old seat; a seat whose signing key changes is closed.

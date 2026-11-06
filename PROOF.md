@@ -19,7 +19,7 @@ Every statement below names the file and function that implements it. Please che
 
 The claim reviewers are asked to check is only this: **the operator cannot see the cards while a hand is played.** Concretely:
 
-1. **The deck and card data do not go to the operator until the hand is over.** The deck is created and shuffled inside the engine in the TEE (`src/Engine.js` `startHand`, `src/cards.js`). During a hand the operator's only engine channels are `/rpc`, which in table mode answers only `info` (`src/server.js` `RPC_IN_TABLE_MODE`), and `/records`, which contains only finished hands (`Engine._closeHand` → `src/store.js` `appendHand`). The engine prints no cards to its logs.
+1. **The deck and card data do not go to the operator until the hand is over.** The deck is created and shuffled inside the engine in the TEE (`src/Engine.js` `startHand`, `src/cards.js`). During a hand the operator's only engine channel is `/rpc`, which in table mode answers only `info` (`src/server.js` `RPC_IN_TABLE_MODE`). The operator cannot read records out of the engine; the engine sends the console the lines of its record chain (`src/outbox.js`, to `TEE_CONSOLE_URL` in the measured compose), and a hand is written to that chain only when it is closed (`Engine._closeHand` → `src/store.js` `appendHand`). The engine prints no cards to its logs.
 2. **Hole cards go from the TEE straight to each player.** Each player's two cards are sealed to that player's own browser key (`src/crypto.js` `sealEnvelope`: ECDH + HKDF-SHA-256 + AES-256-GCM) and sent only to that player's connection (`src/table/TableServer.js` `_startHand` → `_send(s, 'hole', …)`; `snapshot` contains no other player's cards). The browser connects to the TEE directly (the table page is served by the TEE, `src/table/http.js`); the private key is a non-extractable WebCrypto key in that browser (`src/public/table/js/vault.js`). Board cards leave the engine only when the betting round is over, to everyone at the table.
 3. **After the hand, the game record goes to the operator.** Only then is the signed record (with all cards) appended to the chain the operator may read.
 
@@ -106,7 +106,7 @@ Hole cards of players still in the hand are revealed to the table only at showdo
 | Channel | What it can do |
 |---|---|
 | `/rpc` (operator token) | In table mode (on when the measured compose sets `TEE_CONSOLE_KEY`) it answers **only** `info`; every game method returns 403 (`src/server.js` `RPC_IN_TABLE_MODE`; `test/server.test.js`). No hands opened, no actions, no key changes, no aborts. |
-| `/records`, `/records/hand/<id>` (operator token) | Read the record chain. A hand is appended **only when it is closed** (`Engine._closeHand` → `onRecord` → `RecordStore.appendHand`). A running hand is not in the chain. |
+| `src/outbox.js` → `TEE_CONSOLE_URL` (engine sends) | The lines of the record chain, in order. A hand is appended **only when it is closed** (`Engine._closeHand` → `onRecord` → `RecordStore.appendHand`). A running hand is not in the chain, so it cannot be sent. |
 | `/table/*` | Needs a seat token, which only the seated browser has. |
 | Logs | The engine prints no cards (only the start line and a pot-validation warning). Logs are not public. |
 | Disk | Encrypted by dstack with a key only this app receives (A2); holds only closed hands. |
@@ -134,7 +134,7 @@ The operator issues tickets, so it can seat accounts like any player — its own
 - The full hand record is signed with the attested engine key (`Engine._closeHand`) and appended to a SHA-256 hash chain on the TEE disk (`src/store.js`); `/records/head` only grows and any finished hand has a public receipt (`/records/receipt/<id>`, no cards).
 - The player's own browser can fetch its hands with its own key (`POST /records/mine`, no operator token) and replay them with the engine's own files (`/table/verify.html`). It remembers the chain length it has seen and warns if it ever shrinks.
 - Payouts: the engine signs what each seat leaves with (`TableServer._settle`, amounts only) and keeps it in the chain. The operator holds the money and pays out; the protocol makes any short payment provable (the signed note), it does not force payment.
-- Retention: finished records stay on the TEE disk for `TEE_RETENTION_DAYS` (90, in the measured compose). Only whole day files past that age, already read by the console and with no unsettled seat, are deleted — by the engine itself (`RecordStore.prune`), never by hand: a `prune` line in the chain names what was removed and the hash it ends on, and the kept chain verifies from there. This only ever removes finished hands; there are no cards of a hand in play on the disk to remove.
+- Retention: records stay on the TEE disk for `TEE_RETENTION_DAYS` (90, in the measured compose). Day files past that age that were already sent to the console are deleted by the engine itself (`RecordStore.prune`); the kept chain continues from the `prev` hash of its first line.
 - Removal of history: the chain detects any change or removal inside it. Deleting the whole store (or rolling it back) is prevented by A2 (the disk is the app's, encrypted with its key) and detected by anyone who saved an earlier `/records/head` — every player's verification page saves the length it has seen and warns if it shrinks.
 
 ---

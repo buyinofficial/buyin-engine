@@ -20,7 +20,8 @@ const READ = [
     ['src/Engine.js', '`startHand`: the deck is made inside the engine and each player\'s two cards are sealed to that player\'s key; `_closeHand`: the full record exists only after the hand'],
     ['src/crypto.js', '`sealEnvelope`: ECDH(engine key, player key) → HKDF → AES-256-GCM'],
     ['src/table/TableServer.js', '`_startHand`: each sealed envelope goes only to its own seat; `snapshot`: no other player\'s cards'],
-    ['src/server.js', '`RPC_IN_TABLE_MODE`: the operator\'s `/rpc` answers only `info`; `/records` returns finished hands only'],
+    ['src/server.js', '`RPC_IN_TABLE_MODE`: the operator\'s `/rpc` answers only `info`; there is no route for the operator to read records'],
+    ['src/outbox.js', 'the only outbound connection: lines of the record chain, sent to `TEE_CONSOLE_URL` (in the measured compose)'],
     ['src/store.js', 'hands are appended to the record chain only when closed'],
     ['src/table/http.js', 'the table page is served by this TEE (`connect-src \'self\'`, no framing); the seat token is never in a URL'],
     ['src/public/table/js/vault.js', 'the player\'s keys are non-extractable WebCrypto keys; the envelope is opened only in the browser'],
@@ -47,7 +48,7 @@ function auditReport(info, records, keyCount, base, opts = {}) {
     L.push(`Investigate **${REPO} at commit \`${ref}\`** (links below are pinned to that commit). For each question answer **YES or NO**, then one line naming the file and function your answer rests on. Do not add other topics.`);
     L.push('');
     L.push(`- **Q1.** Do the files listed at ${base}/review/manifest (the files this engine loads, with SHA-256) match the files at commit \`${ref}\`?`);
-    L.push(`- **Q2.** In that code, while a hand is in play, is there any code path that sends the deck or a not-yet-revealed card to the operator's side (\`/rpc\`, \`/records\`, logs)?`);
+    L.push(`- **Q2.** In that code, while a hand is in play, is there any code path that sends the deck or a not-yet-revealed card to the operator's side (\`/rpc\`, the records the engine sends to the console, logs)?`);
     L.push(`- **Q3.** In that code, is there any code path that sends a player's hole cards, before they are revealed at showdown or all-in run-out, to anyone other than that player (the operator's servers or other players)?`);
     L.push(`- **Q4.** In that code, does the game record containing the cards reach the operator only after the hand has ended?`);
     L.push('');
@@ -68,7 +69,6 @@ function auditReport(info, records, keyCount, base, opts = {}) {
     L.push(`| Table mode | ${tableMode ? 'on — every hand runs here; the operator\'s `/rpc` answers only `info`' : 'off'} |`);
     L.push(`| Files the engine loads | ${review ? `${review.files} files, tree hash \`${review.treeHash}\` — ${base}/review/manifest` : 'n/a'} |`);
     L.push(`| Finished hands in the TEE record chain | ${records ? `${records.hands}` : 'n/a'} (only finished hands are ever written) |`);
-    L.push(`| Record retention | ${opts.retentionDays ? `${opts.retentionDays} days, then only records the console has already copied (a \`prune\` line marks each deletion)` : 'n/a'} |`);
     L.push(`| Phala app id | ${a && a.appId ? '`' + a.appId + '`' : 'n/a'} |`);
     L.push('');
     L.push('## How the running program ties to the commit');
@@ -88,7 +88,7 @@ function auditReport(info, records, keyCount, base, opts = {}) {
     L.push(`- **The deck** is created and shuffled inside the engine (TEE memory). Only 52 hash commitments are published at hand start.`);
     L.push(`- **Hole cards** are sealed to each player's own browser key (ECDH + HKDF + AES-GCM) and sent only to that player's connection. The private key is a non-extractable WebCrypto key in that browser.`);
     L.push(`- **Board cards** leave the engine only when the betting round is over, to everyone at the table. Hole cards of players still in the hand are shown at showdown, as in any poker game.`);
-    L.push(`- **The operator** cannot ask the engine for anything during a hand (\`/rpc\` answers only \`info\`); the record chain it may read contains only finished hands; the engine prints no cards to its logs; the browser talks to this TEE directly, not through the operator's servers.`);
+    L.push(`- **The operator** cannot ask the engine for anything during a hand (\`/rpc\` answers only \`info\`); it cannot read records out of the engine — the engine sends it the record chain, which contains only finished hands; the engine prints no cards to its logs; the browser talks to this TEE directly, not through the operator's servers.`);
     L.push('');
     L.push('## Assumptions (stated, not hidden)');
     L.push('');

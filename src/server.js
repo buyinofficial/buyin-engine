@@ -4,12 +4,9 @@
  *   POST /rpc                 { m: 메서드, p: 인자 } → { ok, ... }      운영 서버만 (Authorization: Bearer <TEE_RPC_TOKEN>)
  *   GET  /                    감사 보고서(markdown) — 사람·AI 가 이것만 읽어도 확인 방법과 지금 값이 나온다   누구나
  *   GET  /info                엔진 공개키·버전·증명서·기록 사슬 끝         누구나 (브라우저가 키·증명서를 직접 확인한다)
- *   GET  /records/head        기록 사슬 끝 { count, head, hands, base, storage } 누구나 — 지금까지 남긴 기록의 지문과 용량
+ *   GET  /records/head        기록 사슬 끝 { count, head, hands, first, sent, storage } 누구나 — 지금까지 남긴 기록의 지문·용량
  *   GET  /review/manifest     지금 이 엔진이 싣고 도는 파일 목록과 SHA-256(sha256sum 형식) 누구나 — GitHub 커밋의 파일과 대조
  *   GET  /records/keys        엔진 키 줄 전부(뜰 때마다 하나)            누구나 — 옛 기록을 옛 키로 검증
- *   GET  /records/hand/<id>   판 기록 한 줄 (사슬 위치·해시 포함)        운영 서버만 — 지난 판의 카드가 들어 있다
- *   GET  /records?from=&limit= 사슬 줄 내보내기(백업·감사)              운영 서버만 — 콘솔은 여기서 정산서·판 기록을 가져간다(TEE 는 밖으로 연결하지 않는다)
- *                             from=N 은 '콘솔이 N 앞까지 저장했다'는 뜻이기도 하다 — 보관 기간이 지난 기록은 이 위치 앞만 지운다(store.js)
  *   /table/...                테이블 서버 — 회원이 TEE 와 직접 게임한다 (table/http.js)
  *
  * 환경 변수
@@ -20,14 +17,15 @@
  *   TEE_RECORD_DIR      판 기록 보관 폴더(TEE 데이터 디스크). dstack 모드에서는 반드시 있어야 한다
  *   TEE_CONSOLE_KEY     콘솔 좌석표 공개키(JWK JSON). 있으면 테이블 서버를 켠다. 배포 설정(측정됨)에 공개로 둔다
  *   TEE_DISCONNECT_GRACE_MS 연결이 끊긴 좌석이 탈락하기까지(기본 60000). 배포 설정(측정됨)에 공개로 둔다
- *   TEE_RETENTION_DAYS  끝난 판 기록을 TEE 에 두는 날 수(기본 90, 최소 7). 콘솔이 가져간 기록만 지운다. 배포 설정(측정됨)에 공개로 둔다
+ *   TEE_CONSOLE_URL     사슬에 쓴 줄(끝난 판·정산서 등)을 보내는 콘솔 주소 — 엔진이 밖으로 연결하는 유일한 곳(outbox.js). 배포 설정(측정됨)에 공개로 둔다
+ *   TEE_RETENTION_DAYS  보낸 기록을 TEE 에 두는 날 수(기본 90, 최소 7). 지난 하루 파일은 지운다. 배포 설정(측정됨)에 공개로 둔다
  *   TEE_ALLOW_UNSIGNED  1 이면 키 없는 좌석의 평문 카드·서명 없는 액션 허용 (시험 전용, dev 모드만)
  *
  * 토큰은 "누가 RPC 를 부르나"만 정한다. 토큰이 있어도 카드를 보거나 회원 서명 없이 칩을 움직일 수는 없다(RULES.md 3장).
  *
  * 테이블 모드(TEE_CONSOLE_KEY 가 있을 때): 판은 전부 이 TEE 안의 테이블 서버가 돌린다. 그래서 /rpc 는 'info' 말고 모두 닫는다
  * — 운영 서버가 판을 열거나, 액션을 넣거나, 회원 키를 바꿔 끼우거나, 판을 무효로 하는 길이 없다.
- * 운영 서버에 남는 엔진 길은 끝난 판의 기록 읽기(/records, 토큰)뿐이다. 진행 중인 판은 사슬에 없다.
+ * 운영 서버가 엔진에서 꺼내 가는 길은 없다. 엔진이 사슬에 쓴 줄(끝난 판·정산서)을 콘솔로 보낼 뿐이다. 진행 중인 판은 사슬에 없다.
  */
 
 const http = require('http');
@@ -40,10 +38,11 @@ const C = require('./crypto');
 const { TableServer } = require('./table/TableServer');
 const { tableRoutes } = require('./table/http');
 const { RateLimiter } = require('./limits');
+const { Outbox } = require('./outbox');
 
 // 요청 폭주 막기(서비스 거부 방지) — 넘치면 429
 const LIMIT = {
-    rpc: new RateLimiter(50, 100),     // 운영 서버 /rpc · /records
+    rpc: new RateLimiter(50, 100),     // 운영 서버 /rpc
     mine: new RateLimiter(20, 40),     // 내 판 기록(서명 확인 비용)
 };
 // 모든 응답에 붙는 보안 헤더
@@ -55,8 +54,8 @@ const HOST = process.env.TEE_HOST || '127.0.0.1';
 const TOKEN = process.env.TEE_RPC_TOKEN || '';
 const RECORD_DIR = process.env.TEE_RECORD_DIR || '';
 const MAX_BODY = 64 * 1024;   // /rpc 는 테이블 모드에서 info 만 받는다
+const CONSOLE_URL = process.env.TEE_CONSOLE_URL || '';
 const RETENTION_DAYS = Math.max(7, Math.floor(Number(process.env.TEE_RETENTION_DAYS) || 90));
-const PRUNE_EVERY_MS = 6 * 60 * 60 * 1000;   // 하루 네 번 본다
 const CONSOLE_KEY = process.env.TEE_CONSOLE_KEY ? C.importPublicJwk(JSON.parse(process.env.TEE_CONSOLE_KEY)) : null;
 
 if (MODE !== 'dev' && MODE !== 'dstack') throw new Error(`unknown TEE_MODE ${MODE}`);
@@ -111,7 +110,7 @@ const MANIFEST = (() => {
 function info() {
     const i = engine.call('info');
     const out = { ...i, review: { files: MANIFEST.count, treeHash: MANIFEST.treeHash } };
-    return store ? { ...out, records: { ...store.headInfo(), storage: store.storage(), retentionDays: RETENTION_DAYS } } : out;
+    return store ? { ...out, records: { ...store.headInfo(), storage: store.storage(), retentionDays: RETENTION_DAYS, consoleUrl: CONSOLE_URL || null } } : out;
 }
 
 function handleGet(req, res) {
@@ -121,7 +120,7 @@ function handleGet(req, res) {
     if (p === '/' || p === '/audit') {
         // 사람·AI 가 읽는 감사 보고서 (평문 markdown) — 값은 /info 와 같다
         const base = `https://${String(req.headers.host || '').replace(/[^\w.:-]/g, '')}`;
-        const text = auditReport(engine.call('info'), store ? store.headInfo() : null, store ? store.engineKeys().length : 0, base, { tableMode: !!tables, review: { files: MANIFEST.count, treeHash: MANIFEST.treeHash }, retentionDays: store ? RETENTION_DAYS : 0 });
+        const text = auditReport(engine.call('info'), store ? store.headInfo() : null, store ? store.engineKeys().length : 0, base, { tableMode: !!tables, review: { files: MANIFEST.count, treeHash: MANIFEST.treeHash } });
         res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8', ...PUBLIC_HEADERS });
         return res.end(text);
     }
@@ -136,21 +135,6 @@ function handleGet(req, res) {
         if (!store) return send(res, 404, { ok: false, error: 'no record store' }, PUBLIC_HEADERS);
         const r = store.receipt(rc[1]);
         return r ? send(res, 200, { ok: true, receipt: r, head: store.headInfo() }, PUBLIC_HEADERS) : send(res, 404, { ok: false, error: 'not found' }, PUBLIC_HEADERS);
-    }
-    if (p.startsWith('/records')) {
-        if (!authorized(req)) return send(res, 401, { ok: false, error: 'unauthorized' });
-        if (!store) return send(res, 404, { ok: false, error: 'no record store' });
-        const m = p.match(/^\/records\/hand\/([A-Za-z0-9_.:-]{1,128})$/);
-        if (m) {
-            const entry = store.getHand(m[1]);
-            return entry ? send(res, 200, { ok: true, entry }) : send(res, 404, { ok: false, error: 'not found' });
-        }
-        if (p === '/records') {
-            const from = Math.max(0, Math.floor(Number(u.searchParams.get('from')) || 0));
-            const limit = Math.min(1000, Math.max(1, Math.floor(Number(u.searchParams.get('limit')) || 100)));
-            store.ack(from);   // 콘솔은 저장을 마친 다음 줄부터 읽는다 — from 앞은 콘솔에 있다
-            return send(res, 200, { ok: true, from, entries: store.range(from, limit), head: store.headInfo() });
-        }
     }
     return send(res, 404, { ok: false, error: 'not found' });
 }
@@ -235,18 +219,18 @@ async function start() {
         tables = new TableServer({ engine, store, consoleKey: CONSOLE_KEY, disconnectGraceMs: Number(process.env.TEE_DISCONNECT_GRACE_MS) || undefined });
         setInterval(() => tables.sweep(), 30000).unref();
     }
-    // 보관 기간이 지난 기록 정리 — 재시작 정산(테이블 서버)이 사슬을 읽은 다음에 돈다
     if (store) {
+        // 사슬에 쓴 줄을 콘솔로 보낸다(실패하면 다시) — 콘솔이 엔진에서 꺼내 가는 길은 없다
+        if (CONSOLE_URL) new Outbox({ store, url: CONSOLE_URL, token: TOKEN }).start();
+        // 보관 기간이 지났고 이미 보낸 하루 파일은 지운다
         const prune = () => {
             try {
-                const r = store.prune(RETENTION_DAYS);
-                if (r) console.log(`[tee-engine] pruned records before #${r.upTo}: ${r.files.length} file(s), ${r.hands} hand(s), kept ${RETENTION_DAYS} days`);
-            } catch (e) {
-                console.error(`[tee-engine] prune failed: ${e.message}`);
-            }
+                const gone = store.prune(RETENTION_DAYS);
+                if (gone.length) console.log(`[tee-engine] removed ${gone.length} record file(s) older than ${RETENTION_DAYS} days, already sent`);
+            } catch (e) { console.error(`[tee-engine] prune failed: ${e.message}`); }
         };
         prune();
-        setInterval(prune, PRUNE_EVERY_MS).unref();
+        setInterval(prune, 6 * 60 * 60 * 1000).unref();
     }
     // 테이블 화면·검증 화면은 언제나 TEE 가 내보낸다(테이블 서버가 꺼져 있으면 앉기·명령만 닫힌다)
     tableHandler = tableRoutes(tables);

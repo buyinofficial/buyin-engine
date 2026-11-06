@@ -51,28 +51,3 @@ test('서버: 보안 헤더(nosniff·no-referrer)와 요청 횟수 제한(429)',
         srv.kill();
     }
 });
-
-/** 기록 관리 — 콘솔이 /records?from=N 으로 읽으면 N 앞은 콘솔에 있다. 그 위치와 용량·보관 기간이 공개된다 */
-test('서버: 콘솔이 읽은 위치·기록 용량·보관 기간이 /records/head 와 /info 에 공개된다', async () => {
-    const port = 3970 + Math.floor(Math.random() * 9);
-    const srv = spawn(process.execPath, [path.join(__dirname, '..', 'src', 'server.js')], {
-        env: { ...process.env, TEE_MODE: 'dev', TEE_PORT: String(port), TEE_RPC_TOKEN: 'test-token', TEE_RETENTION_DAYS: '30', TEE_RECORD_DIR: require('fs').mkdtempSync(path.join(require('os').tmpdir(), 'buyin-ret-')) },
-        stdio: 'ignore',
-    });
-    try {
-        let head;
-        for (let i = 0; i < 40; i++) { try { head = await (await fetch(`http://127.0.0.1:${port}/records/head`)).json(); break; } catch (_e) { await new Promise((r) => setTimeout(r, 100)); } }
-        assert.strictEqual(head.retentionDays, 30);
-        assert.strictEqual(head.storage.acked, 0);
-        assert.ok(head.storage.bytes > 0, 'engine key line is stored');
-        // 토큰 없이 읽으면 위치가 바뀌지 않는다
-        assert.strictEqual((await fetch(`http://127.0.0.1:${port}/records?from=1`)).status, 401);
-        const r = await fetch(`http://127.0.0.1:${port}/records?from=1`, { headers: { Authorization: 'Bearer test-token' } });
-        assert.strictEqual(r.status, 200);
-        const info = await (await fetch(`http://127.0.0.1:${port}/info`)).json();
-        assert.strictEqual(info.records.storage.acked, 1);
-        assert.strictEqual(info.records.retentionDays, 30);
-    } finally {
-        srv.kill();
-    }
-});

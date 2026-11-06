@@ -12,17 +12,11 @@
  *           "seat-in"     좌석표로 앉음(좌석표 번호·세션·바이인) — 같은 좌석표 재사용 금지, 재시작 정산
  *           "settle"      정산서(엔진 서명) — 금액만
  *           "hand"        { record, sig } — 엔진이 서명한 판 기록 (판이 끝난 뒤에만)
- *           "prune"       오래된 하루 파일을 지웠다 — 지운 범위(upTo), 그 끝 줄의 해시(lastHash), 파일 이름, 판 수
  *
  * 중간 줄을 지우거나 바꾸면 그 뒤 hash 가 모두 어긋난다(verifyChain). 지금 사슬 끝(head)은 /records/head 로 공개한다.
+ * 줄은 쓰자마자 콘솔로 보낸다(outbox.js). 어디까지 보냈는지는 sent.json 에 둔다.
+ * 보관 기간: 보낸 지 오래된(기본 90일) 하루 파일은 통째로 지운다. 남은 사슬은 첫 줄의 prev 에서 이어진다.
  * 쓰기는 이 파일만 한다(RULES.md 2장 예외): 정해진 폴더에, 덧붙이기만, 매번 fsync.
- *
- * 보관 기간(prune) — 디스크가 끝없이 차지 않게. 하루 파일은 아래가 모두 맞을 때만 지운다.
- *   1. 보관 기간(기본 90일)이 지난 날의 파일이다(오늘 파일은 지우지 않는다)
- *   2. 콘솔이 이미 가져갔다 — 콘솔은 저장한 다음 줄부터 /records?from=N 으로 읽는다. 그래서 N 앞은 콘솔에 있다(ack.json)
- *   3. 정산이 안 끝난 좌석(seat-in 뒤 settle 없음)의 줄이 없다 — 재시작 정산에 필요하다
- *   지울 때는 "prune" 줄을 먼저 사슬에 남기고, 남은 사슬이 이어지는 기준점(checkpoint.json: 다음 번호·앞 줄 해시·지운 파일의 엔진 키)을 쓴 뒤 지운다.
- *   지운 줄은 콘솔 DB 에 엔진 서명째로 남아 있어 언제든 다시 검증된다.
  */
 
 const fs = require('fs');
@@ -30,8 +24,6 @@ const path = require('path');
 const C = require('./crypto');
 
 const GENESIS = '0'.repeat(64);
-const DAY_MS = 24 * 60 * 60 * 1000;
-const FILE_RE = /^records-(\d{4}-\d{2}-\d{2})\.jsonl$/;
 
 function lineHash(prev, body) {
     return C.sha256hex(prev + '\n' + C.stableStringify(body));
@@ -46,79 +38,45 @@ function dayOf(ms) {
     return new Date(ms).toISOString().slice(0, 10);
 }
 
-/** 작은 상태 파일 — 임시 파일에 쓰고 바꿔 끼운다(중간에 꺼져도 반쪽 파일이 남지 않는다) */
-function writeJsonAtomic(file, obj) {
-    const tmp = file + '.tmp';
-    const fd = fs.openSync(tmp, 'w');
-    try {
-        fs.writeSync(fd, JSON.stringify(obj));
-        fs.fsyncSync(fd);
-    } finally {
-        fs.closeSync(fd);
-    }
-    fs.renameSync(tmp, file);
-}
-
-function readJson(file) {
-    try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_e) { return null; }
-}
-
 class RecordStore {
-    /**
-     * @param {string} dir 보관 폴더 (TEE 데이터 디스크)
-     * @param {{ now?: () => number }} [opts]  시계(시험용)
-     */
-    constructor(dir, opts = {}) {
+    /** @param {string} dir 보관 폴더 (TEE 데이터 디스크) */
+    constructor(dir) {
         this.dir = dir;
-        this.now = opts.now || (() => Date.now());
         fs.mkdirSync(dir, { recursive: true });
         this.count = 0;
         this.head = GENESIS;
-        this.base = { i: 0, prev: GENESIS };   // 남은 사슬의 시작 — 지운 적이 없으면 처음부터
-        this.prunedKeys = [];                  // 지운 파일에 있던 엔진 키 줄(옛 기록 검증용으로 계속 공개)
-        this.acked = 0;                        // 콘솔이 가져간 위치 — 이 번호 앞의 줄은 콘솔에 있다
-        this.fileStart = new Map();            // 파일 → 첫 줄 번호 (읽기를 빠르게)
+        this.first = 0;            // 남아 있는 첫 줄 번호(지운 파일이 있으면 0 보다 크다)
+        this.sent = 0;             // 콘솔로 보낸 위치 — 이 번호 앞은 콘솔에 있다
+        this.onAppend = null;      // 새 줄을 쓴 뒤 부른다(콘솔로 보내기)
         this.byHand = new Map();   // handId → { file, i }
         this.byKey = new Map();    // 회원 서명 키 지문 → [handId] (오래된 것부터)
         this._load();
     }
 
     files() {
-        return fs.readdirSync(this.dir).filter((f) => FILE_RE.test(f)).sort();
+        return fs.readdirSync(this.dir).filter((f) => /^records-\d{4}-\d{2}-\d{2}\.jsonl$/.test(f)).sort();
     }
 
-    /** 뜰 때 사슬을 기준점부터 읽어 끝(head)과 판 번호 색인을 되살린다. 어긋나면 뜨지 않는다 */
+    /** 뜰 때 사슬을 처음부터 읽어 끝(head)과 판 번호 색인을 되살린다. 어긋나면 뜨지 않는다 */
     _load() {
-        const cp = readJson(path.join(this.dir, 'checkpoint.json'));
-        if (cp) {
-            this.base = { i: cp.next, prev: cp.prev };
-            this.prunedKeys = cp.keys || [];
-            this.count = cp.next;
-            this.head = cp.prev;
-        }
-        const ack = readJson(path.join(this.dir, 'ack.json'));
-        if (ack) this.acked = Number(ack.acked) || 0;
+        try { this.sent = Number(JSON.parse(fs.readFileSync(path.join(this.dir, 'sent.json'), 'utf8')).sent) || 0; } catch (_e) { /* 처음 */ }
+        let started = false;
         for (const f of this.files()) {
-            const lines = readLines(path.join(this.dir, f));
-            // 기준점 앞의 줄만 든 파일 — 지우다 꺼진 것. 마저 지운다
-            if (lines.length && lines[lines.length - 1].i < this.base.i) { fs.unlinkSync(path.join(this.dir, f)); continue; }
-            for (const entry of lines) {
-                if (entry.i < this.base.i) continue;
+            for (const entry of readLines(path.join(this.dir, f))) {
+                if (!started) { started = true; this.first = this.count = entry.i; this.head = entry.prev; }   // 오래된 파일을 지웠으면 거기서 시작
                 if (entry.i !== this.count || entry.prev !== this.head || entry.hash !== lineHash(entry.prev, bodyOf(entry))) {
                     throw new Error(`record chain broken at ${f} #${entry.i}`);
                 }
-                if (!this.fileStart.has(f)) this.fileStart.set(f, entry.i);
                 this.count += 1;
                 this.head = entry.hash;
                 if (entry.kind === 'hand' && entry.record) this._index(entry.record, f, entry.i);
             }
         }
-        if (this.acked > this.count) this.acked = this.count;
     }
 
     _append(body) {
         const entry = { i: this.count, prev: this.head, hash: lineHash(this.head, body), ...body };
-        const file = `records-${dayOf(this.now())}.jsonl`;
+        const file = `records-${dayOf(Date.now())}.jsonl`;
         const fd = fs.openSync(path.join(this.dir, file), 'a');
         try {
             fs.writeSync(fd, JSON.stringify(entry) + '\n');
@@ -126,9 +84,9 @@ class RecordStore {
         } finally {
             fs.closeSync(fd);
         }
-        if (!this.fileStart.has(file)) this.fileStart.set(file, entry.i);
         this.count += 1;
         this.head = entry.hash;
+        if (this.onAppend) this.onAppend(entry);
         return { entry, file };
     }
 
@@ -136,7 +94,7 @@ class RecordStore {
     appendEngineKey(info) {
         const a = info.attestation || null;
         return this._append({
-            kind: 'engine-key', at: this.now(),
+            kind: 'engine-key', at: Date.now(),
             engine: { name: info.name, version: info.version, mode: info.mode },
             keys: { sig: info.keys.sig, ecdh: info.keys.ecdh, sigFp: info.keys.sigFp, ecdhFp: info.keys.ecdhFp },
             attestation: a ? { type: a.type, reportData: a.reportData, appId: a.appId || null, composeHash: a.composeHash || null } : null,
@@ -145,7 +103,7 @@ class RecordStore {
 
     /** 판이 끝났을 때 — 엔진이 서명한 기록. 실패하면 던진다(그 판은 무효가 된다) */
     appendHand(record, sig) {
-        const { entry, file } = this._append({ kind: 'hand', at: this.now(), record, sig });
+        const { entry, file } = this._append({ kind: 'hand', at: Date.now(), record, sig });
         this._index(record, file, entry.i);
         return entry;
     }
@@ -177,11 +135,48 @@ class RecordStore {
     /** 테이블 서버 사건 — 'seat-in'(좌석표로 앉음), 'settle'(정산서). 판 기록과 같은 사슬에 남아 재시작 뒤에도 돈이 정산된다 */
     appendEvent(kind, body) {
         if (!['seat-in', 'settle'].includes(kind)) throw new Error('unknown event kind');
-        return this._append({ kind, at: this.now(), ...body }).entry;
+        return this._append({ kind, at: Date.now(), ...body }).entry;
     }
 
     headInfo() {
-        return { count: this.count, head: this.head, hands: this.byHand.size, base: this.base.i };
+        return { count: this.count, head: this.head, hands: this.byHand.size, first: this.first, sent: this.sent };
+    }
+
+    /** 콘솔이 n 앞까지 받았다 */
+    markSent(n) {
+        const v = Math.min(Math.floor(Number(n) || 0), this.count);
+        if (v <= this.sent) return;
+        this.sent = v;
+        fs.writeFileSync(path.join(this.dir, 'sent.json.tmp'), JSON.stringify({ sent: v }));
+        fs.renameSync(path.join(this.dir, 'sent.json.tmp'), path.join(this.dir, 'sent.json'));
+    }
+
+    /** 기록 크기와 디스크 남은 공간 (공개) */
+    storage() {
+        let bytes = 0;
+        const files = this.files();
+        for (const f of files) bytes += fs.statSync(path.join(this.dir, f)).size;
+        let freeBytes = null;
+        try { const s = fs.statfsSync(this.dir); freeBytes = s.bavail * s.bsize; } catch (_e) { /* statfs 없음 */ }
+        return { bytes, files: files.length, oldestDay: files.length ? files[0].slice(8, 18) : null, freeBytes };
+    }
+
+    /** 보관 기간이 지났고 콘솔로 보낸 하루 파일을 지운다(오늘 파일은 남긴다). 지운 파일 이름을 돌려준다 */
+    prune(days, now = Date.now()) {
+        const cutoff = dayOf(now - days * 24 * 60 * 60 * 1000);
+        const gone = [];
+        for (const f of this.files()) {
+            const lines = readLines(path.join(this.dir, f));
+            if (f.slice(8, 18) >= cutoff || !lines.length || lines[lines.length - 1].i >= this.sent) break;
+            fs.unlinkSync(path.join(this.dir, f));
+            gone.push(f);
+            this.first = lines[lines.length - 1].i + 1;
+        }
+        if (gone.length) {
+            for (const [id, at] of this.byHand) if (gone.includes(at.file)) this.byHand.delete(id);
+            for (const [fp, ids] of this.byKey) this.byKey.set(fp, ids.filter((id) => this.byHand.has(id)));
+        }
+        return gone;
     }
 
     getHand(handId) {
@@ -191,110 +186,24 @@ class RecordStore {
         return null;
     }
 
-    /** 엔진 키 줄 전부 — 옛 기록을 옛 키로 검증할 때(지운 파일에 있던 키도 포함) */
+    /** 엔진 키 줄 전부 — 옛 기록을 옛 키로 검증할 때 */
     engineKeys() {
-        const out = this.prunedKeys.slice();
-        for (const f of this.files()) for (const e of readLines(path.join(this.dir, f))) if (e.kind === 'engine-key' && e.i >= this.base.i) out.push(e);
+        const out = [];
+        for (const f of this.files()) for (const e of readLines(path.join(this.dir, f))) if (e.kind === 'engine-key') out.push(e);
         return out;
     }
 
-    /** i 번째 줄부터 limit 줄 (내보내기·백업) — from 보다 앞에서 끝나는 파일은 읽지 않는다 */
+    /** i 번째 줄부터 limit 줄 (내보내기·백업) */
     range(from, limit) {
         const out = [];
-        const files = this.files();
-        for (let k = 0; k < files.length; k++) {
-            const next = this.fileStart.get(files[k + 1]);
-            if (next !== undefined && next <= from) continue;
-            for (const e of readLines(path.join(this.dir, files[k]))) {
-                if (e.i < from || e.i < this.base.i) continue;
+        for (const f of this.files()) {
+            for (const e of readLines(path.join(this.dir, f))) {
+                if (e.i < from) continue;
                 out.push(e);
                 if (out.length >= limit) return out;
             }
         }
         return out;
-    }
-
-    /**
-     * 콘솔이 가져간 위치 — 콘솔은 저장을 마친 다음 줄부터 읽는다(/records?from=N). 그래서 N 앞은 콘솔에 있다.
-     * 늘어날 때만 기록한다. 사슬 끝보다 앞설 수 없다.
-     */
-    ack(n) {
-        const v = Math.min(Math.floor(Number(n) || 0), this.count);
-        if (v <= this.acked) return this.acked;
-        this.acked = v;
-        writeJsonAtomic(path.join(this.dir, 'ack.json'), { acked: v, at: this.now() });
-        return v;
-    }
-
-    /** 공개 용량 — 기록 크기·파일 수·가장 오래된 날·콘솔이 가져간 위치·디스크 남은 공간 */
-    storage() {
-        let bytes = 0;
-        const files = this.files();
-        for (const f of files) { try { bytes += fs.statSync(path.join(this.dir, f)).size; } catch (_e) { /* 막 지워짐 */ } }
-        let disk = null;
-        try {
-            const s = fs.statfsSync(this.dir);
-            disk = { totalBytes: s.blocks * s.bsize, freeBytes: s.bavail * s.bsize };
-        } catch (_e) { /* statfs 없는 환경 */ }
-        const m = files.length ? files[0].match(FILE_RE) : null;
-        return { bytes, files: files.length, oldestDay: m ? m[1] : null, firstIndex: this.base.i, acked: this.acked, disk };
-    }
-
-    /**
-     * 보관 기간이 지난 하루 파일을 지운다(위 머리말의 조건 세 가지). 오래된 파일부터 이어서만 지운다.
-     * @param {number} days 보관 일수
-     * @returns {null | { upTo, files, hands }} 지운 것
-     */
-    prune(days) {
-        const now = this.now();
-        const cutoff = dayOf(now - days * DAY_MS);   // 이 날보다 앞선 날의 파일만
-        const today = `records-${dayOf(now)}.jsonl`;
-
-        // 정산이 안 끝난 좌석의 첫 줄 — 그 줄부터는 남긴다
-        const open = new Map();   // sessionId → seat-in 줄 번호
-        for (const e of this.range(this.base.i, Number.MAX_SAFE_INTEGER)) {
-            if (e.kind === 'seat-in') open.set(e.sessionId, e.i);
-            else if (e.kind === 'settle' && e.note) open.delete(e.note.sessionId);
-        }
-        let safe = this.acked;
-        for (const i of open.values()) safe = Math.min(safe, i);
-
-        const victims = [];
-        let last = null, hands = 0;
-        const keys = [];
-        for (const f of this.files()) {
-            const day = f.match(FILE_RE)[1];
-            if (f === today || day >= cutoff) break;
-            const lines = readLines(path.join(this.dir, f)).filter((e) => e.i >= this.base.i);
-            if (!lines.length) { victims.push(f); continue; }
-            if (lines[lines.length - 1].i >= safe) break;
-            victims.push(f);
-            last = lines[lines.length - 1];
-            for (const e of lines) {
-                if (e.kind === 'hand') hands += 1;
-                if (e.kind === 'engine-key') keys.push(e);
-            }
-        }
-        if (!last) return null;
-
-        const upTo = last.i + 1;
-        // 1) 사슬에 남긴다  2) 기준점을 쓴다  3) 지운다 — 어디서 꺼져도 다시 뜰 때 이어진다(_load)
-        this._append({ kind: 'prune', at: now, upTo, lastHash: last.hash, files: victims, hands, retentionDays: days });
-        const cp = { next: upTo, prev: last.hash, keys: this.prunedKeys.concat(keys), at: now };
-        writeJsonAtomic(path.join(this.dir, 'checkpoint.json'), cp);
-        this.base = { i: cp.next, prev: cp.prev };
-        this.prunedKeys = cp.keys;
-        for (const f of victims) {
-            fs.unlinkSync(path.join(this.dir, f));
-            this.fileStart.delete(f);
-        }
-        const gone = new Set(victims);
-        for (const [id, at] of this.byHand) if (gone.has(at.file)) this.byHand.delete(id);
-        for (const [fp, ids] of this.byKey) {
-            const left = ids.filter((id) => this.byHand.has(id));
-            if (left.length) this.byKey.set(fp, left); else this.byKey.delete(fp);
-        }
-        return { upTo, files: victims, hands };
     }
 }
 
@@ -305,7 +214,6 @@ function readLines(file) {
 
 /**
  * 밖에서 받은 줄 목록(처음부터, 또는 앞 줄의 hash 를 아는 중간부터)이 사슬로 맞는지 본다.
- * 정리한 뒤에는 남은 사슬이 checkpoint 의 앞 줄 해시(= prune 줄의 lastHash)에서 이어진다.
  * @returns {string[]} 문제 목록 (비어 있으면 통과)
  */
 function verifyChain(entries, startPrev = GENESIS, startIndex = 0) {
