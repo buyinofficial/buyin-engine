@@ -1,5 +1,7 @@
 # Test, then build the engine image and push it to GHCR.
-# The image digest printed in the job summary is the value the TEE attestation must match.
+# The build is reproducible: file times are the commit time (SOURCE_DATE_EPOCH + rewrite-timestamp) and the image
+# carries no build-time labels, so the same commit always gives the same digest — anyone can rebuild and compare.
+# The digest printed in the job summary is the value docker-compose.yml pins and the TEE attestation measures.
 name: image
 
 on:
@@ -25,6 +27,9 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Commit time
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "$GITHUB_ENV"
+
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
@@ -42,16 +47,19 @@ jobs:
             type=ref,event=tag
             type=raw,value=latest,enable={{is_default_branch}}
 
+      # No labels/annotations (they would carry the build time). provenance/sbom off for the same reason.
       - id: build
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
+          platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=registry,rewrite-timestamp=true
           provenance: false
+          sbom: false
 
       - name: Summary
         run: |
           echo "### Image" >> "$GITHUB_STEP_SUMMARY"
           echo "\`ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH" >> "$GITHUB_STEP_SUMMARY"

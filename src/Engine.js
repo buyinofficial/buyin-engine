@@ -39,6 +39,7 @@ class Engine {
      * @param {boolean} [opts.allowUnsigned]  키 없는 좌석의 서명 없는 액션·평문 카드 허용 (시험 전용 — 운영에서 켜지 말 것)
      * @param {string} [opts.mode]            'dev' | 'nitro' …  증명서 종류
      * @param {function} [opts.attest]        (publicKeys) => 증명서. TEE 에서만 준다
+     * @param {function} [opts.onRecord]      (record, sig) => void. 판 기록을 TEE 디스크에 남긴다(store.js). 던지면 그 판은 닫히지 않는다
      */
     constructor(opts = {}) {
         this.allowUnsigned = !!opts.allowUnsigned;
@@ -46,6 +47,7 @@ class Engine {
         // RULES.md 2장 — 검사를 느슨하게 하는 시험 설정은 개발 모드에서만. TEE(운영) 모드에서 켜려 하면 뜨지 않는다.
         if (this.allowUnsigned && this.mode !== 'dev') throw new Error('allowUnsigned is only allowed in dev mode');
         this.attest = typeof opts.attest === 'function' ? opts.attest : null;
+        this.onRecord = typeof opts.onRecord === 'function' ? opts.onRecord : null;
         this.sigKeys = C.generateKeyPair();
         this.ecdhKeys = C.generateKeyPair();
         this.sigJwk = C.publicJwk(this.sigKeys.publicKey);
@@ -314,9 +316,12 @@ class Engine {
             result: s.result,
             nextSeedCommit: h.table.seedCommit,
         };
+        const sig = this._signRecord(record);
+        // 기록을 남기지 못하면 판을 닫지 않는다 — 오류가 운영 서버로 가고 운영 서버는 그 판을 무효로 한다
+        if (this.onRecord) this.onRecord(record, sig);
         if (h.table.liveHandId === h.core.handId) h.table.liveHandId = null;
         this.hands.delete(h.core.handId);
-        return { record, sig: this._signRecord(record) };
+        return { record, sig };
     }
 
     _gc() {

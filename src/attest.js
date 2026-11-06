@@ -66,7 +66,8 @@ async function dstackAttestation(keys) {
     try {
         const info = await rpc(socketPath, '/Info', {});
         const tcb = typeof info.tcb_info === 'string' ? JSON.parse(info.tcb_info) : (info.tcb_info || {});
-        app = { appId: info.app_id || null, instanceId: info.instance_id || null, composeHash: tcb.compose_hash || null };
+        // appCompose = TEE 가 측정한 앱 설정 원문(docker-compose 포함). SHA-256(appCompose) 가 composeHash 다 — 누구나 다시 계산한다
+        app = { appId: info.app_id || null, instanceId: info.instance_id || null, composeHash: tcb.compose_hash || null, appCompose: tcb.app_compose || null };
     } catch (_e) { /* 앱 정보는 참고용 — 증명은 quote 가 한다 */ }
     return {
         type: 'dstack-tdx',

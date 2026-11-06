@@ -25,6 +25,7 @@ src/HandCore.js     one hand: blinds, betting, round end, run-out, showdown, pot
 src/Engine.js       tables, player keys, seed commitments, RPC entry point
 src/server.js       HTTP server: POST /rpc (operator only, bearer token), GET /info (public keys + attestation)
 src/attest.js       binds the engine keys to the TEE quote (dstack / Phala Cloud, Intel TDX)
+src/store.js        hand records kept on the TEE disk as an append-only hash chain
 src/verify.js       hand record verifier (CLI and module)
 RULES.md            development rules (Korean): no secrets, no backdoors, no dependencies
 Dockerfile          the image that runs in the TEE (built by GitHub Actions, see .github/workflows)
@@ -60,6 +61,30 @@ SHA-256( stableStringify({ ecdh: <engine ECDH JWK>, sig: <engine signing JWK> })
 
 Every hand record is signed with the attested key, so a record that verifies with `src/verify.js` was produced by this code inside the TEE.
 
+## Hand records stay in the TEE
+
+When a hand ends, the engine appends its signed record to `/data/records` on the TEE data disk before the hand is closed. If the record cannot be written, the hand does not close and the operator voids it. The disk is encrypted with a key that only the TEE receives.
+
+The records form a hash chain: each line holds the hash of the line before it, so deleting or changing a past record breaks every hash after it (`verifyChain` in `src/store.js`). Each time the engine starts it also writes its new public keys (and the attestation `report_data`) into the chain, so old records stay verifiable with old keys.
+
+| Endpoint | Who | What |
+|---|---|---|
+| `GET /records/head` | anyone | `{ count, head, hands }` — the current end of the chain. Save it; it can only grow. |
+| `GET /records/keys` | anyone | every engine key the chain has seen |
+| `GET /records/hand/<handId>` | operator (token) | one hand record with its chain position — past cards are in it |
+| `GET /records?from=&limit=` | operator (token) | chain export for backup and audit |
+
+## Rebuild the image yourself
+
+The image build is reproducible: file times are the commit time and the image has no build-time labels.
+
+```
+git checkout v0.4.0
+SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) docker buildx build --platform linux/amd64   --provenance=false --sbom=false --output type=oci,dest=engine.tar,rewrite-timestamp=true .
+```
+
+The manifest digest of `engine.tar` must equal the digest pinned in `deploy/docker-compose.yml`.
+
 ## Test
 
 ```
@@ -76,4 +101,4 @@ The test suite covers:
 ## Status
 
 - **Stage 1–2:** the engine runs as a separate process (`mode: "dev"`). The cryptographic guarantees above hold, but there is no hardware attestation.
-- **Stage 3 (now):** the engine runs in a TDX TEE on Phala Cloud (`mode: "dstack"`) and binds its keys to the hardware quote. Next: browsers check the binding themselves before trusting the engine key.
+- **Stage 3 (now):** the engine runs in a TDX TEE on Phala Cloud (`mode: "dstack"`), binds its keys to the hardware quote, keeps every hand record on the TEE disk (0.4.0), and the build is reproducible. The player's browser checks the key ↔ quote binding itself.
