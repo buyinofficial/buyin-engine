@@ -8,7 +8,7 @@
  * 증명 보고서(trust.phala.com) 또는 Phala·Intel 검증기로 확인한다(검증 센터의 「증명서 보기」).
  */
 
-export const ENGINE_URL = "https://b51e283808f74696162569696b1af768340cd054-3900.dstack-pha1-prod5.phala.network";
+export const ENGINE_URL = "https://5edf839d04a49add7001648a6bc226292f0fd968-3900.dstack-pha1-prod5.phala.network";
 export const ENGINE_REPO = "https://github.com/buyinofficial/buyin-engine";
 
 type Jwk = { kty: string; crv: string; x: string; y: string };

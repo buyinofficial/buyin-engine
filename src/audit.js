@@ -68,6 +68,7 @@ function auditReport(info, records, keyCount, base, opts = {}) {
     L.push(`| Table mode | ${tableMode ? 'on — every hand runs here; the operator\'s `/rpc` answers only `info`' : 'off'} |`);
     L.push(`| Files the engine loads | ${review ? `${review.files} files, tree hash \`${review.treeHash}\` — ${base}/review/manifest` : 'n/a'} |`);
     L.push(`| Finished hands in the TEE record chain | ${records ? `${records.hands}` : 'n/a'} (only finished hands are ever written) |`);
+    L.push(`| Record retention | ${opts.retentionDays ? `${opts.retentionDays} days, then only records the console has already copied (a \`prune\` line marks each deletion)` : 'n/a'} |`);
     L.push(`| Phala app id | ${a && a.appId ? '`' + a.appId + '`' : 'n/a'} |`);
     L.push('');
     L.push('## How the running program ties to the commit');
