@@ -62,6 +62,10 @@ function tableRoutes(tables) {
         if (!p.startsWith('/table')) return false;
         if (req.method === 'GET' && p === '/table') { res.writeHead(301, { Location: '/table/' }); res.end(); return true; }
 
+        if (!tables && (p === '/table/join' || p === '/table/cmd' || p === '/table/events')) {
+            json(res, 503, { ok: false, code: 'off', error: 'table server is not enabled on this engine' });
+            return true;
+        }
         if (req.method === 'POST' && (p === '/table/join' || p === '/table/cmd')) {
             readJson(req).then((m) => {
                 try {

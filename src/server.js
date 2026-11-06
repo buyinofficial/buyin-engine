@@ -179,9 +179,10 @@ async function start() {
     // 테이블 서버 — 사슬에서 정산 안 된 좌석을 먼저 정산하고(재시작 복구) 연다
     if (CONSOLE_KEY) {
         tables = new TableServer({ engine, store, consoleKey: CONSOLE_KEY });
-        tableHandler = tableRoutes(tables);
         setInterval(() => tables.sweep(), 30000).unref();
     }
+    // 테이블 화면·검증 화면은 언제나 TEE 가 내보낸다(테이블 서버가 꺼져 있으면 앉기·명령만 닫힌다)
+    tableHandler = tableRoutes(tables);
     server.listen(PORT, HOST, () => {
         const i = info();
         console.log(`[tee-engine] ${i.name} ${i.version} mode=${i.mode} listening ${HOST}:${PORT} sigFp=${i.keys.sigFp}`

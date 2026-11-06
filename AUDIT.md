@@ -79,7 +79,19 @@ The browser code that holds the player's keys and opens the hole-card envelope i
 - Every revealed card is checked against the 52 commitments published at hand start.
 - The browser fetches `/info` directly from the TEE and checks that the engine key the game server uses is the attested key (`checkAttestation`); a mismatch is shown to the player.
 
-**Remaining trust — the web page itself.** The game web page is served by the operator. A modified page could send each player's own opened hole cards back to the operator, and across all players that would expose every hand. The engine, the TEE and the records cannot prevent that; it is the one place where the operator is still trusted. The next step is to serve the game client from a TEE as well (reproducible build of the published client, attested like the engine), so the page a player runs can be verified the same way as the engine.
+**Remaining trust — the web page itself.** Today's game page is served by the operator. A modified page could send each player's own opened hole cards back to the operator, and across all players that would expose every hand. The engine, the TEE and the records cannot prevent that on an operator-served page. That is why 0.5.0 adds pages served **by the TEE itself** (next section); moving play to the TEE table page removes this last point of trust.
+
+## 5a. Pages served by the TEE (0.5.0)
+
+These files are in this repository (`src/public/table/`), are inside the attested image, and are served by the engine at its own address — the operator cannot change them without changing the image digest and therefore the attestation.
+
+- **`/table/`** — the table. The browser talks only to the TEE: `connect-src 'self'`, `frame-ancestors 'none'` (no operator page can wrap it). A seat ticket signed by the console key (`TEE_CONSOLE_KEY`, public JWK in the measured compose) brings the player in; cards, turns and results come from the TEE over SSE; actions go back signed with the player's key. The operator receives only settlement notes (amounts, engine-signed) and, after each hand, the signed record.
+- **`/table/verify.html`** — Verify my hands. With the key in the player's browser it asks the TEE for that player's hands (`POST /records/mine`, signature over `["pz-mine-v1", keyFingerprint, time, handId]`, five-minute window; only hands where that key held a seat). For a chosen hand it checks, in the browser:
+  1. the chain line hash and the public receipt `/records/receipt/<handId>`;
+  2. the engine key line in the chain and its TDX `report_data` (and the live quote for the current key);
+  3. a full replay with **the engine's own files** (`/table/engine/*.js` — the repository files wrapped in one line so a script tag can load them; signatures are collected during the replay and then checked with WebCrypto);
+  4. the hole cards the browser opened during the hand against the record.
+  Tampering with a stack, an action signature or the deck makes the replay fail (tested).
 
 ## 6. Reporting
 

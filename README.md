@@ -83,7 +83,7 @@ The records form a hash chain: each line holds the hash of the line before it, s
 The image build is reproducible: file times are the commit time and the image has no build-time labels.
 
 ```
-git checkout v0.4.0
+git checkout v0.5.0
 SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) docker buildx build --platform linux/amd64   --provenance=false --sbom=false --output type=oci,dest=engine.tar,rewrite-timestamp=true .
 ```
 
@@ -105,6 +105,7 @@ The test suite covers:
 ## Status
 
 - **Stage 1–2:** the engine runs as a separate process (`mode: "dev"`). The cryptographic guarantees above hold, but there is no hardware attestation.
+- **0.5.0:** the TEE serves its own pages — the table at `/table/` and **Verify my hands** at `/table/verify.html`. A player's hand records come straight from the TEE to that page (`POST /records/mine`, signed with the player's key; no operator token), and the page replays them with the engine's own files. Public receipts: `GET /records/receipt/<handId>`.
 - **Table server (in progress):** with `TEE_CONSOLE_KEY` set, the engine also runs the table and serves the table screen at `/table/`. The player's browser talks only to the TEE (`connect-src 'self'`, no framing): seat ticket in, cards and turns out over SSE, signed actions back. The operator's server sees settlement notes (amounts) and, after each hand, the signed hand record.
 - **Stage 3 (now):** the engine runs in a TDX TEE on Phala Cloud (`mode: "dstack"`), binds its keys to the hardware quote, keeps every hand record on the TEE disk (0.4.0), and the build is reproducible. The player's browser checks the key ↔ quote binding itself.
 

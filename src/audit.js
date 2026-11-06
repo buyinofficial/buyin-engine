@@ -48,7 +48,8 @@ function auditReport(info, records, keyCount, base) {
     L.push(`2. **The engine key belongs to that TEE.** The quote's \`report_data\` (bytes 568–600 of the quote) equals \`SHA-256(stableStringify({ ecdh, sig }))\` over the two public JWKs in \`/info\` (\`src/attest.js\` \`reportDataFor\`). The private keys never leave the TEE.`);
     L.push(`3. **The TEE runs the published code.** \`SHA-256(attestation.appCompose)\` equals \`composeHash\`, which the TEE measures into RTMR3 at boot (the Phala report replays the event log). The compose pins the image by digest; rebuilding tag \`v${info.version}\` from GitHub reproduces that digest (README → "Rebuild the image yourself").`);
     L.push(`4. **Every hand result is the engine's.** Each hand record is signed with the attested key; \`node src/verify.js record.json key.json\` replays the hand from the committed seed and fails on any difference.`);
-    L.push(`5. **No record can be removed later.** Records are a hash chain on the TEE's encrypted disk; \`/records/head\` only grows. Save the head and compare later.`);
+    L.push(`5. **No record can be removed later.** Records are a hash chain on the TEE's encrypted disk; \`/records/head\` only grows. Save the head and compare later. Any hand's public receipt (chain position and hashes, no cards) is at \`/records/receipt/<handId>\`.`);
+    L.push(`6. **Players verify their own hands here, not on the operator's site.** [${base}/table/verify.html](${base}/table/verify.html) is served by this TEE. It fetches the player's records with the player's own key signature (\`POST /records/mine\`, no operator token) and replays them in the browser with the engine files this TEE runs (\`/table/engine/*.js\`, the repository files wrapped for a script tag).`);
     L.push('');
     L.push('## What the operator cannot do');
     L.push('');
