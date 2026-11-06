@@ -15,6 +15,7 @@ services:
       - TEE_MODE=dstack
       - TEE_RECORD_DIR=/data/records
       - TEE_RPC_TOKEN=${TEE_RPC_TOKEN}
+      - TEE_DISCONNECT_GRACE_MS=60000
       - 'TEE_CONSOLE_KEY={"kty":"EC","crv":"P-256","x":"Z-pNFOk3vPf5FJ9oYxAM6CFXzdwnBa-BwzK61tITj6U","y":"paD-KrbLEEq0IbvCCwBwk4_twokYa8iR811C0zCYuRk"}'
     volumes:
       - /var/run/dstack.sock:/var/run/dstack.sock

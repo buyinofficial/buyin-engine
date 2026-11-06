@@ -149,7 +149,7 @@ test('테이블: 좌석표로 앉아 판이 TEE 안에서만 돈다 — 카드�
     assert.deepStrictEqual(verifyChain(env.store.range(0, 1e9)), []);
 });
 
-test('테이블: 차례 밖 액션·남의 토큰·옛 차례 번호는 거절, 시간 초과는 체크/폴드 후 자리 비움', () => {
+test('테이블: 차례 밖 액션·남의 토큰·옛 차례 번호는 거절, 자기 차례에 시간 초과면 폴드하고 탈락(판이 끝나면 정산)', () => {
     const env = setup(3);
     const { server, clock, players } = env;
     clock.advance(5000);
@@ -160,12 +160,13 @@ test('테이블: 차례 밖 액션·남의 토큰·옛 차례 번호는 거절, 
     assert.throws(() => server.command('nope', { type: 'act' }), /unknown token/);
     const actor = players.find((p) => p.seat === turn.seat);
     assert.throws(() => server.command(actor.token, { type: 'act', q: turn.q + 5, action: 'FOLD', amount: 0, sig: 'x' }), /stale turn/);
-    // 아무도 안 움직이면 타이머가 체크/폴드
-    for (let i = 0; i < 40; i++) clock.advance(21000);
+    // 아무도 안 움직이면 — 차례마다 시간 초과 → 폴드·탈락, 마지막 한 명이 팟을 가져가고 판이 끝난다
+    for (let i = 0; i < 10; i++) clock.advance(21000);
     const room = server.rooms.get('r1');
-    assert.ok(room.seats.filter(Boolean).filter((s) => s.sitout).length >= 2, '두 번 시간 초과하면 자리 비움');
-    assert.strictEqual(room.hand, null, '움직이는 사람이 없으면 판이 멈춘다');
-    assert.ok(room.handNo > 1, `판이 시간 초과로 끝나고 다음 판도 돌았다 (${room.handNo})`);
+    const settled = env.out.filter((x) => x.kind === 'settle');
+    assert.ok(settled.filter((x) => x.note.reason === 'timeout').length >= 2, '시간 초과한 사람은 탈락해 정산된다');
+    assert.ok(env.out.some((x) => x.kind === 'hand-record'), '판은 끝까지 갔다');
+    assert.ok(room.seats.filter(Boolean).length <= 1);
     void h;
 });
 
@@ -251,7 +252,9 @@ test('테이블: 좌석표만으로는 앉을 수 없다 — 회원 ID 는 처�
     // 앉은 뒤 다른 서명 키로 바꿔 끼우기도 거절
     const ecdh = C.generateKeyPair(); const oj = C.publicJwk(operator.publicKey), ej = C.publicJwk(ecdh.publicKey);
     assert.throws(() => server.command(j2.token, { type: 'keys', sig: oj, ecdh: ej, proof: C.sign(operator.privateKey, C.msgRegister(j2.tableId, 'victim', C.fingerprint(oj), C.fingerprint(ej))) }), /account key used to join/);
-    server.command(j2.token, { type: 'leave' }); clock.advance(100);
+    // 인증값이 바뀐 자리는 탈락(정산) — 토큰도 사라진다
+    assert.throws(() => server.command(j2.token, { type: 'leave' }), /unknown token/);
+    assert.ok(env.out.some((x) => x.kind === 'settle' && x.note.odcId === 'victim' && x.note.reason === 'auth-changed'));
     // 콘솔이 서명한 '새 기기' 좌석표로만 키가 바뀌고, 공개 기록에 남는다
     const t4 = mk({ rebind: true }); const j4 = server.join(t4, auth(t4, operator)); assert.ok(j4.token);
     const b = server.binding('victim');
@@ -263,4 +266,29 @@ test('테이블: 좌석표만으로는 앉을 수 없다 — 회원 ID 는 처�
     // 기록은 사슬에 남아 다시 떠도 같다
     const again = new TableServer({ engine: env.engine, store: env.store, consoleKey: consoleKeys.publicKey, clock });
     assert.deepStrictEqual(again.binding('victim').history.map((h) => h.reason), ['first', 'new-device']);
+});
+
+test('테이블: 한 명이 나가거나 끊겨도 판은 이어진다 — 끊긴 채 시간이 지나면 탈락, 올인이면 결과까지 유지', () => {
+    const env = setup(3);
+    const { server, clock, players } = env;
+    server.disconnectGraceMs = 60000;
+    clock.advance(5000);
+    const room = server.rooms.get('r1');
+    const h1 = room.hand.handId;
+    // 차례가 아닌 사람이 나간다 → 그 사람만 폴드, 판은 계속
+    const quitter = players.find((p) => p.seat !== room.hand.toAct);
+    const r = server.command(quitter.token, { type: 'leave' });
+    assert.ok(r.pending, '판 도중 나가기 — 판이 끝나면 정산');
+    playOne(env, () => 1);
+    assert.ok(env.out.some((x) => x.kind === 'hand-record' && x.record.handId === h1), '나머지끼리 판을 끝냈다');
+    assert.ok(env.out.some((x) => x.kind === 'settle' && x.note.odcId === quitter.odcId));
+    // 다음 판이 남은 두 명으로 시작된다
+    clock.advance(8000);
+    assert.ok(room.hand && room.hand.seats.length === 2, 'next hand with the remaining two');
+    // 한 명이 끊긴다(화면 연결 닫힘) → 60초 안에 안 돌아오면 탈락, 판은 계속
+    const left = players.filter((p) => room.seats[p.seat]);
+    const drop = left[0];
+    for (const f of drop.closeFns) f();
+    clock.advance(61000);
+    assert.ok(env.out.some((x) => x.kind === 'settle' && x.note.odcId === drop.odcId && x.note.reason === 'disconnected'), '끊긴 채 시간이 지나 탈락');
 });

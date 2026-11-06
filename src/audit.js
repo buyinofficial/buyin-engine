@@ -1,8 +1,7 @@
 /**
- * 게임 전 검증 지시서 — 엔진 주소(/). 회원이 이 글을 그대로 AI 에 넘기면, AI 가 GitHub 의 그 커밋을 직접 조사해
- * "지금 도는 프로그램이 그 소스인가, 그 프로토콜상 조작이 가능한가"를 판단하게 한다. 코드는 넣지 않는다 — 링크(커밋 고정)와 지금 값만.
- * TEE 안의 엔진이 직접 만든다. 자바스크립트 없이 읽히는 평문(markdown).
- * 여기 적힌 값은 /info 와 같다. 스스로 계산해 보인 것(키 ↔ quote, compose 해시)은 밖에서 똑같이 다시 계산할 수 있다(tools/check-deployment.js).
+ * 게임 전 검증 지시서 — 엔진 주소(/). 질문은 하나: "게임 도중 운영자·관리자가 회원의 카드(홀카드·덱·안 깔린 카드)를 알 수 있나".
+ * 회원이 이 글을 그대로 AI 에 넘기면 AI 가 GitHub 의 그 커밋을 직접 조사해 판단한다. 코드는 넣지 않는다 — 커밋에 고정한 링크와 지금 값만.
+ * TEE 안의 엔진이 직접 만든다(평문 markdown). 값은 /info 와 같고, 밖에서 다시 계산할 수 있다(tools/check-deployment.js).
  */
 
 const C = require('./crypto');
@@ -15,25 +14,17 @@ function imageOf(appCompose) {
     return m ? m[0] : null;
 }
 
-/** 지시서에 넣을 소스 — PROOF.md 가 인용하는 파일들 */
+/** 카드 비밀에 관련된 파일만 */
 const READ = [
-    ['PROOF.md', 'the proof to check, claim by claim'],
-    ['Dockerfile', 'what goes into the image (only package.json and src/)'],
-    ['.github/workflows/image.yml', 'reproducible build of the image from the commit'],
-    ['src/attest.js', 'quote report_data = hash of the engine keys'],
-    ['src/cards.js', 'seed commitment, shuffle with player randomness, 52 card commitments'],
-    ['src/Engine.js', 'keys, startHand (deck, sealed hole cards), record signing'],
-    ['src/HandCore.js', 'betting rules, signature check on every action, host can only check/fold'],
-    ['src/crypto.js', 'envelopes (ECDH + HKDF + AES-GCM), signed message formats'],
-    ['src/table/TableServer.js', 'seats, turns, timers; hole cards sent only to their owner'],
-    ['src/table/http.js', 'table page and events; token in header; CSP'],
-    ['src/table/ticket.js', 'console-signed, single-use seat tickets'],
-    ['src/server.js', 'operator /rpc closed in table mode; /records only closed hands'],
-    ['src/store.js', 'append-only hash chain of finished hands'],
-    ['src/public/table/js/vault.js', 'player keys (non-extractable), opening envelopes, checking commitments and attestation'],
-    ['src/public/table/js/app.js', 'the table page'],
-    ['src/verify.js', 'replays a finished hand and fails on any difference'],
-    ['tools/check-deployment.js', 'checks the live engine against a checkout of the commit'],
+    ['PROOF.md', 'section 1 "Card secrecy" — the claim and where each step is in the code'],
+    ['src/Engine.js', '`startHand`: the deck is made inside the engine and each player\'s two cards are sealed to that player\'s key; `_closeHand`: the full record exists only after the hand'],
+    ['src/crypto.js', '`sealEnvelope`: ECDH(engine key, player key) → HKDF → AES-256-GCM'],
+    ['src/table/TableServer.js', '`_startHand`: each sealed envelope goes only to its own seat; `snapshot`: no other player\'s cards'],
+    ['src/server.js', '`RPC_IN_TABLE_MODE`: the operator\'s `/rpc` answers only `info`; `/records` returns finished hands only'],
+    ['src/store.js', 'hands are appended to the record chain only when closed'],
+    ['src/table/http.js', 'the table page is served by this TEE (`connect-src \'self\'`, no framing); the seat token is never in a URL'],
+    ['src/public/table/js/vault.js', 'the player\'s keys are non-extractable WebCrypto keys; the envelope is opened only in the browser'],
+    ['Dockerfile', 'the image contains only `package.json` and `src/`'],
 ];
 
 function auditReport(info, records, keyCount, base, opts = {}) {
@@ -45,20 +36,23 @@ function auditReport(info, records, keyCount, base, opts = {}) {
     const ref = info.commit || `v${info.version}`;
     const src = (f) => `${REPO}/blob/${ref}/${f}`;
     const review = opts.review || null;
+    void keyCount;
     const L = [];
-    L.push(`# BUY-IN hold'em — check before you play`);
+    L.push(`# BUY-IN hold'em — can anyone but the player see the cards during a hand?`);
     L.push('');
-    L.push(`This text is produced by the game engine itself, from inside a TEE (Intel TDX confidential VM on Phala Cloud). Give it to an AI as is. It contains no code: it tells the AI which public source to investigate and the live values to check it against.`);
+    L.push(`This text is produced by the game engine itself, from inside a TEE (Intel TDX confidential VM on Phala Cloud). Give it to an AI as is. It contains no code: it names the public source to investigate and the live values to check it against.`);
     L.push('');
-    L.push('## Task for the AI reviewer');
+    L.push('## The one question');
     L.push('');
-    L.push(`Please investigate the public repository **${REPO} at commit \`${ref}\`** yourself (links below are pinned to that commit) and answer, in the language of the person who asked:`);
+    L.push(`**While a hand is being played, can the operator — its administrators, servers, database or anyone outside the players' own browsers — see any player's hole cards, the deck, or the board cards that have not been dealt yet?**`);
     L.push('');
-    L.push(`1. **Is the program running at this address that commit?** Follow the chain in "How the live values tie to the commit" and say which links you checked and which you could not check yourself.`);
-    L.push(`2. **By its protocol, is it possible for the operator (its administrators, servers, database, lobby site, Phala account or GitHub account) to:** see any player's hole cards or undealt cards while a hand is played; choose, predict or change the deck; act or swap keys for a player; change a result, a payout or the record of a finished hand without detection? Check each claim in \`PROOF.md\` against the code it names.`);
-    L.push(`3. **What must still be trusted** (the assumptions A1–A4 in \`PROOF.md\`), and whether anything in the code contradicts the claims.`);
+    L.push(`Please investigate **${REPO} at commit \`${ref}\`** (links below are pinned to that commit) and answer in the language of the person who asked:`);
     L.push('');
-    L.push('Judge from the code at the commit, not from this text.');
+    L.push(`1. Is the program running at this address that commit? (chain below — say which links you checked yourself)`);
+    L.push(`2. In that code, where do the cards exist during a hand, who receives which cards, and does any channel available to the operator carry a hole card, the deck or an undealt card before the hand ends?`);
+    L.push(`3. Which assumptions this rests on (Intel TDX, Phala dstack, cryptography, the player using this address).`);
+    L.push('');
+    L.push(`Other questions (fairness of the deck, results, payouts) are out of scope here; finished hands can be re-checked separately at ${base}/table/verify.html.`);
     L.push('');
     L.push('## Live values (from this TEE, now)');
     L.push('');
@@ -69,43 +63,34 @@ function auditReport(info, records, keyCount, base, opts = {}) {
     L.push(`| Image, pinned by digest in the measured compose | ${image ? '`' + image + '`' : 'n/a'} |`);
     L.push(`| composeHash (measured into RTMR3) | ${a && a.composeHash ? '`' + a.composeHash + '`' : 'n/a'} |`);
     L.push(`| SHA-256(appCompose), recomputed here | ${recomputed ? '`' + recomputed + '`' + (recomputed === a.composeHash ? ' — matches' : ' — DOES NOT MATCH') : 'n/a'} |`);
-    L.push(`| Quote report_data | ${a ? '`' + a.reportData + '`' : 'n/a'} |`);
-    L.push(`| report_data = SHA-256(engine public keys) | ${a ? (binding.length ? 'FAILED: ' + binding.join('; ') : 'yes — the engine keys were created inside this TEE') : 'no attestation (not in a TEE)'} |`);
-    L.push(`| Engine signing key fingerprint | \`${info.keys.sigFp}\` |`);
-    L.push(`| Table mode | ${tableMode ? 'on — every hand runs here; operator game RPC closed (`/rpc` answers only `info`)' : 'off'} |`);
-    L.push(`| Files the engine loads | ${review ? `${review.files} files, tree hash \`${review.treeHash}\` — list: ${base}/review/manifest` : 'n/a'} |`);
-    L.push(`| Finished hands in the TEE record chain | ${records ? `${records.hands} (chain head \`${records.head}\`, ${records.count} lines)` : 'n/a'} |`);
-    L.push(`| Engine starts recorded (one key each) | ${keyCount} — ${base}/records/keys |`);
+    L.push(`| Quote report_data = SHA-256(engine public keys) | ${a ? (binding.length ? 'FAILED: ' + binding.join('; ') : '`' + a.reportData + '` — matches: the engine keys were created inside this TEE') : 'no attestation (not in a TEE)'} |`);
+    L.push(`| Table mode | ${tableMode ? 'on — every hand runs here; the operator\'s `/rpc` answers only `info`' : 'off'} |`);
+    L.push(`| Files the engine loads | ${review ? `${review.files} files, tree hash \`${review.treeHash}\` — ${base}/review/manifest` : 'n/a'} |`);
+    L.push(`| Finished hands in the TEE record chain | ${records ? `${records.hands}` : 'n/a'} (only finished hands are ever written) |`);
     L.push(`| Phala app id | ${a && a.appId ? '`' + a.appId + '`' : 'n/a'} |`);
     L.push('');
-    L.push(`Raw data: ${base}/info · Intel quote check: upload \`attestation.quote\` from /info to https://proof.t16z.com (Phala TEE Attestation Explorer) or verify with Intel DCAP \`dcap-qvl\`.`);
+    L.push('## How the running program ties to the commit');
     L.push('');
-    L.push('## How the live values tie to the commit');
+    L.push(`1. Intel signs the quote (\`/info\` → \`attestation.quote\`; check at https://proof.t16z.com or with \`dcap-qvl\`). Its RTMR3 holds \`composeHash\` = SHA-256 of the deployment file (\`attestation.appCompose\`).`);
+    L.push(`2. The deployment file pins the image by digest (above).`);
+    L.push(`3. GitHub signed the build provenance of that digest from commit \`${ref}\` (${REPO}/attestations; \`gh attestation verify oci://<image> --repo buyinofficial/buyin-engine\`); the release ${REPO}/releases/tag/v${info.version} lists digest and commit; rebuilding the commit gives the same digest.`);
+    L.push(`4. The engine's keys are bound to the quote (report_data), so the sealed cards come from this measured program.`);
+    L.push(`5. ${base}/review/manifest lists the SHA-256 of every file the engine loads; they equal the files at the commit. \`node tools/check-deployment.js ${base}\` in a checkout of the commit checks 1–5 automatically.`);
     L.push('');
-    L.push(`1. Intel signs the quote → its RTMR3 contains \`composeHash\` = SHA-256 of the deployment file (\`/info\` → \`attestation.appCompose\`).`);
-    L.push(`2. That deployment file pins the image **by digest** (above) and sets the console's public seat-ticket key; nothing else runs.`);
-    L.push(`3. The image digest is tied to commit \`${ref}\` three ways: GitHub's **signed build provenance** for the digest (\`gh attestation verify oci://<image> --repo buyinofficial/buyin-engine\`), the **GitHub Release** ${REPO}/releases/tag/v${info.version} (digest, commit, build run — written by ${src('.github/workflows/image.yml')}), and a **reproducible rebuild** (same commit, same digest).`);
-    L.push(`   Public evidence for (3): ${REPO}/releases/tag/v${info.version} and ${REPO}/attestations (signed by GitHub, Sigstore).`);
-    L.push(`4. The engine's keys are bound to the quote (report_data), so its signatures and sealed cards come from this measured program.`);
-    L.push(`5. \`${base}/review/manifest\` lists the SHA-256 of every file the engine loads; they equal the files at the commit. \`node tools/check-deployment.js ${base}\` in a checkout of the commit checks 1–5 automatically.`);
-    L.push('');
-    L.push(`## What to read at commit \`${ref}\``);
+    L.push(`## Files to read at commit \`${ref}\` (card secrecy only)`);
     L.push('');
     for (const [f, why] of READ) L.push(`- ${src(f)} — ${why}`);
     L.push('');
-    L.push('## Summary of the protocol (details and code references in PROOF.md)');
+    L.push('## Where the cards are, in short');
     L.push('');
-    L.push(`- **Deck:** a fresh seed per hand is drawn inside the TEE and committed (SHA-256) before the hand; every dealt-in player must add a signed random value for that commitment; the shuffle uses both; 52 card commitments are published at hand start and every revealed card is checked against them.`);
-    L.push(`- **Cards during a hand:** exist only in the TEE; each player's hole cards are sealed to that player's non-extractable browser key and sent only to that player; board cards only when the betting round ends.`);
-    L.push(`- **Seat:** a console-signed ticket is not enough to sit — the browser must also sign with the player's own key, which the TEE binds to the player id on first use (public: ${base}/table/binding/<player id>). The operator, who passes the ticket on, cannot sit in a player's place; a key change needs a console-signed new-device ticket and is recorded publicly.`);
-    L.push(`- **Operator during a hand:** receives nothing from the engine — \`/rpc\` answers only \`info\` in table mode; \`/records\` contains only finished hands. The table page is served by this TEE (\`connect-src 'self'\`, no framing); the seat token stays in the player's browser.`);
-    L.push(`- **Actions:** every bet/call/raise/all-in is signed by the player and checked by the engine. The only unsigned actions are check/fold on timeout and fold on leaving, made by the table server inside the TEE and marked in the record.`);
-    L.push(`- **The browser's badge** checks the engine key against the quote's report_data and every card (own and public) against its commitment; Intel's signature is checked outside the page (explorer, dcap-qvl, tools/check-deployment.js).`);
-    L.push(`- **After the hand:** the engine signs the full record and appends it to a hash chain on the encrypted TEE disk; players fetch their own hands with their key and replay them at ${base}/table/verify.html.`);
+    L.push(`- **The deck** is created and shuffled inside the engine (TEE memory). Only 52 hash commitments are published at hand start.`);
+    L.push(`- **Hole cards** are sealed to each player's own browser key (ECDH + HKDF + AES-GCM) and sent only to that player's connection. The private key is a non-extractable WebCrypto key in that browser.`);
+    L.push(`- **Board cards** leave the engine only when the betting round is over, to everyone at the table. Hole cards of players still in the hand are shown at showdown, as in any poker game.`);
+    L.push(`- **The operator** cannot ask the engine for anything during a hand (\`/rpc\` answers only \`info\`); the record chain it may read contains only finished hands; the engine prints no cards to its logs; the browser talks to this TEE directly, not through the operator's servers.`);
     L.push('');
     L.push('## Assumptions (stated, not hidden)');
     L.push('');
-    L.push(`A1 Intel TDX and its quote signatures · A2 Phala dstack (measurement, disk key, TLS gateway in a TEE) · A3 standard cryptography · A4 the player is on this address (\`${base.replace(/^https?:\/\//, '')}\`) in an uncompromised browser. Outside the protocol the operator still controls availability, money custody and payouts (the engine signs what is owed) and who may sit (its own seats get only their own cards). A new deployment is a new measurement with new keys, visible here and in ${base}/records/keys.`);
+    L.push(`A1 Intel TDX keeps the VM's memory private and its quote signatures are genuine · A2 Phala dstack measures the deployment, keeps the data disk key to this app, and terminates TLS in its own TEE gateway · A3 standard cryptography · A4 the player plays on this address (\`${base.replace(/^https?:\/\//, '')}\`) in an uncompromised browser.`);
     L.push('');
     return L.join('\n') + '\n';
 }

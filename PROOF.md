@@ -15,6 +15,18 @@ Every statement below names the file and function that implements it. Please che
 
 ---
 
+## Card secrecy — the claim to verify
+
+The claim reviewers are asked to check is only this: **the operator cannot see the cards while a hand is played.** Concretely:
+
+1. **The deck and card data do not go to the operator until the hand is over.** The deck is created and shuffled inside the engine in the TEE (`src/Engine.js` `startHand`, `src/cards.js`). During a hand the operator's only engine channels are `/rpc`, which in table mode answers only `info` (`src/server.js` `RPC_IN_TABLE_MODE`), and `/records`, which contains only finished hands (`Engine._closeHand` → `src/store.js` `appendHand`). The engine prints no cards to its logs.
+2. **Hole cards go from the TEE straight to each player.** Each player's two cards are sealed to that player's own browser key (`src/crypto.js` `sealEnvelope`: ECDH + HKDF-SHA-256 + AES-256-GCM) and sent only to that player's connection (`src/table/TableServer.js` `_startHand` → `_send(s, 'hole', …)`; `snapshot` contains no other player's cards). The browser connects to the TEE directly (the table page is served by the TEE, `src/table/http.js`); the private key is a non-extractable WebCrypto key in that browser (`src/public/table/js/vault.js`). Board cards leave the engine only when the betting round is over, to everyone at the table.
+3. **After the hand, the game record goes to the operator.** Only then is the signed record (with all cards) appended to the chain the operator may read.
+
+This holds for the code at the commit the engine reports (`/info` → `commit`), and §1 below shows how that code is tied to the running engine. The rest of this document (deck fairness, actions, results) is background, not part of this claim.
+
+---
+
 ## 0. Assumptions (what is trusted)
 
 | # | Assumption | Why it is reasonable / how it is checked |

@@ -18,6 +18,7 @@
  *   TEE_RPC_TOKEN       /rpc 접근 토큰. dstack 모드에서는 반드시 있어야 한다(32자 이상). 암호화 환경변수로만 넣는다
  *   TEE_RECORD_DIR      판 기록 보관 폴더(TEE 데이터 디스크). dstack 모드에서는 반드시 있어야 한다
  *   TEE_CONSOLE_KEY     콘솔 좌석표 공개키(JWK JSON). 있으면 테이블 서버를 켠다. 배포 설정(측정됨)에 공개로 둔다
+ *   TEE_DISCONNECT_GRACE_MS 연결이 끊긴 좌석이 탈락하기까지(기본 60000). 배포 설정(측정됨)에 공개로 둔다
  *   TEE_ALLOW_UNSIGNED  1 이면 키 없는 좌석의 평문 카드·서명 없는 액션 허용 (시험 전용, dev 모드만)
  *
  * 토큰은 "누가 RPC 를 부르나"만 정한다. 토큰이 있어도 카드를 보거나 회원 서명 없이 칩을 움직일 수는 없다(RULES.md 3장).
@@ -210,7 +211,7 @@ async function start() {
     if (store) store.appendEngineKey(engine.call('info'));
     // 테이블 서버 — 사슬에서 정산 안 된 좌석을 먼저 정산하고(재시작 복구) 연다
     if (CONSOLE_KEY) {
-        tables = new TableServer({ engine, store, consoleKey: CONSOLE_KEY });
+        tables = new TableServer({ engine, store, consoleKey: CONSOLE_KEY, disconnectGraceMs: Number(process.env.TEE_DISCONNECT_GRACE_MS) || undefined });
         setInterval(() => tables.sweep(), 30000).unref();
     }
     // 테이블 화면·검증 화면은 언제나 TEE 가 내보낸다(테이블 서버가 꺼져 있으면 앉기·명령만 닫힌다)

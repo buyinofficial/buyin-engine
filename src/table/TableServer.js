@@ -19,7 +19,7 @@ const { verifyTicket, TicketError } = require('./ticket');
 const START_DELAY_MS = 3000;       // 판과 판 사이
 const RESULT_PAUSE_MS = 4000;      // 결과를 보여 주는 시간
 const EMPTY_ROOM_MS = 10 * 60 * 1000;
-const SITOUT_AFTER_TIMEOUTS = 2;
+const DISCONNECT_GRACE_MS = 60 * 1000;   // 연결이 끊긴 뒤 이 시간 안에 다시 붙지 않으면 탈락(배포 설정 TEE_DISCONNECT_GRACE_MS)
 
 class TableError extends Error {
     constructor(code, msg) { super(msg); this.code = code; }
@@ -47,6 +47,7 @@ class TableServer {
         this.usedTickets = new Set();
         this.liveSessions = new Set();   // sessionId — 같은 세션 두 번 앉기 금지
         this.bindings = new Map();       // odcId → [{ sigFp, sig, at, reason }] (마지막이 지금 키)
+        this.disconnectGraceMs = Number(o.disconnectGraceMs) > 0 ? Number(o.disconnectGraceMs) : DISCONNECT_GRACE_MS;
         if (this.store) this._recover();
     }
 
@@ -130,7 +131,15 @@ class TableServer {
         if (!room) room = this._openRoom(t.room);
         else if (!sameRules(room.rules, t.room)) throw new TableError('rules', 'ticket rules differ from the table');
         if (room.closing) throw new TableError('closed', 'table is closing');
-        if (room.seats.some((s) => s && s.odcId === t.player.odcId)) throw new TableError('seat', 'player already at this table');
+        // 같은 회원이 이미 앉아 있다 — 본인 키로 서명한 새 세션이면 기존 자리를 탈락시킨다(정산 뒤 다시 앉는다). 다른 키면 기존 자리에 아무 일도 없다
+        const existing = room.seats.find((x) => x && x.odcId === t.player.odcId);
+        if (existing) {
+            if (this._signedBy(t, auth, existing.boundFp)) {
+                this._leave(room, existing, 'replaced');
+                throw new TableError('replaced', 'previous session closed — join again after it is settled');
+            }
+            throw new TableError('seat', 'player already at this table');
+        }
         const seat = room.seats.findIndex((s) => !s);
         if (seat < 0) throw new TableError('full', 'table is full');
         const bound = this._checkPlayerKey(t, auth);   // 좌석표만으로는 앉을 수 없다 — 이 회원의 키 서명
@@ -149,9 +158,27 @@ class TableServer {
         room.seats[seat] = s;
         room.emptySince = null;
         this.tokens.set(token, { room, seat });
+        this._armGone(room, s);   // 화면이 붙기 전까지도 시간을 잰다
         this._broadcast(room, 'seat', { seat: this._publicSeat(room, s) });
         this._maybeStart(room);
         return { token, roomId: room.id, tableId: room.tableId, seat, seedCommit: room.seedCommit };
+    }
+
+    /** 이 좌석표 입장 서명이 이 키(지문)로 됐나 — 키를 고정하지 않고 확인만 */
+    _signedBy(t, auth, fp) {
+        try {
+            const a = auth || {};
+            return C.fingerprint(a.sig) === fp && C.verify(C.importPublicJwk(a.sig), C.msgJoin(t.tid, fp), a.proof);
+        } catch (_e) { return false; }
+    }
+
+    /** 연결이 모두 끊긴 좌석 — 정해진 시간 안에 다시 붙지 않으면 탈락(진행 중인 판은 폴드, 올인이면 그대로 결과까지). 나머지 판은 계속된다 */
+    _armGone(room, s) {
+        if (s.goneTimer) this.clock.clearTimeout(s.goneTimer);
+        s.goneTimer = this.clock.setTimeout(() => {
+            s.goneTimer = null;
+            if (room.seats[s.seat] === s && !s.clients.size && !s.leaving) this._leave(room, s, 'disconnected');
+        }, this.disconnectGraceMs);
     }
 
     _openRoom(rules) {
@@ -192,7 +219,11 @@ class TableServer {
         // 게임에 쓰는 서명 키는 입장 때 확인한 이 회원의 고정 키여야 한다
         let fp = null;
         try { fp = C.fingerprint(m.sig); } catch (_e) { /* 아래에서 거절 */ }
-        if (fp !== s.boundFp) throw new TableError('keys', 'signing key must be the account key used to join');
+        if (fp !== s.boundFp) {
+            // 앉은 뒤 인증값(서명 키)이 바뀌었다 — 그 자리는 탈락(폴드 후 정산)
+            this._leave(room, s, 'auth-changed');
+            throw new TableError('keys', 'signing key must be the account key used to join');
+        }
         const r = this.engine.call('registerKeys', { tableId: room.tableId, odcId: s.odcId, sig: m.sig, ecdh: m.ecdh, proof: m.proof });
         if (!r.ok) throw new TableError(r.code || 'keys', r.error);
         s.keys = true;
@@ -222,6 +253,7 @@ class TableServer {
     _leave(room, s, reason) {
         const h = room.hand;
         const inHand = h && h.seats.includes(s.seat);
+        s.leaveReason = s.leaveReason || reason;
         if (inHand) {
             s.leaving = true;
             const p = this._core(h).seats.get(s.seat);
@@ -308,7 +340,7 @@ class TableServer {
                 h.timer = this.clock.setTimeout(() => this._timeout(room, seat, q), room.rules.turnSec * 1000);
                 this._broadcast(room, 'turn', this._turnInfo(room));
                 const s = room.seats[seat];
-                if (s && (s.leaving || !s.clients.size && s.timeouts >= SITOUT_AFTER_TIMEOUTS)) this._timeout(room, seat, q);
+                if (s && s.leaving) this._timeout(room, seat, q);   // 탈락이 정해진 좌석은 기다리지 않는다
                 return;
             }
             if (st === 'advance') {
@@ -346,13 +378,15 @@ class TableServer {
         if (!h || h.toAct !== seat || h.q !== q) return;
         const core = this._core(h);
         const p = core.seats.get(seat);
-        const action = core.currentBet > p.currentBet ? 'FOLD' : 'CHECK';
+        void p;
+        // 자기 차례에 시간 안에 행동하지 않았다 → 폴드하고 탈락(판이 끝나면 정산 후 자리에서 뺀다). 나머지 판은 그대로 이어진다
         const s = room.seats[seat];
-        const r = this.engine.call('act', { handId: h.handId, entry: { k: 'host', seat, q, action, reason: s && s.leaving ? 'left' : 'timeout' } });
+        const r = this.engine.call('act', { handId: h.handId, entry: { k: 'host', seat, q, action: 'FOLD', reason: s && s.leaving ? (s.leaveReason || 'left') : 'timeout' } });
         if (!r.ok) return this._abort(room, r.error);
         if (s && !s.leaving) {
-            s.timeouts += 1;
-            if (s.timeouts >= SITOUT_AFTER_TIMEOUTS) s.sitout = true;
+            s.leaving = true;
+            s.leaveReason = 'timeout';
+            this._broadcast(room, 'seat', { seat: this._publicSeat(room, s) });
         }
         this._afterAction(room, seat, r.res, 'host');
     }
@@ -403,7 +437,7 @@ class TableServer {
     _afterHand(room) {
         for (const s of room.seats) {
             if (!s) continue;
-            if (s.leaving) this._unseat(room, s, 'left');
+            if (s.leaving) this._unseat(room, s, s.leaveReason || 'left');
             else if (s.stack <= 0) this._unseat(room, s, 'busted');
         }
         if (room.rules.endsAt && this.clock.now() >= room.rules.endsAt) return this._close(room, 'time');
@@ -413,6 +447,7 @@ class TableServer {
     // ------------------------------------------------------------ 일어나기 · 정산 · 닫기
 
     _unseat(room, s, reason) {
+        if (s.goneTimer) { this.clock.clearTimeout(s.goneTimer); s.goneTimer = null; }
         room.seats[s.seat] = null;
         this.tokens.delete(s.token);
         this.liveSessions.delete(s.sessionId);
@@ -454,7 +489,11 @@ class TableServer {
     subscribe(token, client) {
         const { room, s } = this._auth(token);
         s.clients.add(client);
-        client.onClose(() => s.clients.delete(client));
+        if (s.goneTimer) { this.clock.clearTimeout(s.goneTimer); s.goneTimer = null; }   // 다시 붙었다
+        client.onClose(() => {
+            s.clients.delete(client);
+            if (!s.clients.size && room.seats[s.seat] === s) this._armGone(room, s);
+        });
         client.send('snapshot', this.snapshot(room, s));
         return true;
     }
