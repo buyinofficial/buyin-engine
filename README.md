@@ -83,7 +83,7 @@ The records form a hash chain: each line holds the hash of the line before it, s
 The image build is reproducible: file times are the commit time and the image has no build-time labels.
 
 ```
-git checkout v0.5.0
+git checkout v0.5.1
 SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) docker buildx build --platform linux/amd64   --provenance=false --sbom=false --output type=oci,dest=engine.tar,rewrite-timestamp=true .
 ```
 
