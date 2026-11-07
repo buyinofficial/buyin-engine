@@ -23,7 +23,7 @@ const READ = [
     ['src/server.js', 'there is no operator route: no game commands and no record export'],
     ['src/outbox.js', 'the only outbound connection: lines of the record chain, sent to `TEE_CONSOLE_URL` (in the measured compose)'],
     ['src/consoleApi.js', 'the console\'s check API (token): results and signed records of finished hands; it is given only the record store'],
-    ['src/store.js', 'hands are appended to the record chain only when closed'],
+    ['src/store.js', 'hands are appended to the record chain (SQLite, schema in the file) only when closed; triggers refuse updates'],
     ['src/table/http.js', 'the table page is served by this TEE (`connect-src \'self\'`, no framing); the seat token is never in a URL'],
     ['src/public/table/js/vault.js', 'the player\'s keys are non-extractable WebCrypto keys; the envelope is opened only in the browser'],
     ['Dockerfile', 'the image contains only `package.json` and `src/`'],

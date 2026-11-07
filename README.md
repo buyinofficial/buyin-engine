@@ -26,7 +26,7 @@ src/Engine.js       tables, player keys, seed commitments, the engine API the ta
 src/server.js       HTTP server: GET /info (public keys + attestation), records, review manifest; no operator route
 src/outbox.js       sends the record chain to the console (TEE_CONSOLE_URL)
 src/attest.js       binds the engine keys to the TEE quote (dstack / Phala Cloud, Intel TDX)
-src/store.js        hand records kept on the TEE disk as an append-only hash chain
+src/store.js        hand records kept on the TEE disk as a hash chain in one SQLite file (Node's built-in node:sqlite); schema and SQL are in this file
 src/verify.js       hand record verifier (CLI and module)
 src/table/          table server: seat tickets signed by the console, turns and timers, settlement notes (amounts only)
 src/public/table/   the table screen the TEE serves itself at /table/ (plain JS, no build step, no third-party code); images and fonts come from the console's resource server
@@ -71,7 +71,7 @@ Every hand record is signed with the attested key, so a record that verifies wit
 
 ## Hand records stay in the TEE
 
-When a hand ends, the engine appends its signed record to `/data/records` on the TEE data disk before the hand is closed. If the record cannot be written, the hand does not close and the operator voids it. The disk is encrypted with a key that only the TEE receives.
+When a hand ends, the engine appends its signed record to the SQLite file `/data/records/buyin.db` on the TEE data disk before the hand is closed. If the record cannot be written, the hand does not close and the operator voids it. The disk is encrypted with a key that only the TEE receives.
 
 The records form a hash chain: each line holds the hash of the line before it, so deleting or changing a past record breaks every hash after it (`verifyChain` in `src/store.js`). Each time the engine starts it also writes its new public keys (and the attestation `report_data`) into the chain, so old records stay verifiable with old keys.
 
@@ -84,7 +84,9 @@ The records form a hash chain: each line holds the hash of the line before it, s
 
 **Checks for the console** (`src/consoleApi.js`, given only the record store). `GET /records/finished/<handId>` returns the signed record of a finished hand. `GET /records/results?from=&limit=` (console token) returns, for finished hands only, the seats, start and end stacks, rake and the record hash — no cards, deck or seed — so the console can check what it received. A hand in play is not in the chain, so no route can return it.
 
-**Retention.** Records are kept on the TEE disk for `TEE_RETENTION_DAYS` days (7, measured). Day files past that age that were already sent are deleted; the kept chain continues from the `prev` hash of its first line. The console keeps every record with the engine's signature.
+**Retention.** Records are kept on the TEE disk for `TEE_RETENTION_DAYS` days (7, measured). Lines past that age that were already sent are deleted; the kept chain continues from the `prev` hash of its first line.
+
+**SQLite.** The store uses Node's built-in `node:sqlite` (no third-party code). SQLite has no users or passwords; the file is on the TEE's encrypted disk and only this program opens it, so nothing about it is secret — the schema and every SQL statement are in `src/store.js`. A trigger refuses any `UPDATE` of a chain line, another refuses deleting a line not yet sent to the console, and on every start the engine recomputes the whole chain and refuses to start if any line differs. The console keeps every record with the engine's signature.
 
 ## Rebuild the image yourself
 
@@ -117,6 +119,7 @@ All rights reserved (see `LICENSE`). The code is published for inspection and ve
 ## Status
 
 - **Stage 1–2:** the engine runs as a separate process (`mode: "dev"`). The cryptographic guarantees above hold, but there is no hardware attestation.
+- **0.9.0:** the record store is one SQLite file (`node:sqlite`, built into Node): indexed reads for results, finished hands, receipts and a player's hands; triggers make chain lines append-only and keep unsent lines; records from 0.8 day files are moved in once. Measured on 100,000 hands (a week): a finished hand by id 0.04 ms, 200 results 21 ms, append with fsync 1.4 ms.
 - **0.8.2:** faster record store — sending to the console takes new lines from memory; a hand is read by its byte position; engine keys are kept in memory (no file scan per request); chain reads skip day files that end before the requested line.
 - **0.8.1:** `tools/check-deployment.js` also checks that the server state is this repository: the measured deployment file is `deploy/docker-compose.yml` of a commit here, only the secret token is set outside it, and the OS image equals `deploy/tee-os.txt` (a `dstack-dev-*` image is flagged as development). The pre-game brief shows the OS image.
 - **0.8.0:** the TEE keeps one week of records (`TEE_RETENTION_DAYS=7`, checked hourly; unsent records are never deleted). `GET /records/results` (console token) returns finished-hand results without cards for reconciliation; a hand in play cannot be read by any route.

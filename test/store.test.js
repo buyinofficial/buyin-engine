@@ -56,10 +56,15 @@ test('기록 보관소: 중간 줄을 고치면 다시 열 때 멈추고, 밖에
     assert.ok(verifyChain(forged).some((e) => /hash does not match/.test(e)));
     assert.ok(verifyChain([entries[1]]).some((e) => /expected index|prev hash/.test(e)), 'dropping the first line is detected');
 
-    const f = store.files()[0];
-    const lines = fs.readFileSync(path.join(dir, f), 'utf8').split('\n').filter(Boolean);
-    lines[1] = JSON.stringify(forged[1]);
-    fs.writeFileSync(path.join(dir, f), lines.join('\n') + '\n');
+    // 프로그램 안에서는 줄을 고칠 수 없다(트리거)
+    assert.throws(() => store.db.prepare('UPDATE chain SET line = ? WHERE i = 1').run(JSON.stringify(forged[1])), /append-only/);
+    store.close();
+    // 트리거를 지우고 DB 를 직접 고쳐도 다시 열 때 사슬 검사에 걸려 뜨지 않는다
+    const { DatabaseSync } = require('node:sqlite');
+    const raw = new DatabaseSync(path.join(dir, 'buyin.db'));
+    raw.exec('DROP TRIGGER chain_no_update');
+    raw.prepare('UPDATE chain SET line = ? WHERE i = 1').run(JSON.stringify(forged[1]));
+    raw.close();
     assert.throws(() => new RecordStore(dir), /record chain broken/);
 });
 

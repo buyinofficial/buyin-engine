@@ -70,7 +70,7 @@
 
 ## 6. 공급망 — 외부 코드를 들이지 않는다
 
-- `dependencies` 는 비워 둔다. Node 기본 `crypto` 만 쓴다. 꼭 필요한 패키지가 생기면 버전을 고정하고, 해시를 고정하고, 이 문서에 이유를 적는다.
+- `dependencies` 는 비워 둔다. Node 기본 모듈(`crypto`, 기록 보관소의 `node:sqlite`)만 쓴다. 꼭 필요한 패키지가 생기면 버전을 고정하고, 해시를 고정하고, 이 문서에 이유를 적는다.
 - 암호는 직접 만들지 않는다. 쓰는 것은 다음뿐이다.
   - 표준: P-256 ECDSA/ECDH, HKDF-SHA256, AES-256-GCM, HMAC-SHA256
   - 무작위 값: `crypto.randomBytes`

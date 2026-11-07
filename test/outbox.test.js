@@ -57,25 +57,26 @@ test('보내기: 실패하면 다시 보내고, 콘솔에 빠진 게 있으면 �
     assert.deepStrictEqual(con.got.map((e) => e.i), [0, 1, 2]);
 });
 
-test('보관 기간: 지난 날이고 이미 보낸 하루 파일만 지운다, 다시 열어도 남은 사슬이 이어진다', () => {
+test('보관 기간: 지났고 이미 보낸 줄만 지운다(안 보낸 줄은 트리거가 막는다), 다시 열어도 남은 사슬이 이어진다', () => {
     const dir = tmpDir();
     const store = new RecordStore(dir);
     for (let k = 0; k < 4; k++) store.appendHand(hand('h' + k), 'sig');
-    // 앞 두 줄을 옛 날짜 파일로 옮긴다
-    const today = store.files()[0];
-    const lines = fs.readFileSync(path.join(dir, today), 'utf8').split('\n').filter(Boolean);
-    fs.writeFileSync(path.join(dir, 'records-2020-01-01.jsonl'), lines.slice(0, 2).join('\n') + '\n');
-    fs.writeFileSync(path.join(dir, today), lines.slice(2).join('\n') + '\n');
-    const s = new RecordStore(dir);
-    assert.deepStrictEqual(s.prune(90), [], 'not sent yet — kept');
-    s.markSent(2);
-    assert.deepStrictEqual(s.prune(90), ['records-2020-01-01.jsonl']);
-    assert.strictEqual(s.getHand('h0'), null);
-    assert.ok(s.getHand('h2'));
+    const later = Date.now() + 200 * 24 * 60 * 60 * 1000;
+    assert.deepStrictEqual(store.prune(90, later), { rows: 0 }, 'not sent yet — kept');
+    assert.throws(() => store.db.prepare('DELETE FROM chain WHERE i = 0').run(), /not yet sent/);
+    store.markSent(2);
+    assert.deepStrictEqual(store.prune(90, Date.now()), { rows: 0 }, 'not old yet — kept');
+    assert.deepStrictEqual(store.prune(90, later), { rows: 2 });
+    assert.strictEqual(store.getHand('h0'), null);
+    assert.ok(store.getHand('h2'));
+    store.markSent(4);
+    assert.deepStrictEqual(store.prune(90, later), { rows: 1 }, 'the last line is always kept');
+    store.close();
     const again = new RecordStore(dir);
     assert.strictEqual(again.count, 4);
-    assert.strictEqual(again.first, 2);
-    assert.strictEqual(again.head, s.head);
+    assert.strictEqual(again.first, 3);
+    assert.strictEqual(again.head, store.head);
+    assert.strictEqual(again.sent, 4);
     assert.ok(again.storage().bytes > 0);
 });
 
@@ -96,14 +97,30 @@ test('보내기: 평소에는 기록 파일을 다시 읽지 않는다(새 줄�
     assert.strictEqual(reads, before, 'no file reads while the queue follows the sent position');
 });
 
-test('보관소: 다시 열어도 판은 바이트 위치로 그 줄만 읽고, 엔진 키 목록이 같다', () => {
+test('보관소: 다시 열어도 판·엔진 키·범위가 같다, 예전 하루 파일은 한 번 옮기고 지운다', () => {
     const dir = tmpDir();
     const store = new RecordStore(dir);
     store.appendEngineKey({ name: 'e', version: 't', mode: 'dev', keys: { sig: { kty: 'EC', x: 'a' }, ecdh: { kty: 'EC', x: 'b' }, sigFp: 'A', ecdhFp: 'B' } });
     for (let k = 0; k < 20; k++) store.appendHand({ handId: 'z' + k, tableId: 't', seats: [], note: '한글 ' + 'x'.repeat(k) }, 'sig');
+    const all = store.range(0, 1000);
+    store.markSent(5);
+    store.close();
     const again = new RecordStore(dir);
-    for (const id of ['z0', 'z7', 'z19']) assert.deepStrictEqual(again.getHand(id), store.getHand(id));
+    for (const id of ['z0', 'z7', 'z19']) assert.ok(again.getHand(id));
     assert.strictEqual(again.getHand('z7').record.note, '한글 xxxxxxx');
     assert.strictEqual(again.engineKeys().length, 1);
     assert.deepStrictEqual(again.range(15, 3).map((e) => e.i), [15, 16, 17]);
+    again.close();
+
+    // 0.8 까지의 하루 파일 → DB
+    const old = tmpDir();
+    fs.writeFileSync(path.join(old, 'records-2026-11-06.jsonl'), all.slice(0, 10).map((e) => JSON.stringify(e)).join('\n') + '\n');
+    fs.writeFileSync(path.join(old, 'records-2026-11-07.jsonl'), all.slice(10).map((e) => JSON.stringify(e)).join('\n') + '\n');
+    fs.writeFileSync(path.join(old, 'sent.json'), JSON.stringify({ sent: 7 }));
+    const moved = new RecordStore(old);
+    assert.strictEqual(moved.count, 21);
+    assert.strictEqual(moved.head, store.head);
+    assert.strictEqual(moved.sent, 7);
+    assert.ok(moved.getHand('z12'));
+    assert.deepStrictEqual(fs.readdirSync(old).filter((f) => f.endsWith('.jsonl') || f === 'sent.json'), []);
 });

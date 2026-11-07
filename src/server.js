@@ -200,8 +200,8 @@ async function start() {
         // 보관 기간이 지났고 이미 보낸 하루 파일은 지운다
         const prune = () => {
             try {
-                const gone = store.prune(RETENTION_DAYS);
-                if (gone.length) console.log(`[tee-engine] removed ${gone.length} record file(s) older than ${RETENTION_DAYS} days, already sent`);
+                const r = store.prune(RETENTION_DAYS);
+                if (r.rows) console.log(`[tee-engine] removed ${r.rows} record line(s) older than ${RETENTION_DAYS} days, already sent`);
             } catch (e) { console.error(`[tee-engine] prune failed: ${e.message}`); }
         };
         prune();

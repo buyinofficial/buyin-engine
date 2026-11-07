@@ -1,10 +1,13 @@
 /**
- * 판 기록 보관소 — 엔진이 서명한 판 기록을 TEE 디스크에 남긴다.
+ * 판 기록 보관소 — 엔진이 서명한 판 기록을 TEE 디스크의 SQLite 파일(buyin.db) 하나에 남긴다.
  *
  * TEE(dstack) 의 데이터 디스크는 TEE 안에서만 풀리는 키로 암호화된다. 운영자는 디스크를 읽거나 고칠 수 없다.
+ * SQLite 는 Node 에 들어 있는 node:sqlite 를 쓴다(외부 라이브러리 없음). SQLite 에는 계정·비밀번호가 없다 — 이 파일은
+ * TEE 안의 이 프로그램만 연다. 숨길 설정값이 없으므로 스키마·SQL 은 모두 이 파일에 공개돼 있다.
+ *
  * 그래도 "기록을 빼거나 바꾸지 않았다"를 밖에서 확인할 수 있게 기록을 사슬로 잇는다.
  *
- *   한 줄 = { i, prev, hash, kind, ... }            하루 파일 records-YYYY-MM-DD.jsonl 에 덧붙인다(append only)
+ *   한 줄 = { i, prev, hash, kind, ... }
  *   hash  = SHA-256( prev + "\n" + stableStringify(본문) )   본문 = 줄에서 i·prev·hash 를 뺀 나머지
  *   영수증(공개): 판 번호 → 사슬 위치·줄 해시·기록 해시. 카드는 없다 — 콘솔이 준 사본이 TEE 원본과 같은지 누구나 맞춰 본다
  *   내 판(회원 키로): 판 기록의 좌석 키 지문으로 색인 — 그 키로 서명한 회원만 자기 판 기록을 받는다
@@ -13,17 +16,51 @@
  *           "settle"      정산서(엔진 서명) — 금액만
  *           "hand"        { record, sig } — 엔진이 서명한 판 기록 (판이 끝난 뒤에만)
  *
- * 중간 줄을 지우거나 바꾸면 그 뒤 hash 가 모두 어긋난다(verifyChain). 지금 사슬 끝(head)은 /records/head 로 공개한다.
- * 줄은 쓰자마자 콘솔로 보낸다(outbox.js). 어디까지 보냈는지는 sent.json 에 둔다.
- * 보관 기간: 보낸 지 오래된(기본 90일) 하루 파일은 통째로 지운다. 남은 사슬은 첫 줄의 prev 에서 이어진다.
- * 쓰기는 이 파일만 한다(RULES.md 2장 예외): 정해진 폴더에, 덧붙이기만, 매번 fsync.
+ * 덧붙이기만 한다: 줄을 고치는 UPDATE 는 트리거가 막는다. 지우기는 보관 기간 정리(prune)뿐이고, 콘솔로 아직 안 보낸 줄은
+ * 트리거가 지우지 못하게 막는다. 뜰 때 사슬 전체를 다시 계산해 어긋나면 뜨지 않는다. 지금 사슬 끝(head)은 /records/head 로 공개한다.
+ * 줄은 쓰자마자 콘솔로 보낸다(outbox.js). 진행 중인 판은 여기 없다 — 판이 끝나야 들어온다(Engine._closeHand → onRecord).
+ * 쓰기는 이 파일만 한다(RULES.md 2장 예외): 정해진 폴더의 이 DB 파일에만.
  */
 
 const fs = require('fs');
 const path = require('path');
+const { DatabaseSync } = require('node:sqlite');
 const C = require('./crypto');
 
 const GENESIS = '0'.repeat(64);
+const DB_FILE = 'buyin.db';
+
+/** 스키마 — 게임 기록 보관용. 계정·비밀번호 없음 */
+const SCHEMA = `
+CREATE TABLE IF NOT EXISTS chain (
+    i       INTEGER PRIMARY KEY,   -- 줄 번호(0 부터, 빈틈 없이)
+    prev    TEXT    NOT NULL,      -- 앞 줄의 hash
+    hash    TEXT    NOT NULL,      -- 이 줄의 hash
+    kind    TEXT    NOT NULL,      -- engine-key | seat-in | settle | hand
+    at      INTEGER NOT NULL,      -- 쓴 시각(ms)
+    hand_id TEXT,                  -- kind = hand 일 때 판 번호
+    line    TEXT    NOT NULL       -- 줄 전체(JSON). hash 는 이 줄의 본문으로 계산된다
+);
+CREATE UNIQUE INDEX IF NOT EXISTS chain_hand ON chain(hand_id) WHERE hand_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS chain_kind ON chain(kind, i);
+CREATE INDEX IF NOT EXISTS chain_at ON chain(at);
+-- 내 판 기록: 좌석 서명 키 지문 → 판
+CREATE TABLE IF NOT EXISTS seat_keys (
+    sig_fp  TEXT    NOT NULL,
+    i       INTEGER NOT NULL,
+    hand_id TEXT    NOT NULL,
+    PRIMARY KEY (sig_fp, i)
+);
+-- 콘솔로 보낸 위치(sent)
+CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+-- 덧붙이기만: 줄은 고칠 수 없다
+CREATE TRIGGER IF NOT EXISTS chain_no_update BEFORE UPDATE ON chain
+BEGIN SELECT RAISE(ABORT, 'record chain is append-only'); END;
+-- 콘솔로 아직 안 보낸 줄은 지울 수 없다
+CREATE TRIGGER IF NOT EXISTS chain_keep_unsent BEFORE DELETE ON chain
+WHEN OLD.i >= COALESCE((SELECT CAST(v AS INTEGER) FROM meta WHERE k = 'sent'), 0)
+BEGIN SELECT RAISE(ABORT, 'records not yet sent to the console cannot be deleted'); END;
+`;
 
 function lineHash(prev, body) {
     return C.sha256hex(prev + '\n' + C.stableStringify(body));
@@ -34,69 +71,111 @@ function bodyOf(entry) {
     return body;
 }
 
-function dayOf(ms) {
-    return new Date(ms).toISOString().slice(0, 10);
-}
-
 class RecordStore {
     /** @param {string} dir 보관 폴더 (TEE 데이터 디스크) */
     constructor(dir) {
         this.dir = dir;
         fs.mkdirSync(dir, { recursive: true });
+        this.file = path.join(dir, DB_FILE);
+        this.db = new DatabaseSync(this.file);
+        this.db.exec('PRAGMA auto_vacuum = INCREMENTAL; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;');
+        this.db.exec(SCHEMA);
+        const q = (sql) => this.db.prepare(sql);
+        this.sql = {
+            insert: q('INSERT INTO chain (i, prev, hash, kind, at, hand_id, line) VALUES (?, ?, ?, ?, ?, ?, ?)'),
+            seatKey: q('INSERT OR IGNORE INTO seat_keys (sig_fp, i, hand_id) VALUES (?, ?, ?)'),
+            range: q('SELECT line FROM chain WHERE i >= ? ORDER BY i LIMIT ?'),
+            hands: q("SELECT i, line FROM chain WHERE kind = 'hand' AND i >= ? ORDER BY i LIMIT ?"),
+            hand: q('SELECT line FROM chain WHERE hand_id = ?'),
+            keys: q("SELECT line FROM chain WHERE kind = 'engine-key' ORDER BY i"),
+            ofKey: q('SELECT hand_id FROM seat_keys WHERE sig_fp = ? ORDER BY i DESC LIMIT ?'),
+            handCount: q("SELECT COUNT(*) AS n FROM chain WHERE kind = 'hand'"),
+            setMeta: q('INSERT INTO meta (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v'),
+            getMeta: q('SELECT v FROM meta WHERE k = ?'),
+            oldest: q('SELECT MIN(at) AS at FROM chain'),
+        };
         this.count = 0;
         this.head = GENESIS;
-        this.first = 0;            // 남아 있는 첫 줄 번호(지운 파일이 있으면 0 보다 크다)
+        this.first = 0;            // 남아 있는 첫 줄 번호(정리한 줄이 있으면 0 보다 크다)
         this.sent = 0;             // 콘솔로 보낸 위치 — 이 번호 앞은 콘솔에 있다
         this.onAppend = null;      // 새 줄을 쓴 뒤 부른다(콘솔로 보내기)
-        this.byHand = new Map();   // handId → { file, i, off, len } — 그 줄만 읽는다
-        this.byKey = new Map();    // 회원 서명 키 지문 → [handId] (오래된 것부터)
-        this.fileStart = new Map(); // 하루 파일 → 첫 줄 번호 — 앞에서 끝나는 파일은 읽지 않는다
-        this.keyLines = [];        // 엔진 키 줄(공개 /records/keys) — 요청마다 파일을 읽지 않는다
+        this.hands = 0;            // 남아 있는 판 수(공개 /records/head — 요청마다 세지 않는다)
+        this._importFiles();
         this._load();
     }
 
-    files() {
-        return fs.readdirSync(this.dir).filter((f) => /^records-\d{4}-\d{2}-\d{2}\.jsonl$/.test(f)).sort();
+    /** 뜰 때 사슬을 처음부터 다시 계산해 끝(head)을 되살린다. 어긋나면 뜨지 않는다 */
+    _load() {
+        const s = this.sql.getMeta.get('sent');
+        this.sent = s ? Number(s.v) || 0 : 0;
+        let started = false;
+        for (const row of this.db.prepare('SELECT i, prev, hash, line FROM chain ORDER BY i').iterate()) {
+            const entry = JSON.parse(row.line);
+            if (!started) { started = true; this.first = this.count = entry.i; this.head = entry.prev; }   // 오래된 줄을 정리했으면 거기서 시작
+            if (row.i !== this.count || entry.i !== row.i || entry.prev !== this.head || row.prev !== entry.prev
+                || entry.hash !== row.hash || entry.hash !== lineHash(entry.prev, bodyOf(entry))) {
+                throw new Error(`record chain broken at #${row.i}`);
+            }
+            this.count += 1;
+            this.head = entry.hash;
+        }
+        this.hands = this.sql.handCount.get().n;
     }
 
-    /** 뜰 때 사슬을 처음부터 읽어 끝(head)과 판 번호 색인을 되살린다. 어긋나면 뜨지 않는다 */
-    _load() {
-        try { this.sent = Number(JSON.parse(fs.readFileSync(path.join(this.dir, 'sent.json'), 'utf8')).sent) || 0; } catch (_e) { /* 처음 */ }
-        let started = false;
-        for (const f of this.files()) {
-            for (const { entry, off, len } of readLinesAt(path.join(this.dir, f))) {
-                if (!started) { started = true; this.first = this.count = entry.i; this.head = entry.prev; }   // 오래된 파일을 지웠으면 거기서 시작
-                if (entry.i !== this.count || entry.prev !== this.head || entry.hash !== lineHash(entry.prev, bodyOf(entry))) {
-                    throw new Error(`record chain broken at ${f} #${entry.i}`);
+    /** 0.8 까지의 하루 파일(records-YYYY-MM-DD.jsonl)이 있으면 한 번 옮기고 지운다 — 사슬은 그대로 이어진다 */
+    _importFiles() {
+        const files = fs.readdirSync(this.dir).filter((f) => /^records-\d{4}-\d{2}-\d{2}\.jsonl$/.test(f)).sort();
+        if (!files.length) return;
+        if (this.db.prepare('SELECT COUNT(*) AS n FROM chain').get().n === 0) {
+            this.db.exec('BEGIN');
+            try {
+                let n = null, head = null;
+                for (const f of files) {
+                    for (const l of fs.readFileSync(path.join(this.dir, f), 'utf8').split('\n')) {
+                        if (!l) continue;
+                        const e = JSON.parse(l);
+                        if (n === null) { n = e.i; head = e.prev; }
+                        if (e.i !== n || e.prev !== head || e.hash !== lineHash(e.prev, bodyOf(e))) throw new Error(`record chain broken at ${f} #${e.i}`);
+                        this._insert(e);
+                        n += 1; head = e.hash;
+                    }
                 }
-                if (!this.fileStart.has(f)) this.fileStart.set(f, entry.i);
-                this.count += 1;
-                this.head = entry.hash;
-                if (entry.kind === 'hand' && entry.record) this._index(entry.record, f, entry.i, off, len);
-                if (entry.kind === 'engine-key') this.keyLines.push(entry);
+                try { this.sql.setMeta.run('sent', String(Number(JSON.parse(fs.readFileSync(path.join(this.dir, 'sent.json'), 'utf8')).sent) || 0)); } catch (_e) { /* 없음 */ }
+                this.db.exec('COMMIT');
+            } catch (e) {
+                this.db.exec('ROLLBACK');
+                throw e;
+            }
+        }
+        for (const f of files) fs.unlinkSync(path.join(this.dir, f));
+        try { fs.unlinkSync(path.join(this.dir, 'sent.json')); } catch (_e) { /* 없음 */ }
+    }
+
+    _insert(entry) {
+        const handId = entry.kind === 'hand' && entry.record ? String(entry.record.handId) : null;
+        this.sql.insert.run(entry.i, entry.prev, entry.hash, entry.kind, Number(entry.at) || 0, handId, JSON.stringify(entry));
+        if (handId) {
+            for (const s of entry.record.seats || []) {
+                if (s.keys && s.keys.sig) this.sql.seatKey.run(C.fingerprint(s.keys.sig), entry.i, handId);
             }
         }
     }
 
     _append(body) {
         const entry = { i: this.count, prev: this.head, hash: lineHash(this.head, body), ...body };
-        const file = `records-${dayOf(Date.now())}.jsonl`;
-        const line = Buffer.from(JSON.stringify(entry) + '\n');
-        const fd = fs.openSync(path.join(this.dir, file), 'a');
-        let off;
+        this.db.exec('BEGIN');
         try {
-            off = fs.fstatSync(fd).size;
-            fs.writeSync(fd, line);
-            fs.fsyncSync(fd);
-        } finally {
-            fs.closeSync(fd);
+            this._insert(entry);
+            this.db.exec('COMMIT');   // synchronous = FULL — 디스크에 닿은 뒤에 돌아온다
+        } catch (e) {
+            this.db.exec('ROLLBACK');
+            throw e;
         }
-        if (!this.fileStart.has(file)) this.fileStart.set(file, entry.i);
-        if (entry.kind === 'engine-key') this.keyLines.push(entry);
         this.count += 1;
         this.head = entry.hash;
+        if (entry.kind === 'hand') this.hands += 1;
         if (this.onAppend) this.onAppend(entry);
-        return { entry, file, off, len: line.length - 1 };
+        return entry;
     }
 
     /** 엔진이 뜰 때 — 공개키와 증명서 report_data 를 사슬에 남긴다 */
@@ -107,30 +186,23 @@ class RecordStore {
             engine: { name: info.name, version: info.version, mode: info.mode },
             keys: { sig: info.keys.sig, ecdh: info.keys.ecdh, sigFp: info.keys.sigFp, ecdhFp: info.keys.ecdhFp },
             attestation: a ? { type: a.type, reportData: a.reportData, appId: a.appId || null, composeHash: a.composeHash || null } : null,
-        }).entry;
+        });
     }
 
     /** 판이 끝났을 때 — 엔진이 서명한 기록. 실패하면 던진다(그 판은 무효가 된다) */
     appendHand(record, sig) {
-        const { entry, file, off, len } = this._append({ kind: 'hand', at: Date.now(), record, sig });
-        this._index(record, file, entry.i, off, len);
-        return entry;
+        return this._append({ kind: 'hand', at: Date.now(), record, sig });
     }
 
-    _index(record, file, i, off, len) {
-        const id = String(record.handId);
-        this.byHand.set(id, { file, i, off, len });
-        for (const s of record.seats || []) {
-            if (!s.keys || !s.keys.sig) continue;
-            const fp = C.fingerprint(s.keys.sig);
-            if (!this.byKey.has(fp)) this.byKey.set(fp, []);
-            this.byKey.get(fp).push(id);
-        }
+    /** 테이블 서버 사건 — 'seat-in'(좌석표로 앉음), 'settle'(정산서). 판 기록과 같은 사슬에 남아 재시작 뒤에도 돈이 정산된다 */
+    appendEvent(kind, body) {
+        if (!['seat-in', 'settle'].includes(kind)) throw new Error('unknown event kind');
+        return this._append({ kind, at: Date.now(), ...body });
     }
 
     /** 이 키로 앉았던 판 — 최근 것부터 */
     handsOfKey(sigFp, limit = 50) {
-        return (this.byKey.get(String(sigFp)) || []).slice(-limit).reverse();
+        return this.sql.ofKey.all(String(sigFp), limit).map((r) => r.hand_id);
     }
 
     /**
@@ -139,14 +211,12 @@ class RecordStore {
      * @returns {{ entries: object[], next: number }} next = 다음에 조회할 줄 번호
      */
     results(from, limit) {
-        const out = [];
-        let next = Math.max(from, this.first);
-        for (const e of this.range(next, Number.MAX_SAFE_INTEGER)) {
-            next = e.i + 1;
-            if (e.kind !== 'hand' || !e.record) continue;
+        const rows = this.sql.hands.all(Math.max(from, this.first), limit);
+        const entries = rows.map((row) => {
+            const e = JSON.parse(row.line);
             const r = e.record;
             const rake = (r.result && r.result.rake && r.result.rake.perSeat) || [];
-            out.push({
+            return {
                 i: e.i, handId: String(r.handId), tableId: r.tableId, endedAt: r.endedAt,
                 type: r.result && r.result.type,
                 seats: (r.seats || []).map((s) => ({
@@ -156,10 +226,9 @@ class RecordStore {
                 })),
                 recordHash: C.sha256hex(C.stableStringify(r)),
                 engineSigFp: r.engine && r.engine.sigFp,
-            });
-            if (out.length >= limit) break;
-        }
-        return { entries: out, next };
+            };
+        });
+        return { entries, next: rows.length === limit ? rows[rows.length - 1].i + 1 : this.count };
     }
 
     /** 공개 영수증 — 카드 없이 사슬 위치와 해시만 */
@@ -170,14 +239,8 @@ class RecordStore {
             endedAt: e.record.endedAt, recordHash: C.sha256hex(C.stableStringify(e.record)), engineSigFp: e.record.engine && e.record.engine.sigFp };
     }
 
-    /** 테이블 서버 사건 — 'seat-in'(좌석표로 앉음), 'settle'(정산서). 판 기록과 같은 사슬에 남아 재시작 뒤에도 돈이 정산된다 */
-    appendEvent(kind, body) {
-        if (!['seat-in', 'settle'].includes(kind)) throw new Error('unknown event kind');
-        return this._append({ kind, at: Date.now(), ...body }).entry;
-    }
-
     headInfo() {
-        return { count: this.count, head: this.head, hands: this.byHand.size, first: this.first, sent: this.sent };
+        return { count: this.count, head: this.head, hands: this.hands, first: this.first, sent: this.sent };
     }
 
     /** 콘솔이 n 앞까지 받았다 */
@@ -185,90 +248,61 @@ class RecordStore {
         const v = Math.min(Math.floor(Number(n) || 0), this.count);
         if (v <= this.sent) return;
         this.sent = v;
-        fs.writeFileSync(path.join(this.dir, 'sent.json.tmp'), JSON.stringify({ sent: v }));
-        fs.renameSync(path.join(this.dir, 'sent.json.tmp'), path.join(this.dir, 'sent.json'));
+        this.sql.setMeta.run('sent', String(v));
     }
 
     /** 기록 크기와 디스크 남은 공간 (공개) */
     storage() {
         let bytes = 0;
-        const files = this.files();
-        for (const f of files) bytes += fs.statSync(path.join(this.dir, f)).size;
+        for (const f of [this.file, this.file + '-wal']) { try { bytes += fs.statSync(f).size; } catch (_e) { /* 없음 */ } }
         let freeBytes = null;
         try { const s = fs.statfsSync(this.dir); freeBytes = s.bavail * s.bsize; } catch (_e) { /* statfs 없음 */ }
-        return { bytes, files: files.length, oldestDay: files.length ? files[0].slice(8, 18) : null, freeBytes };
+        const o = this.sql.oldest.get();
+        return { bytes, files: 1, oldestDay: o && o.at ? new Date(o.at).toISOString().slice(0, 10) : null, freeBytes };
     }
 
-    /** 보관 기간이 지났고 콘솔로 보낸 하루 파일을 지운다(오늘 파일은 남긴다). 지운 파일 이름을 돌려준다 */
+    /**
+     * 보관 기간이 지났고 콘솔로 보낸 줄을 지운다(앞에서부터 이어서). 마지막 줄은 남긴다(사슬 끝을 잃지 않게).
+     * @returns {{ rows: number }} 지운 줄 수
+     */
     prune(days, now = Date.now()) {
-        const cutoff = dayOf(now - days * 24 * 60 * 60 * 1000);
-        const gone = [];
-        const files = this.files();
-        for (let k = 0; k < files.length - 1; k++) {   // 마지막(가장 최근) 파일은 남긴다
-            const f = files[k];
-            const next = this.fileStart.get(files[k + 1]);   // 이 파일의 마지막 줄 = 다음 파일 첫 줄 - 1
-            if (f.slice(8, 18) >= cutoff || next === undefined || next > this.sent) break;
-            fs.unlinkSync(path.join(this.dir, f));
-            this.fileStart.delete(f);
-            gone.push(f);
-            this.first = next;
+        const cutoff = now - days * 24 * 60 * 60 * 1000;
+        const young = this.db.prepare('SELECT MIN(i) AS i FROM chain WHERE at >= ?').get(cutoff).i;
+        const upTo = Math.min(this.sent, this.count - 1, young === null ? this.count : young);
+        if (upTo <= this.first) return { rows: 0 };
+        this.db.exec('BEGIN');
+        try {
+            this.db.prepare('DELETE FROM seat_keys WHERE i < ?').run(upTo);
+            this.db.prepare('DELETE FROM chain WHERE i < ?').run(upTo);
+            this.db.exec('COMMIT');
+        } catch (e) {
+            this.db.exec('ROLLBACK');
+            throw e;
         }
-        if (gone.length) {
-            this.keyLines = this.keyLines.filter((e) => e.i >= this.first);
-            for (const [id, at] of this.byHand) if (gone.includes(at.file)) this.byHand.delete(id);
-            for (const [fp, ids] of this.byKey) this.byKey.set(fp, ids.filter((id) => this.byHand.has(id)));
-        }
-        return gone;
+        const rows = upTo - this.first;
+        this.first = upTo;
+        this.hands = this.sql.handCount.get().n;
+        this.db.exec('PRAGMA incremental_vacuum;');
+        return { rows };
     }
 
     getHand(handId) {
-        const at = this.byHand.get(String(handId));
-        if (!at) return null;
-        const buf = Buffer.alloc(at.len);
-        const fd = fs.openSync(path.join(this.dir, at.file), 'r');
-        try { fs.readSync(fd, buf, 0, at.len, at.off); } finally { fs.closeSync(fd); }
-        const entry = JSON.parse(buf.toString('utf8'));
-        return entry.i === at.i ? entry : null;
+        const row = this.sql.hand.get(String(handId));
+        return row ? JSON.parse(row.line) : null;
     }
 
     /** 엔진 키 줄 전부 — 옛 기록을 옛 키로 검증할 때 */
     engineKeys() {
-        return this.keyLines.slice();
+        return this.sql.keys.all().map((r) => JSON.parse(r.line));
     }
 
-    /** i 번째 줄부터 limit 줄 — from 앞에서 끝나는 하루 파일은 읽지 않는다 */
+    /** i 번째 줄부터 limit 줄 */
     range(from, limit) {
-        const out = [];
-        const files = this.files();
-        for (let k = 0; k < files.length; k++) {
-            const next = this.fileStart.get(files[k + 1]);
-            if (next !== undefined && next <= from) continue;
-            for (const e of readLines(path.join(this.dir, files[k]))) {
-                if (e.i < from) continue;
-                out.push(e);
-                if (out.length >= limit) return out;
-            }
-        }
-        return out;
+        const n = Number.isFinite(limit) && limit < Number.MAX_SAFE_INTEGER ? limit : -1;
+        return this.sql.range.all(Math.max(from, this.first), n).map((r) => JSON.parse(r.line));
     }
-}
 
-function readLines(file) {
-    const text = fs.readFileSync(file, 'utf8');
-    return text.split('\n').filter(Boolean).map((l) => JSON.parse(l));
-}
-
-/** 줄과 그 바이트 위치 — 뜰 때 판 위치 색인을 만든다 */
-function readLinesAt(file) {
-    const buf = fs.readFileSync(file);
-    const out = [];
-    let start = 0;
-    for (let k = 0; k < buf.length; k++) {
-        if (buf[k] !== 0x0a) continue;
-        if (k > start) out.push({ entry: JSON.parse(buf.toString('utf8', start, k)), off: start, len: k - start });
-        start = k + 1;
-    }
-    return out;
+    close() { this.db.close(); }
 }
 
 /**
