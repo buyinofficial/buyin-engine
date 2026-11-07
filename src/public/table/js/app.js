@@ -529,8 +529,12 @@ function heroSeat(node, s, a, inHand) {
         tm.style.left = ((-211 + 120) / sc - 25) + 'px'; tm.style.top = ((-95 + 80) / sc - 25) + 'px';
         wrap.appendChild(tm);
     }
-    // 결과 족보 글자(보드 아래)가 떠 있는 동안 내 말풍선은 숨긴다 — 같은 높이라 글자를 가린다
-    if (!(S.winners && S.winners.big)) bubbleFor(wrap, seat, cx, cy - 71.5 - 34);
+    // 결과 족보 글자(보드 아래)가 떠 있는 동안 내 말풍선은 숨긴다 — 같은 높이라 글자를 가린다.
+    // 세로가 기준(900)보다 짧은 화면에서는 내 자리가 보드 쪽으로 올라와 말풍선이 카드에 닿는다 — 아바타 왼쪽 아래에 둔다
+    if (!(S.winners && S.winners.big)) {
+        if (innerHeight < 880) bubbleFor(wrap, seat, cx - 150, ny - 11, 'side');
+        else bubbleFor(wrap, seat, cx, cy - 71.5 - 34);
+    }
     resultFor(wrap, seat, cx, ny + 34, cx, cy);
 }
 

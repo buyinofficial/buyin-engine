@@ -81,6 +81,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .bubble img { width: 13px; height: 13px; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .4)); }
 .bubble::after { content: ''; position: absolute; left: 50%; bottom: -6px; transform: translateX(-50%); border: 6px solid transparent; border-bottom: 0; border-top-color: rgba(251, 191, 36, .4); }
 .bubble.fold { color: var(--gray-500); }
+.bubble.side::after { display: none; }
 .mini { z-index: 35; display: flex; }
 .mini .mc { width: 28px; height: 36px; border-radius: 4px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, .1); }
 .mini .mc:first-child { transform: rotate(-10deg) scale(1.155); }
