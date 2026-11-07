@@ -1,10 +1,12 @@
 # Phala Cloud (dstack, Intel TDX) deployment of the BUY-IN engine.
-# The image is pinned by digest: it is the v0.5.9 image built by GitHub Actions from this repository.
-# The build is reproducible — rebuilding tag v0.5.9 gives the same digest (README → "Rebuild the image yourself").
+# The image is pinned by digest: the image GitHub Actions built from this repository (see the GitHub Release of the version).
+# The build is reproducible — rebuilding the tag gives the same digest (README → "Rebuild the image yourself").
 # This file's hash is measured into the TEE (compose-hash in RTMR3), so anyone can recompute it and compare.
-# TEE_RPC_TOKEN is an encrypted secret: only the TEE can decrypt it. It decides who may call /rpc, nothing else.
+# TEE_RPC_TOKEN is the one encrypted secret: only the TEE can decrypt it. The engine sends its records to the console with it,
+# and the console uses it for the check API. It cannot open any route into a hand in play — there is none.
 # TEE_CONSOLE_KEY is public: the console's key for seat tickets. Only tickets it signed can seat a player; it cannot see or move cards.
-# Hand records are kept on the TEE data disk (volume "records"), encrypted with a key only the TEE receives.
+# Hand records are kept on the TEE data disk (volume "records", SQLite), encrypted with a key only the TEE receives, for TEE_RETENTION_DAYS.
+# Container logs are capped (7 files of 5 MB) so nothing piles up; the engine logs only start-up and clean-up lines, never cards.
 services:
   engine:
     image: ghcr.io/buyinofficial/buyin-engine@sha256:d7a5899300eda6848ed9787c6d654b6eded36461a65ceca1b069cfaecb594c75
@@ -20,6 +22,11 @@ services:
       - /tmp:size=16m
     mem_limit: 1536m
     pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "7"
     ports:
       - "3900:3900"
     environment:

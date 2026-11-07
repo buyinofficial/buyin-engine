@@ -119,6 +119,7 @@ All rights reserved (see `LICENSE`). The code is published for inspection and ve
 ## Status
 
 - **Stage 1–2:** the engine runs as a separate process (`mode: "dev"`). The cryptographic guarantees above hold, but there is no hardware attestation.
+- **0.9.1:** table page: one action per turn even on a double click (no false "action failed"), no favicon request; container logs capped (7 × 5 MB) in the measured compose.
 - **0.9.0:** the record store is one SQLite file (`node:sqlite`, built into Node): indexed reads for results, finished hands, receipts and a player's hands; triggers make chain lines append-only and keep unsent lines; records from 0.8 day files are moved in once. Measured on 100,000 hands (a week): a finished hand by id 0.04 ms, 200 results 21 ms, append with fsync 1.4 ms.
 - **0.8.2:** faster record store — sending to the console takes new lines from memory; a hand is read by its byte position; engine keys are kept in memory (no file scan per request); chain reads skip day files that end before the requested line.
 - **0.8.1:** `tools/check-deployment.js` also checks that the server state is this repository: the measured deployment file is `deploy/docker-compose.yml` of a commit here, only the secret token is set outside it, and the OS image equals `deploy/tee-os.txt` (a `dstack-dev-*` image is flagged as development). The pre-game brief shows the OS image.

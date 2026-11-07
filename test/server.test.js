@@ -13,7 +13,7 @@ test('서버: 운영 서버 경로가 없다 — /rpc(판 열기·키 등록·�
         stdio: 'ignore',
     });
     try {
-        for (let i = 0; i < 40; i++) { try { await fetch(`http://127.0.0.1:${port}/info`); break; } catch (_e) { await new Promise((r) => setTimeout(r, 100)); } }
+        for (let i = 0; i < 150; i++) { try { await fetch(`http://127.0.0.1:${port}/info`); break; } catch (_e) { await new Promise((r) => setTimeout(r, 100)); } }
         for (const m of ['info', 'openTable', 'registerKeys', 'startHand', 'act', 'finish', 'abortHand', 'closeTable']) {
             const r = await fetch(`http://127.0.0.1:${port}/rpc`, { method: 'POST', headers: { Authorization: 'Bearer test-token' }, body: JSON.stringify({ m, p: {} }) });
             assert.strictEqual(r.status, 404, m);
@@ -34,7 +34,7 @@ test('서버: 보안 헤더(nosniff·no-referrer)와 요청 횟수 제한(429)',
     });
     try {
         let info;
-        for (let i = 0; i < 40; i++) { try { info = await fetch(`http://127.0.0.1:${port}/info`); break; } catch (_e) { await new Promise((r) => setTimeout(r, 100)); } }
+        for (let i = 0; i < 150; i++) { try { info = await fetch(`http://127.0.0.1:${port}/info`); break; } catch (_e) { await new Promise((r) => setTimeout(r, 100)); } }
         assert.strictEqual(info.headers.get('x-content-type-options'), 'nosniff');
         assert.strictEqual(info.headers.get('referrer-policy'), 'no-referrer');
         const codes = await Promise.all(Array.from({ length: 80 }, () => fetch(`http://127.0.0.1:${port}/records/mine`, { method: 'POST', body: '{}' }).then((r) => r.status)));

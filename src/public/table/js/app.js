@@ -524,7 +524,8 @@ function heroSeat(node, s, a, inHand) {
         tm.style.left = ((-211 + 120) / sc - 25) + 'px'; tm.style.top = ((-95 + 80) / sc - 25) + 'px';
         wrap.appendChild(tm);
     }
-    bubbleFor(wrap, seat, cx, cy - 71.5 - 34);
+    // 결과 족보 글자(보드 아래)가 떠 있는 동안 내 말풍선은 숨긴다 — 같은 높이라 글자를 가린다
+    if (!(S.winners && S.winners.big)) bubbleFor(wrap, seat, cx, cy - 71.5 - 34);
     resultFor(wrap, seat, cx, ny + 34, cx, cy);
 }
 
@@ -579,7 +580,7 @@ function heroSeatMobile(node, s, a, inHand) {
         tm.style.left = '102px'; tm.style.top = '617px';
         node.appendChild(tm);
     }
-    bubbleFor(node, seat, cx, cy - 60, 'sm');
+    if (!(S.winners && S.winners.big)) bubbleFor(node, seat, cx, cy - 60, 'sm');
     resultFor(node, seat, cx, 794, cx, cy - 8, 'sm');
 }
 
@@ -711,9 +712,12 @@ function hideActions() { $('#actions').hidden = true; }
 async function act(action, amount) {
     const tr = S.turn;
     if (!tr || tr.seat !== mySeat() || !S.keys) return;
+    // 같은 차례는 한 번만 — 서명하는 동안 다시 눌러도 두 번 보내지 않는다
+    if (S.acting === tr.handId + ':' + tr.q) return;
+    S.acting = tr.handId + ':' + tr.q;
+    hideActions();
     const amt = action === 'RAISE' || action === 'BET' ? Number(amount) : 0;
     const sig = await V.sign(S.keys, V.msg.action(tr.handId, tr.q, action, amt));
-    hideActions();
     const r = await cmd('act', { q: tr.q, action, amount: amt, sig });
     if (!r.ok) { toast(r.error || 'action failed'); render(); }
 }

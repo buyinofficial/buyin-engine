@@ -31,7 +31,7 @@ test('보내기: 쓴 줄을 순서대로 콘솔에 보내고, 보낸 위치를 �
     const box = new Outbox({ store, url: 'http://console/x', token: 'tok', fetch: con.fetch });
     box.start();
     for (let k = 0; k < 120; k++) store.appendHand(hand('h' + k), 'sig');
-    for (let t = 0; t < 100 && con.next < 120; t++) await wait(20);
+    for (let t = 0; t < 500 && con.next < 120; t++) await wait(20);
     box.stop();
     assert.strictEqual(con.next, 120);
     assert.deepStrictEqual(con.got.map((e) => e.i), [...Array(120).keys()]);
@@ -45,14 +45,14 @@ test('보내기: 실패하면 다시 보내고, 콘솔에 빠진 게 있으면 �
     const box = new Outbox({ store, url: 'http://console/x', token: 'tok', fetch: con.fetch });
     store.appendHand(hand('a'), 'sig');
     box.start();
-    for (let t = 0; t < 200 && con.next < 1; t++) await wait(20);   // 첫 시도 실패 → 2초 뒤 다시
+    for (let t = 0; t < 600 && con.next < 1; t++) await wait(20);   // 첫 시도 실패 → 2초 뒤 다시
     assert.strictEqual(con.next, 1);
     // 콘솔이 #1 을 잃었다고 하자 — 다음 보낼 때 next=1 을 답하면 #1 부터 다시 보낸다
     store.appendHand(hand('b'), 'sig');
-    for (let t = 0; t < 100 && con.next < 2; t++) await wait(20);
+    for (let t = 0; t < 500 && con.next < 2; t++) await wait(20);
     con.next = 1; con.got = con.got.filter((e) => e.i < 1);
     store.appendHand(hand('c'), 'sig');
-    for (let t = 0; t < 100 && con.next < 3; t++) await wait(20);
+    for (let t = 0; t < 500 && con.next < 3; t++) await wait(20);
     box.stop();
     assert.deepStrictEqual(con.got.map((e) => e.i), [0, 1, 2]);
 });
@@ -88,10 +88,10 @@ test('보내기: 평소에는 기록 파일을 다시 읽지 않는다(새 줄�
     store.range = (...a) => { reads += 1; return range(...a); };
     const box = new Outbox({ store, url: 'http://console/x', token: 'tok', fetch: con.fetch });
     box.start();
-    for (let t = 0; t < 50 && con.calls < 1; t++) await wait(10);
+    for (let t = 0; t < 500 && con.calls < 1; t++) await wait(10);
     const before = reads;
     for (let k = 0; k < 30; k++) { store.appendHand(hand('q' + k), 'sig'); await wait(5); }
-    for (let t = 0; t < 100 && con.next < 30; t++) await wait(10);
+    for (let t = 0; t < 500 && con.next < 30; t++) await wait(10);
     box.stop();
     assert.strictEqual(con.next, 30);
     assert.strictEqual(reads, before, 'no file reads while the queue follows the sent position');

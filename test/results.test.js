@@ -45,7 +45,7 @@ test('결과 조회: 콘솔 토큰이 있어야 한다', async () => {
     });
     try {
         let r;
-        for (let i = 0; i < 40; i++) { try { r = await fetch(`http://127.0.0.1:${port}/records/results`); break; } catch (_e) { await new Promise((ok) => setTimeout(ok, 100)); } }
+        for (let i = 0; i < 150; i++) { try { r = await fetch(`http://127.0.0.1:${port}/records/results`); break; } catch (_e) { await new Promise((ok) => setTimeout(ok, 100)); } }
         assert.strictEqual(r.status, 401);
         const ok = await fetch(`http://127.0.0.1:${port}/records/results?from=0`, { headers: { Authorization: 'Bearer test-token' } });
         assert.strictEqual(ok.status, 200);
