@@ -48,8 +48,10 @@ class RecordStore {
         this.first = 0;            // 남아 있는 첫 줄 번호(지운 파일이 있으면 0 보다 크다)
         this.sent = 0;             // 콘솔로 보낸 위치 — 이 번호 앞은 콘솔에 있다
         this.onAppend = null;      // 새 줄을 쓴 뒤 부른다(콘솔로 보내기)
-        this.byHand = new Map();   // handId → { file, i }
+        this.byHand = new Map();   // handId → { file, i, off, len } — 그 줄만 읽는다
         this.byKey = new Map();    // 회원 서명 키 지문 → [handId] (오래된 것부터)
+        this.fileStart = new Map(); // 하루 파일 → 첫 줄 번호 — 앞에서 끝나는 파일은 읽지 않는다
+        this.keyLines = [];        // 엔진 키 줄(공개 /records/keys) — 요청마다 파일을 읽지 않는다
         this._load();
     }
 
@@ -62,14 +64,16 @@ class RecordStore {
         try { this.sent = Number(JSON.parse(fs.readFileSync(path.join(this.dir, 'sent.json'), 'utf8')).sent) || 0; } catch (_e) { /* 처음 */ }
         let started = false;
         for (const f of this.files()) {
-            for (const entry of readLines(path.join(this.dir, f))) {
+            for (const { entry, off, len } of readLinesAt(path.join(this.dir, f))) {
                 if (!started) { started = true; this.first = this.count = entry.i; this.head = entry.prev; }   // 오래된 파일을 지웠으면 거기서 시작
                 if (entry.i !== this.count || entry.prev !== this.head || entry.hash !== lineHash(entry.prev, bodyOf(entry))) {
                     throw new Error(`record chain broken at ${f} #${entry.i}`);
                 }
+                if (!this.fileStart.has(f)) this.fileStart.set(f, entry.i);
                 this.count += 1;
                 this.head = entry.hash;
-                if (entry.kind === 'hand' && entry.record) this._index(entry.record, f, entry.i);
+                if (entry.kind === 'hand' && entry.record) this._index(entry.record, f, entry.i, off, len);
+                if (entry.kind === 'engine-key') this.keyLines.push(entry);
             }
         }
     }
@@ -77,17 +81,22 @@ class RecordStore {
     _append(body) {
         const entry = { i: this.count, prev: this.head, hash: lineHash(this.head, body), ...body };
         const file = `records-${dayOf(Date.now())}.jsonl`;
+        const line = Buffer.from(JSON.stringify(entry) + '\n');
         const fd = fs.openSync(path.join(this.dir, file), 'a');
+        let off;
         try {
-            fs.writeSync(fd, JSON.stringify(entry) + '\n');
+            off = fs.fstatSync(fd).size;
+            fs.writeSync(fd, line);
             fs.fsyncSync(fd);
         } finally {
             fs.closeSync(fd);
         }
+        if (!this.fileStart.has(file)) this.fileStart.set(file, entry.i);
+        if (entry.kind === 'engine-key') this.keyLines.push(entry);
         this.count += 1;
         this.head = entry.hash;
         if (this.onAppend) this.onAppend(entry);
-        return { entry, file };
+        return { entry, file, off, len: line.length - 1 };
     }
 
     /** 엔진이 뜰 때 — 공개키와 증명서 report_data 를 사슬에 남긴다 */
@@ -103,14 +112,14 @@ class RecordStore {
 
     /** 판이 끝났을 때 — 엔진이 서명한 기록. 실패하면 던진다(그 판은 무효가 된다) */
     appendHand(record, sig) {
-        const { entry, file } = this._append({ kind: 'hand', at: Date.now(), record, sig });
-        this._index(record, file, entry.i);
+        const { entry, file, off, len } = this._append({ kind: 'hand', at: Date.now(), record, sig });
+        this._index(record, file, entry.i, off, len);
         return entry;
     }
 
-    _index(record, file, i) {
+    _index(record, file, i, off, len) {
         const id = String(record.handId);
-        this.byHand.set(id, { file, i });
+        this.byHand.set(id, { file, i, off, len });
         for (const s of record.seats || []) {
             if (!s.keys || !s.keys.sig) continue;
             const fp = C.fingerprint(s.keys.sig);
@@ -124,7 +133,6 @@ class RecordStore {
         return (this.byKey.get(String(sigFp)) || []).slice(-limit).reverse();
     }
 
-    /** 공개 영수증 — 카드 없이 사슬 위치와 해시만 */
     /**
      * 끝난 판의 결과 — 콘솔이 받은 기록과 대조할 때. 카드·덱·시드는 넣지 않는다.
      * 사슬에는 끝난 판만 있다(Engine._closeHand → appendHand). 진행 중인 판은 여기서 읽을 수 없다.
@@ -154,6 +162,7 @@ class RecordStore {
         return { entries: out, next };
     }
 
+    /** 공개 영수증 — 카드 없이 사슬 위치와 해시만 */
     receipt(handId) {
         const e = this.getHand(handId);
         if (!e) return null;
@@ -194,14 +203,18 @@ class RecordStore {
     prune(days, now = Date.now()) {
         const cutoff = dayOf(now - days * 24 * 60 * 60 * 1000);
         const gone = [];
-        for (const f of this.files()) {
-            const lines = readLines(path.join(this.dir, f));
-            if (f.slice(8, 18) >= cutoff || !lines.length || lines[lines.length - 1].i >= this.sent) break;
+        const files = this.files();
+        for (let k = 0; k < files.length - 1; k++) {   // 마지막(가장 최근) 파일은 남긴다
+            const f = files[k];
+            const next = this.fileStart.get(files[k + 1]);   // 이 파일의 마지막 줄 = 다음 파일 첫 줄 - 1
+            if (f.slice(8, 18) >= cutoff || next === undefined || next > this.sent) break;
             fs.unlinkSync(path.join(this.dir, f));
+            this.fileStart.delete(f);
             gone.push(f);
-            this.first = lines[lines.length - 1].i + 1;
+            this.first = next;
         }
         if (gone.length) {
+            this.keyLines = this.keyLines.filter((e) => e.i >= this.first);
             for (const [id, at] of this.byHand) if (gone.includes(at.file)) this.byHand.delete(id);
             for (const [fp, ids] of this.byKey) this.byKey.set(fp, ids.filter((id) => this.byHand.has(id)));
         }
@@ -211,22 +224,26 @@ class RecordStore {
     getHand(handId) {
         const at = this.byHand.get(String(handId));
         if (!at) return null;
-        for (const entry of readLines(path.join(this.dir, at.file))) if (entry.i === at.i) return entry;
-        return null;
+        const buf = Buffer.alloc(at.len);
+        const fd = fs.openSync(path.join(this.dir, at.file), 'r');
+        try { fs.readSync(fd, buf, 0, at.len, at.off); } finally { fs.closeSync(fd); }
+        const entry = JSON.parse(buf.toString('utf8'));
+        return entry.i === at.i ? entry : null;
     }
 
     /** 엔진 키 줄 전부 — 옛 기록을 옛 키로 검증할 때 */
     engineKeys() {
-        const out = [];
-        for (const f of this.files()) for (const e of readLines(path.join(this.dir, f))) if (e.kind === 'engine-key') out.push(e);
-        return out;
+        return this.keyLines.slice();
     }
 
-    /** i 번째 줄부터 limit 줄 (내보내기·백업) */
+    /** i 번째 줄부터 limit 줄 — from 앞에서 끝나는 하루 파일은 읽지 않는다 */
     range(from, limit) {
         const out = [];
-        for (const f of this.files()) {
-            for (const e of readLines(path.join(this.dir, f))) {
+        const files = this.files();
+        for (let k = 0; k < files.length; k++) {
+            const next = this.fileStart.get(files[k + 1]);
+            if (next !== undefined && next <= from) continue;
+            for (const e of readLines(path.join(this.dir, files[k]))) {
                 if (e.i < from) continue;
                 out.push(e);
                 if (out.length >= limit) return out;
@@ -239,6 +256,19 @@ class RecordStore {
 function readLines(file) {
     const text = fs.readFileSync(file, 'utf8');
     return text.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+}
+
+/** 줄과 그 바이트 위치 — 뜰 때 판 위치 색인을 만든다 */
+function readLinesAt(file) {
+    const buf = fs.readFileSync(file);
+    const out = [];
+    let start = 0;
+    for (let k = 0; k < buf.length; k++) {
+        if (buf[k] !== 0x0a) continue;
+        if (k > start) out.push({ entry: JSON.parse(buf.toString('utf8', start, k)), off: start, len: k - start });
+        start = k + 1;
+    }
+    return out;
 }
 
 /**

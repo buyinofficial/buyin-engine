@@ -78,3 +78,32 @@ test('보관 기간: 지난 날이고 이미 보낸 하루 파일만 지운다, 
     assert.strictEqual(again.head, s.head);
     assert.ok(again.storage().bytes > 0);
 });
+
+test('보내기: 평소에는 기록 파일을 다시 읽지 않는다(새 줄은 메모리 대기열에서)', async () => {
+    const store = new RecordStore(tmpDir());
+    const con = fakeConsole();
+    let reads = 0;
+    const range = store.range.bind(store);
+    store.range = (...a) => { reads += 1; return range(...a); };
+    const box = new Outbox({ store, url: 'http://console/x', token: 'tok', fetch: con.fetch });
+    box.start();
+    for (let t = 0; t < 50 && con.calls < 1; t++) await wait(10);
+    const before = reads;
+    for (let k = 0; k < 30; k++) { store.appendHand(hand('q' + k), 'sig'); await wait(5); }
+    for (let t = 0; t < 100 && con.next < 30; t++) await wait(10);
+    box.stop();
+    assert.strictEqual(con.next, 30);
+    assert.strictEqual(reads, before, 'no file reads while the queue follows the sent position');
+});
+
+test('보관소: 다시 열어도 판은 바이트 위치로 그 줄만 읽고, 엔진 키 목록이 같다', () => {
+    const dir = tmpDir();
+    const store = new RecordStore(dir);
+    store.appendEngineKey({ name: 'e', version: 't', mode: 'dev', keys: { sig: { kty: 'EC', x: 'a' }, ecdh: { kty: 'EC', x: 'b' }, sigFp: 'A', ecdhFp: 'B' } });
+    for (let k = 0; k < 20; k++) store.appendHand({ handId: 'z' + k, tableId: 't', seats: [], note: '한글 ' + 'x'.repeat(k) }, 'sig');
+    const again = new RecordStore(dir);
+    for (const id of ['z0', 'z7', 'z19']) assert.deepStrictEqual(again.getHand(id), store.getHand(id));
+    assert.strictEqual(again.getHand('z7').record.note, '한글 xxxxxxx');
+    assert.strictEqual(again.engineKeys().length, 1);
+    assert.deepStrictEqual(again.range(15, 3).map((e) => e.i), [15, 16, 17]);
+});

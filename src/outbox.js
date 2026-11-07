@@ -11,6 +11,7 @@
  */
 
 const BATCH = 50;
+const QUEUE_MAX = 2000;   // 콘솔이 오래 멈추면 대기열을 비우고 파일에서 다시 읽는다
 const IDLE_MS = 30 * 1000;
 const RETRY_MIN_MS = 2 * 1000;
 const RETRY_MAX_MS = 60 * 1000;
@@ -32,7 +33,11 @@ class Outbox {
         this.retryMs = RETRY_MIN_MS;
         this.timer = null;
         this.lastError = null;
-        o.store.onAppend = () => this.kick();
+        this.queue = [];          // 아직 안 보낸, 새로 쓴 줄(번호 순서)
+        o.store.onAppend = (entry) => {
+            if (this.queue.length < QUEUE_MAX) this.queue.push(entry); else this.queue = [];
+            this.kick();
+        };
     }
 
     start() { this.kick(); }
@@ -65,7 +70,10 @@ class Outbox {
 
     /** @returns {Promise<boolean>} 더 보낼 게 남았나 */
     async _send() {
-        const entries = this.store.range(this.store.sent, BATCH);
+        const sent = this.store.sent;
+        while (this.queue.length && this.queue[0].i < sent) this.queue.shift();
+        // 대기열이 보낸 위치에서 바로 이어지면 메모리에서, 아니면(재시작·다시 보내기·넘침) 파일에서
+        const entries = this.queue.length && this.queue[0].i === sent ? this.queue.slice(0, BATCH) : this.store.range(sent, BATCH);
         const r = await this.fetch(this.url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },

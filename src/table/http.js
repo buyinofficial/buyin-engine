@@ -20,6 +20,7 @@ const PUBLIC_DIR = path.join(__dirname, '..', 'public', 'table');
 const SRC_DIR = path.join(__dirname, '..');
 /** 검증 화면이 브라우저에서 그대로 돌리는 엔진 파일 — 지금 이 TEE 에서 도는 바로 그 파일이다 */
 const ENGINE_FILES = new Set(['verify.js', 'crypto.js', 'cards.js', 'HandCore.js', 'HandEvaluator.js', 'PotManager.js', 'money.js']);
+const ENGINE_FILE_CACHE = new Map();
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json',
     '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg' };
 const PAGE_HEADERS = {
@@ -109,9 +110,14 @@ function tableRoutes(tables) {
 
         const ef = p.match(/^\/table\/engine\/([A-Za-z]+\.js)$/);
         if (req.method === 'GET' && ef && ENGINE_FILES.has(ef[1])) {
-            // 파일 글자를 그대로 감싸기만 한다(CSP 가 eval 을 막으므로 <script> 로 싣는다). 가운데 줄은 저장소의 파일과 같다
-            const data = Buffer.concat([Buffer.from(`__engineModule(${JSON.stringify(ef[1])}, function (require, module, exports, Buffer) {\n`),
-                fs.readFileSync(path.join(SRC_DIR, ef[1])), Buffer.from('\n});\n')]);
+            // 파일 글자를 그대로 감싸기만 한다(CSP 가 eval 을 막으므로 <script> 로 싣는다). 가운데 줄은 저장소의 파일과 같다.
+            // 이미지 안의 파일이라 바뀌지 않는다 — 처음 한 번만 읽는다
+            let data = ENGINE_FILE_CACHE.get(ef[1]);
+            if (!data) {
+                data = Buffer.concat([Buffer.from(`__engineModule(${JSON.stringify(ef[1])}, function (require, module, exports, Buffer) {\n`),
+                    fs.readFileSync(path.join(SRC_DIR, ef[1])), Buffer.from('\n});\n')]);
+                ENGINE_FILE_CACHE.set(ef[1], data);
+            }
             res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Content-Length': data.length, 'Cache-Control': 'no-store', ...PAGE_HEADERS });
             res.end(data);
             return true;
