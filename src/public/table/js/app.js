@@ -93,7 +93,7 @@ async function boot() {
 
     const saved = sessionStorage.getItem('buyin.token');
     if (saved) { S.token = saved; return listen(); }
-    if (!S.ticket) return gate(t('noTicket'));
+    if (!S.ticket) return gate(t('noTicket'), true);
     gate(t('joining'));
     try {
         // 좌석표의 회원 ID 로 이 브라우저의 키를 꺼내 입장에 서명한다(같은 회원의 새 세션 판단에 쓴다)
@@ -185,7 +185,7 @@ function listen() {
     });
     on('result', onResult);
     on('aborted', () => { S.hand = null; S.turn = null; render(); });
-    on('settled', (d) => { sessionStorage.removeItem('buyin.token'); es.close(); gate(`${t('settled')} ${dmCur(d.cashOut)}`); });
+    on('settled', (d) => { sessionStorage.removeItem('buyin.token'); es.close(); gate(`${t('settled')} ${dmCur(d.cashOut)}`, true); });
     on('error', (d) => { if (d && d.code === 'auth') { sessionStorage.removeItem('buyin.token'); es.close(); gate(t('noTicket')); } else if (d && d.error) toast(d.error); });
     es.onopen = () => { S.retry = 0; };
 }
@@ -378,6 +378,11 @@ function renderBoard() {
         board.appendChild(slot);
     }
     $('#table').classList.toggle('waiting', !h);
+    // 판이 없고 앉은 사람이 둘보다 적으면 — 판이 시작되지 않는 이유를 알린다
+    let wm = $('.wait-msg');
+    if (!wm) { wm = el('div', 'wait-msg'); $('#board-area').appendChild(wm); }
+    wm.textContent = !h && (S.seats || []).filter(Boolean).length < 2 ? t('waiting') : '';
+    wm.hidden = !wm.textContent;
     let big = $('.win-hand');
     if (!big) { big = el('div', 'win-hand'); $('#board-area').appendChild(big); }
     big.textContent = (S.winners && S.winners.big) || '';
@@ -734,6 +739,8 @@ function wireButtons() {
     };
     $('#btn-sound').onclick = (e) => { S.sound = !S.sound; e.currentTarget.classList.toggle('on', !S.sound); };
     $('#btn-verify').onclick = () => window.open('verify.html', '_blank', 'noopener');
+    // 들어온 화면(로비)으로 — 이 화면은 새 주소를 알 필요 없이 브라우저 기록으로 돌아간다
+    $('.gate-back').onclick = () => { if (history.length > 1) history.back(); else window.close(); };
     $('.verify-badge button').onclick = () => showProof();
     S.timerTick = setInterval(() => {
         const bar = $('.turnbar');
@@ -777,7 +784,12 @@ function toast(msg, ms = 2600) {
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { n.hidden = true; }, ms);
 }
-function gate(msg) { $('.gate-msg').textContent = msg; $('#gate').hidden = false; }
+/** 안내 화면. back = 자리가 닫혔다 — 들어온 화면(로비)으로 돌아가는 버튼을 보인다 */
+function gate(msg, back = false) {
+    $('.gate-msg').textContent = msg;
+    $('.gate-back').hidden = !back;
+    $('#gate').hidden = false;
+}
 
 function hideGate() { $('#gate').hidden = true; }
 
