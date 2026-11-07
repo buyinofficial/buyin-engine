@@ -1,7 +1,6 @@
 /**
  * 엔진 서버 — 운영 서버(소켓 서버)가 HTTP 로 부른다.
  *
- *   POST /rpc                 { m: 메서드, p: 인자 } → { ok, ... }      운영 서버만 (Authorization: Bearer <TEE_RPC_TOKEN>)
  *   GET  /                    감사 보고서(markdown) — 사람·AI 가 이것만 읽어도 확인 방법과 지금 값이 나온다   누구나
  *   GET  /info                엔진 공개키·버전·증명서·기록 사슬 끝         누구나 (브라우저가 키·증명서를 직접 확인한다)
  *   GET  /records/head        기록 사슬 끝 { count, head, hands, first, sent, storage } 누구나 — 지금까지 남긴 기록의 지문·용량
@@ -13,7 +12,7 @@
  *   TEE_MODE            dev(기본) | dstack — dstack 은 Phala Cloud(dstack) TDX 안. 뜨기 전에 증명서를 받는다
  *   TEE_PORT            기본 3900
  *   TEE_HOST            기본 127.0.0.1. 컨테이너 안에서는 0.0.0.0 (밖에서는 TEE 게이트웨이 TLS 로만 들어온다)
- *   TEE_RPC_TOKEN       /rpc 접근 토큰. dstack 모드에서는 반드시 있어야 한다(32자 이상). 암호화 환경변수로만 넣는다
+ *   TEE_RPC_TOKEN       콘솔로 기록을 보낼 때 붙이는 토큰(콘솔이 확인). dstack 모드에서는 반드시 있어야 한다(32자 이상). 암호화 환경변수로만 넣는다
  *   TEE_RECORD_DIR      판 기록 보관 폴더(TEE 데이터 디스크). dstack 모드에서는 반드시 있어야 한다
  *   TEE_CONSOLE_KEY     콘솔 좌석표 공개키(JWK JSON). 있으면 테이블 서버를 켠다. 배포 설정(측정됨)에 공개로 둔다
  *   TEE_DISCONNECT_GRACE_MS 연결이 끊긴 좌석이 탈락하기까지(기본 60000). 배포 설정(측정됨)에 공개로 둔다
@@ -21,11 +20,9 @@
  *   TEE_RETENTION_DAYS  보낸 기록을 TEE 에 두는 날 수(기본 90, 최소 7). 지난 하루 파일은 지운다. 배포 설정(측정됨)에 공개로 둔다
  *   TEE_ALLOW_UNSIGNED  1 이면 키 없는 좌석의 평문 카드·서명 없는 액션 허용 (시험 전용, dev 모드만)
  *
- * 토큰은 "누가 RPC 를 부르나"만 정한다. 토큰이 있어도 카드를 보거나 회원 서명 없이 칩을 움직일 수는 없다(RULES.md 3장).
  *
- * 테이블 모드(TEE_CONSOLE_KEY 가 있을 때): 판은 전부 이 TEE 안의 테이블 서버가 돌린다. 그래서 /rpc 는 'info' 말고 모두 닫는다
- * — 운영 서버가 판을 열거나, 액션을 넣거나, 회원 키를 바꿔 끼우거나, 판을 무효로 하는 길이 없다.
- * 운영 서버가 엔진에서 꺼내 가는 길은 없다. 엔진이 사슬에 쓴 줄(끝난 판·정산서)을 콘솔로 보낼 뿐이다. 진행 중인 판은 사슬에 없다.
+ * 판은 전부 이 TEE 안의 테이블 서버가 돌린다(TEE_CONSOLE_KEY). 운영 서버가 엔진을 부르는 길은 없다 — 판을 열거나, 액션을 넣거나,
+ * 회원 키를 바꿔 끼우거나, 기록을 꺼내 가는 경로가 없다. 엔진은 사슬에 쓴 줄(끝난 판·정산서)을 콘솔로 보낼 뿐이다(outbox.js).
  */
 
 const http = require('http');
@@ -42,7 +39,6 @@ const { Outbox } = require('./outbox');
 
 // 요청 폭주 막기(서비스 거부 방지) — 넘치면 429
 const LIMIT = {
-    rpc: new RateLimiter(50, 100),     // 운영 서버 /rpc
     mine: new RateLimiter(20, 40),     // 내 판 기록(서명 확인 비용)
 };
 // 모든 응답에 붙는 보안 헤더
@@ -53,7 +49,6 @@ const PORT = Number(process.env.TEE_PORT || 3900);
 const HOST = process.env.TEE_HOST || '127.0.0.1';
 const TOKEN = process.env.TEE_RPC_TOKEN || '';
 const RECORD_DIR = process.env.TEE_RECORD_DIR || '';
-const MAX_BODY = 64 * 1024;   // /rpc 는 테이블 모드에서 info 만 받는다
 const CONSOLE_URL = process.env.TEE_CONSOLE_URL || '';
 const RETENTION_DAYS = Math.max(7, Math.floor(Number(process.env.TEE_RETENTION_DAYS) || 90));
 const CONSOLE_KEY = process.env.TEE_CONSOLE_KEY ? C.importPublicJwk(JSON.parse(process.env.TEE_CONSOLE_KEY)) : null;
@@ -61,6 +56,7 @@ const CONSOLE_KEY = process.env.TEE_CONSOLE_KEY ? C.importPublicJwk(JSON.parse(p
 if (MODE !== 'dev' && MODE !== 'dstack') throw new Error(`unknown TEE_MODE ${MODE}`);
 if (MODE === 'dstack' && TOKEN.length < 32) throw new Error('TEE_RPC_TOKEN (32+ chars) is required in dstack mode');
 if (MODE === 'dstack' && !RECORD_DIR) throw new Error('TEE_RECORD_DIR is required in dstack mode — hand records stay in the TEE');
+if (MODE === 'dstack' && !CONSOLE_KEY) throw new Error('TEE_CONSOLE_KEY is required in dstack mode — every hand runs in the TEE table server');
 
 // 기록 보관소를 먼저 연다 — 사슬이 깨져 있으면 여기서 멈춘다(뜨지 않는다)
 const store = RECORD_DIR ? new RecordStore(RECORD_DIR) : null;
@@ -73,13 +69,6 @@ const engine = new Engine({
     onRecord: store ? (record, sig) => { store.appendHand(record, sig); } : undefined,
 });
 
-const tokenHash = TOKEN ? crypto.createHash('sha256').update(TOKEN).digest() : null;
-function authorized(req) {
-    if (!tokenHash) return true;
-    const h = String(req.headers.authorization || '');
-    const given = h.startsWith('Bearer ') ? h.slice(7) : '';
-    return crypto.timingSafeEqual(crypto.createHash('sha256').update(given).digest(), tokenHash);
-}
 
 // 공개 GET 은 어느 사이트의 브라우저에서도 읽을 수 있다(쿠키 없음) — 회원 화면이 엔진을 직접 확인한다
 const PUBLIC_HEADERS = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' };
@@ -172,8 +161,6 @@ function handleMine(req, res) {
 }
 
 let tables = null, tableHandler = null;
-/** 테이블 모드에서 운영 서버가 부를 수 있는 엔진 메서드 — 공개 정보뿐 */
-const RPC_IN_TABLE_MODE = new Set(['info']);
 
 const server = http.createServer((req, res) => {
     for (const [k, v] of Object.entries(BASE_HEADERS)) res.setHeader(k, v);
@@ -181,24 +168,7 @@ const server = http.createServer((req, res) => {
     if (req.method === 'OPTIONS') { res.writeHead(204, { ...PUBLIC_HEADERS, 'Access-Control-Allow-Methods': 'GET' }); return res.end(); }
     if (req.method === 'GET') return handleGet(req, res);
     if (req.method === 'POST' && req.url === '/records/mine') return handleMine(req, res);
-    if (req.method !== 'POST' || req.url !== '/rpc') return send(res, 404, { ok: false, error: 'not found' });
-    if (!LIMIT.rpc.take()) { req.resume(); return send(res, 429, { ok: false, error: 'too many requests' }); }
-    if (!authorized(req)) { req.resume(); return send(res, 401, { ok: false, error: 'unauthorized' }); }
-    let size = 0;
-    const chunks = [];
-    req.on('data', (c) => {
-        size += c.length;
-        if (size > MAX_BODY) { req.destroy(); return; }
-        chunks.push(c);
-    });
-    req.on('end', () => {
-        let msg;
-        try { msg = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch (_e) { return send(res, 400, { ok: false, error: 'bad json' }); }
-        if (tables && !RPC_IN_TABLE_MODE.has(String(msg && msg.m))) {
-            return send(res, 403, { ok: false, code: 'table-mode', error: 'game RPC is closed: every hand runs inside the TEE table server (src/table)' });
-        }
-        send(res, 200, engine.call(msg && msg.m, msg && msg.p));
-    });
+    return send(res, 404, { ok: false, error: 'not found' });
 });
 
 // 느린 요청으로 연결을 붙잡아 두는 공격 막기 — 요청은 30초 안에, 머리글은 20초 안에 다 와야 한다(이벤트 흐름은 응답이 길 뿐 요청은 짧다)
@@ -237,7 +207,7 @@ async function start() {
     server.listen(PORT, HOST, () => {
         const i = info();
         console.log(`[tee-engine] ${i.name} ${i.version} mode=${i.mode} listening ${HOST}:${PORT} sigFp=${i.keys.sigFp}`
-            + `${attestation ? ` reportData=${attestation.reportData}` : ''}${tokenHash ? ' rpc=token' : ''}`
+            + `${attestation ? ` reportData=${attestation.reportData}` : ''}${CONSOLE_URL ? ' send=console' : ''}`
             + `${store ? ` records=${store.count}` : ''}${tables ? ' tables=on' : ''}${engine.allowUnsigned ? ' ALLOW_UNSIGNED' : ''}`);
     });
 }

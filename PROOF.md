@@ -19,7 +19,7 @@ Every statement below names the file and function that implements it. Please che
 
 The claim reviewers are asked to check is only this: **the operator cannot see the cards while a hand is played.** Concretely:
 
-1. **The deck and card data do not go to the operator until the hand is over.** The deck is created and shuffled inside the engine in the TEE (`src/Engine.js` `startHand`, `src/cards.js`). During a hand the operator's only engine channel is `/rpc`, which in table mode answers only `info` (`src/server.js` `RPC_IN_TABLE_MODE`). The operator cannot read records out of the engine; the engine sends the console the lines of its record chain (`src/outbox.js`, to `TEE_CONSOLE_URL` in the measured compose), and a hand is written to that chain only when it is closed (`Engine._closeHand` → `src/store.js` `appendHand`). The engine prints no cards to its logs.
+1. **The deck and card data do not go to the operator until the hand is over.** The deck is created and shuffled inside the engine in the TEE (`src/Engine.js` `startHand`, `src/cards.js`). The operator has no route into the engine (`src/server.js` has no operator endpoint: no game commands, no record export). the engine sends the console the lines of its record chain (`src/outbox.js`, to `TEE_CONSOLE_URL` in the measured compose), and a hand is written to that chain only when it is closed (`Engine._closeHand` → `src/store.js` `appendHand`). The engine prints no cards to its logs.
 2. **Hole cards go from the TEE straight to each player.** Each player's two cards are sealed to that player's own browser key (`src/crypto.js` `sealEnvelope`: ECDH + HKDF-SHA-256 + AES-256-GCM) and sent only to that player's connection (`src/table/TableServer.js` `_startHand` → `_send(s, 'hole', …)`; `snapshot` contains no other player's cards). The browser connects to the TEE directly (the table page is served by the TEE, `src/table/http.js`); the private key is a non-extractable WebCrypto key in that browser (`src/public/table/js/vault.js`). Board cards leave the engine only when the betting round is over, to everyone at the table.
 3. **After the hand, the game record goes to the operator.** Only then is the signed record (with all cards) appended to the chain the operator may read.
 
@@ -105,7 +105,7 @@ Hole cards of players still in the hand are revealed to the table only at showdo
 ### 4.5 The operator's channels during a hand
 | Channel | What it can do |
 |---|---|
-| `/rpc` (operator token) | In table mode (on when the measured compose sets `TEE_CONSOLE_KEY`) it answers **only** `info`; every game method returns 403 (`src/server.js` `RPC_IN_TABLE_MODE`; `test/server.test.js`). No hands opened, no actions, no key changes, no aborts. |
+| (no operator route) | `src/server.js` serves only public `GET` pages, the player's own records (`POST /records/mine`, signed by the player's key) and the table (`/table/...`). There is no route by which the operator starts a hand, acts, or reads a record. |
 | `src/outbox.js` → `TEE_CONSOLE_URL` (engine sends) | The lines of the record chain, in order. A hand is appended **only when it is closed** (`Engine._closeHand` → `onRecord` → `RecordStore.appendHand`). A running hand is not in the chain, so it cannot be sent. |
 | `/table/*` | Needs a seat token, which only the seated browser has. |
 | Logs | The engine prints no cards (only the start line and a pot-validation warning). Logs are not public. |

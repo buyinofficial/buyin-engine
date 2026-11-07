@@ -4,8 +4,8 @@ const path = require('path');
 const { spawn } = require('child_process');
 const C = require('../src/crypto');
 
-/** 테이블 모드(TEE_CONSOLE_KEY)에서는 운영 서버의 게임 RPC 가 닫힌다 — 토큰이 있어도 판을 열거나 액션·키를 넣을 수 없다 */
-test('서버: 테이블 모드에서 /rpc 는 info 만 — 판 열기·키 등록·액션은 403', async () => {
+/** 운영 서버가 엔진을 부르는 길은 없다 — /rpc 는 토큰이 있어도 404, 기록 내보내기도 404 */
+test('서버: 운영 서버 경로가 없다 — /rpc(판 열기·키 등록·액션·info)와 /records 내보내기는 404', async () => {
     const k = C.generateKeyPair();
     const port = 3990 + Math.floor(Math.random() * 9);
     const srv = spawn(process.execPath, [path.join(__dirname, '..', 'src', 'server.js')], {
@@ -13,21 +13,13 @@ test('서버: 테이블 모드에서 /rpc 는 info 만 — 판 열기·키 등�
         stdio: 'ignore',
     });
     try {
-        const call = async (m) => {
-            for (let i = 0; i < 40; i++) {
-                try {
-                    const r = await fetch(`http://127.0.0.1:${port}/rpc`, { method: 'POST', headers: { Authorization: 'Bearer test-token' }, body: JSON.stringify({ m, p: {} }) });
-                    return { status: r.status, body: await r.json() };
-                } catch (_e) { await new Promise((res) => setTimeout(res, 100)); }
-            }
-            throw new Error('server did not start');
-        };
-        assert.strictEqual((await call('info')).status, 200);
-        for (const m of ['openTable', 'registerKeys', 'startHand', 'act', 'board', 'runout', 'finish', 'abortHand', 'closeTable']) {
-            const r = await call(m);
-            assert.strictEqual(r.status, 403, m);
-            assert.strictEqual(r.body.code, 'table-mode', m);
+        for (let i = 0; i < 40; i++) { try { await fetch(`http://127.0.0.1:${port}/info`); break; } catch (_e) { await new Promise((r) => setTimeout(r, 100)); } }
+        for (const m of ['info', 'openTable', 'registerKeys', 'startHand', 'act', 'finish', 'abortHand', 'closeTable']) {
+            const r = await fetch(`http://127.0.0.1:${port}/rpc`, { method: 'POST', headers: { Authorization: 'Bearer test-token' }, body: JSON.stringify({ m, p: {} }) });
+            assert.strictEqual(r.status, 404, m);
         }
+        const ex = await fetch(`http://127.0.0.1:${port}/records?from=0`, { headers: { Authorization: 'Bearer test-token' } });
+        assert.strictEqual(ex.status, 404);
     } finally {
         srv.kill();
     }

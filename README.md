@@ -22,8 +22,9 @@ The operator's servers handle lobbies, timers, animations and wallets. They neve
 src/cards.js        deck, deterministic shuffle, card commitments
 src/crypto.js       keys, signatures, hole-card envelopes, signed message formats
 src/HandCore.js     one hand: blinds, betting, round end, run-out, showdown, pots
-src/Engine.js       tables, player keys, seed commitments, RPC entry point
-src/server.js       HTTP server: POST /rpc (operator only, bearer token), GET /info (public keys + attestation)
+src/Engine.js       tables, player keys, seed commitments, the engine API the table server calls
+src/server.js       HTTP server: GET /info (public keys + attestation), records, review manifest; no operator route
+src/outbox.js       sends the record chain to the console (TEE_CONSOLE_URL)
 src/attest.js       binds the engine keys to the TEE quote (dstack / Phala Cloud, Intel TDX)
 src/store.js        hand records kept on the TEE disk as an append-only hash chain
 src/verify.js       hand record verifier (CLI and module)
@@ -109,6 +110,7 @@ The test suite covers:
 ## Status
 
 - **Stage 1–2:** the engine runs as a separate process (`mode: "dev"`). The cryptographic guarantees above hold, but there is no hardware attestation.
+- **0.7.1:** the operator route `/rpc` is removed (public rooms are not used; every hand runs in the TEE table server, and `TEE_CONSOLE_KEY` is required in dstack mode). The operator has no route into the engine.
 - **0.7.0:** the engine sends its records to the console (`TEE_CONSOLE_URL`, retried, resent from the console's next number if one is missing); the operator's record export (`/records`, `/records/hand/<id>`) is removed. Records older than `TEE_RETENTION_DAYS` (90) that were sent are deleted. `/records/head` and `/info` show storage (bytes, files, oldest day, free disk) and how far the console has received.
 - **0.5.9:** basic hardening — HTTP time limits and connection cap, rate limits (join, commands per seat, own-records, operator RPC), at most 3 event connections per seat, security headers on every response; the container runs with no Linux capabilities, no privilege escalation and a read-only root filesystem.
 - **0.5.8:** the pre-game brief asks four closed questions (YES/NO) about card secrecy and one TRUE/FALSE conclusion.

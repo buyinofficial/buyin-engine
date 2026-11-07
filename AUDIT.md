@@ -65,7 +65,7 @@ Since 0.5.x every hand runs in the TEE table server (`src/table/`, "table mode",
 | When | Operator (game server, admin console) can see | Operator cannot see |
 |---|---|---|
 | Sitting down | the buy-in it took and the seat ticket it signed | the player's keys or table session token |
-| During a hand | nothing from the engine — `/rpc` accepts only `info` in table mode (`src/server.js` `RPC_IN_TABLE_MODE`), and the running hand is not yet in the record chain | any hole card, the deck, the seed, undealt board cards, the actions as they happen |
+| During a hand | nothing from the engine — the engine has no operator route (`src/server.js`), and the running hand is not yet in the record chain | — |
 | After the hand ends | the full signed record (every hole card, seed, deck, action), sent by the engine to the console (`src/outbox.js`) | — |
 | Leaving | the engine-signed settlement note (amounts only) | — |
 
