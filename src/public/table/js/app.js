@@ -437,10 +437,19 @@ function renderSeats() {
     }
 }
 
+/** 기본 아바타 — 닉네임으로 여러 장 중 하나를 고른다(같은 회원은 어디서나 같은 얼굴). 그림은 리소스 서버에 있다 */
+const AVATAR_COUNT = 6;
+function avatarFile(s) {
+    const key = String((s && s.nickname) || '');
+    let h = 0;
+    for (let k = 0; k < key.length; k++) h = (h * 31 + key.charCodeAt(k)) >>> 0;
+    return key ? `avatar_${1 + (h % AVATAR_COUNT)}.png` : 'avatar.png';
+}
+
 function avatarEl(s, size, seat, ring = true) {
     const av = el('div', 'avatar');
     av.style.width = av.style.height = size + 'px';
-    const im = el('img'); im.alt = ''; im.src = ASSET + 'img/avatar.png'; av.appendChild(im);
+    const im = el('img'); im.alt = ''; im.src = ASSET + 'img/' + avatarFile(s); av.appendChild(im);
     if (ring && S.turn && S.turn.seat === seat) av.appendChild(turnRing(size));   // 모바일 영웅은 링 대신 차례 막대
     return av;
 }
