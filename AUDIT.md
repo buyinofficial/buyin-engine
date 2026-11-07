@@ -73,14 +73,14 @@ The engine writes a record only when the hand is closed (`Engine._closeHand`), a
 
 ## 5. The player's browser
 
-The browser code that holds the player's keys and opens the hole-card envelope is published in [`client/`](client/) (`tee-client.ts`, `tee-attest.ts`):
+The browser code that holds the player's keys and opens the hole-card envelope is served by the TEE itself (`src/public/table/js/vault.js`, `app.js`):
 
 - The player's keys are WebCrypto keys created in the browser and stored as non-extractable keys; only the public keys are sent.
 - The envelope is opened with ECDH (player key × engine key) → HKDF-SHA256 → AES-256-GCM, inside the browser.
 - Every revealed card is checked against the 52 commitments published at hand start.
-- The browser fetches `/info` directly from the TEE and checks that the engine key the game server uses is the attested key (`checkAttestation`); a mismatch is shown to the player.
+- The page checks that the engine key is the attested key (`/info`).
 
-**Remaining trust — the web page itself.** Today's game page is served by the operator. A modified page could send each player's own opened hole cards back to the operator, and across all players that would expose every hand. The engine, the TEE and the records cannot prevent that on an operator-served page. That is why 0.5.0 adds pages served **by the TEE itself** (next section); moving play to the TEE table page removes this last point of trust.
+Images and fonts are loaded from the console's resource server (`https://resource.pokerzero.site/buyin-table/`, allowed by the page's CSP for images and fonts only). Which image is loaded never depends on a card: card faces are drawn as text, chips show public bet amounts. The page's scripts and styles all come from the TEE.
 
 ## 5a. Pages served by the TEE (0.5.0)
 

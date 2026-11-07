@@ -11,6 +11,10 @@ import * as V from './vault.js';
 import { t, setLang, applyStatic } from './i18n.js';
 import { liveHandName, prettyRank, bigHandName } from './hand.js';
 
+/** 디자인 리소스(배경·칩·아바타·딜러·카드 뒷면·글꼴)는 콘솔 리소스 서버에서 받는다 — 그림만 받고 아무것도 보내지 않는다.
+ *  어떤 그림을 부르는지는 카드와 무관하다(칩은 공개된 베팅 금액, 카드 앞면은 글자로 그린다). CSP 가 이 주소의 그림·글꼴만 허용한다(table/http.js). */
+const ASSET = 'https://resource.pokerzero.site/buyin-table/';
+
 const $ = (s, r = document) => r.querySelector(s);
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -311,7 +315,7 @@ function layoutMode() {
     S.layout = portrait ? 'mobile' : 'pc';
     tb.classList.toggle('pc', !portrait);
     tb.classList.toggle('mobile', portrait);
-    $('.bg-img').src = portrait ? 'img/bg_mobile.jpg' : 'img/bg_pc.jpg';
+    $('.bg-img').src = ASSET + (portrait ? 'img/bg_mobile.jpg' : 'img/bg_pc.jpg');
     // 운영 화면: 높이 900 에서 0.742 배
     $('#actions').style.transform = portrait ? '' : `translateX(-50%) scale(${(0.742 * innerHeight / 900).toFixed(3)})`;
     // 모바일: 390x844 화폭을 가로에 맞춰 늘리고 세로 가운데
@@ -399,7 +403,7 @@ function chipStackEl(amount, { single = false, cap = 0 } = {}) {
             const c = el('div', 'chip');
             const rot = ((i * 13 + si * 7) % 360) % 10 - 5, xo = (i % 3) - 1.5;
             c.style.zIndex = i; c.style.transform = `translateY(${-i * 4}px)`;
-            const im = el('img'); im.src = `img/${CHIP_FILE[v]}.webp`; im.alt = ''; im.style.transform = `rotate(${rot}deg) translateX(${xo}px)`;
+            const im = el('img'); im.src = `${ASSET}img/${CHIP_FILE[v]}.webp`; im.alt = ''; im.style.transform = `rotate(${rot}deg) translateX(${xo}px)`;
             c.appendChild(im); col.appendChild(c);
         });
         box.appendChild(col);
@@ -431,7 +435,7 @@ function renderSeats() {
 function avatarEl(s, size, seat, ring = true) {
     const av = el('div', 'avatar');
     av.style.width = av.style.height = size + 'px';
-    const im = el('img'); im.alt = ''; im.src = 'img/avatar.png'; av.appendChild(im);
+    const im = el('img'); im.alt = ''; im.src = ASSET + 'img/avatar.png'; av.appendChild(im);
     if (ring && S.turn && S.turn.seat === seat) av.appendChild(turnRing(size));   // 모바일 영웅은 링 대신 차례 막대
     return av;
 }
@@ -580,7 +584,7 @@ function heroSeatMobile(node, s, a, inHand) {
 }
 
 function dealerEl() {
-    const d = el('div', 'dealer'); const im = el('img'); im.src = 'img/dealer.png'; im.alt = 'D'; d.appendChild(im); return d;
+    const d = el('div', 'dealer'); const im = el('img'); im.src = ASSET + 'img/dealer.png'; im.alt = 'D'; d.appendChild(im); return d;
 }
 
 function bubbleFor(parent, seat, cx, top, size = '') {

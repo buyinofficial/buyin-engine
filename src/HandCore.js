@@ -4,7 +4,7 @@
  * 순수 상태 기계다. 시계·네트워크·DB 가 없고, 같은 입력이면 언제나 같은 결과가 나온다.
  * 그래서 검증기(verify.js)가 판 기록을 처음부터 다시 돌려 결과가 같은지 볼 수 있다.
  *
- * 계산 순서와 반올림은 소켓 서버 GameEngine 과 한 줄 한 줄 같게 옮겼다(postBlinds · handleAction · checkRoundEnd ·
+ * 계산 순서와 반올림은 이전 게임 서버와 한 줄 한 줄 같게 옮겼다(postBlinds · handleAction · checkRoundEnd ·
  * advanceStage · runItOut · showdown · resolveUncontestedWin · computePeekBoardCards). 소켓 서버는 화면 연출을 위해
  * 같은 판을 따라 계산하는데, 칩이 0.001 이라도 어긋나면 이 엔진이 그 액션을 거절하고 판을 무효로 한다.
  *
@@ -94,7 +94,7 @@ class HandCore {
 
         this.stage = 'preflop';
         this.pot = 0;
-        this.currentBet = this.bigBlind;          // GameEngine.startHand 6단계와 같다 (BB 가 모자라 올인해도 테이블 베팅은 BB)
+        this.currentBet = this.bigBlind;          // 이전 게임 서버 6단계와 같다 (BB 가 모자라 올인해도 테이블 베팅은 BB)
         this.lastRaiseAmount = this.bigBlind;
         this.acted = new Set();
         this.turns = 0;                            // 차례를 쓴 액션 수 — 서명에 들어가는 q
@@ -164,7 +164,7 @@ class HandCore {
     }
 
     /**
-     * 지금 판이 어디에 있나 — GameEngine.checkRoundEnd 와 같은 판단.
+     * 지금 판이 어디에 있나 — 이전 게임 서버 와 같은 판단.
      *   continue    베팅이 남았다
      *   advance     이번 베팅 라운드가 끝났다 → 다음 보드
      *   showdown    리버 베팅이 끝났다
@@ -316,14 +316,14 @@ class HandCore {
         return null;
     }
 
-    /** GameEngine.autoSubmitCommittedRaise 의 금액 — 팟의 25% 레이즈 (최소 레이즈 이상), 넘치면 올인 */
+    /** 이전 게임 서버 의 금액 — 팟의 25% 레이즈 (최소 레이즈 이상), 넘치면 올인 */
     _committedRaise(p) {
         const maxBet = p.stack + p.currentBet;
         const target = Math.max(roundMoney(this.currentBet + this.pot * 0.25), this.calculateMinRaise());
         return target >= maxBet ? { action: ACTIONS.ALL_IN, amount: 0 } : { action: ACTIONS.RAISE, amount: target };
     }
 
-    /** GameEngine.handleAction 의 액션별 처리와 같다 — 결과 액션과 실제로 낸 칩 */
+    /** 이전 게임 서버 의 액션별 처리와 같다 — 결과 액션과 실제로 낸 칩 */
     _resolve(p, action, amountIn) {
         if (!Object.values(ACTIONS).includes(action)) throw new HandError('action', 'Invalid action');
         if (action === ACTIONS.CHECK && this.currentBet > p.currentBet) throw new HandError('action', 'Cannot check, must call or fold');
@@ -530,7 +530,7 @@ class HandCore {
         return out;
     }
 
-    /** 쇼다운 — GameEngine._showdownImpl 의 팟 분배·레이크 차감과 같다 */
+    /** 쇼다운 — 이전 게임 서버 의 팟 분배·레이크 차감과 같다 */
     showdown() {
         const st = this.status();
         if (st !== 'showdown') throw new HandError('reveal', `showdown not due (status=${st})`);
@@ -606,7 +606,7 @@ class HandCore {
         return { holes, board: this.board.map(i => this.open(i)), result: this.result };
     }
 
-    /** 한 명만 남았을 때 — GameEngine._resolveUncontestedWinImpl 의 분배·레이크 차감과 같다 */
+    /** 한 명만 남았을 때 — 이전 게임 서버 의 분배·레이크 차감과 같다 */
     uncontested() {
         const st = this.status();
         if (st !== 'uncontested') throw new HandError('reveal', `not uncontested (status=${st})`);
@@ -633,7 +633,7 @@ class HandCore {
         return { result: this.result, peekBoard };
     }
 
-    /** GameEngine.computePeekBoardCards — 판이 끝난 뒤 "깔렸을 보드" (번 카드 규칙 포함) */
+    /** 이전 게임 서버 — 판이 끝난 뒤 "깔렸을 보드" (번 카드 규칙 포함) */
     _peekBoard() {
         let ccLen = this.board.length;
         if (ccLen >= 5) return [];

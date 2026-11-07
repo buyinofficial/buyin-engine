@@ -125,6 +125,35 @@ class RecordStore {
     }
 
     /** 공개 영수증 — 카드 없이 사슬 위치와 해시만 */
+    /**
+     * 끝난 판의 결과 — 콘솔이 받은 기록과 대조할 때. 카드·덱·시드는 넣지 않는다.
+     * 사슬에는 끝난 판만 있다(Engine._closeHand → appendHand). 진행 중인 판은 여기서 읽을 수 없다.
+     * @returns {{ entries: object[], next: number }} next = 다음에 조회할 줄 번호
+     */
+    results(from, limit) {
+        const out = [];
+        let next = Math.max(from, this.first);
+        for (const e of this.range(next, Number.MAX_SAFE_INTEGER)) {
+            next = e.i + 1;
+            if (e.kind !== 'hand' || !e.record) continue;
+            const r = e.record;
+            const rake = (r.result && r.result.rake && r.result.rake.perSeat) || [];
+            out.push({
+                i: e.i, handId: String(r.handId), tableId: r.tableId, endedAt: r.endedAt,
+                type: r.result && r.result.type,
+                seats: (r.seats || []).map((s) => ({
+                    seat: s.seat, odcId: String(s.odcId),
+                    start: r.stacksStart[s.seat], end: r.stacksEnd[s.seat],
+                    rake: (rake.find((f) => f.seat === s.seat) || {}).fee || 0,
+                })),
+                recordHash: C.sha256hex(C.stableStringify(r)),
+                engineSigFp: r.engine && r.engine.sigFp,
+            });
+            if (out.length >= limit) break;
+        }
+        return { entries: out, next };
+    }
+
     receipt(handId) {
         const e = this.getHand(handId);
         if (!e) return null;

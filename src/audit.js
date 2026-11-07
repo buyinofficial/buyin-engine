@@ -22,6 +22,7 @@ const READ = [
     ['src/table/TableServer.js', '`_startHand`: each sealed envelope goes only to its own seat; `snapshot`: no other player\'s cards'],
     ['src/server.js', 'there is no operator route: no game commands and no record export'],
     ['src/outbox.js', 'the only outbound connection: lines of the record chain, sent to `TEE_CONSOLE_URL` (in the measured compose)'],
+    ['src/consoleApi.js', 'the console\'s check API (token): results and signed records of finished hands; it is given only the record store'],
     ['src/store.js', 'hands are appended to the record chain only when closed'],
     ['src/table/http.js', 'the table page is served by this TEE (`connect-src \'self\'`, no framing); the seat token is never in a URL'],
     ['src/public/table/js/vault.js', 'the player\'s keys are non-extractable WebCrypto keys; the envelope is opened only in the browser'],
@@ -48,7 +49,7 @@ function auditReport(info, records, keyCount, base, opts = {}) {
     L.push(`Investigate **${REPO} at commit \`${ref}\`** (links below are pinned to that commit). For each question answer **YES or NO**, then one line naming the file and function your answer rests on. Do not add other topics.`);
     L.push('');
     L.push(`- **Q1.** Do the files listed at ${base}/review/manifest (the files this engine loads, with SHA-256) match the files at commit \`${ref}\`?`);
-    L.push(`- **Q2.** In that code, while a hand is in play, is there any code path that sends the deck or a not-yet-revealed card to the operator's side (the records the engine sends to the console, logs)?`);
+    L.push(`- **Q2.** In that code, while a hand is in play, is there any code path that sends the deck or a not-yet-revealed card to the operator's side (the records the engine sends to the console, the console's check API, logs)?`);
     L.push(`- **Q3.** In that code, is there any code path that sends a player's hole cards, before they are revealed at showdown or all-in run-out, to anyone other than that player (the operator's servers or other players)?`);
     L.push(`- **Q4.** In that code, does the game record containing the cards reach the operator only after the hand has ended?`);
     L.push('');

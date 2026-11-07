@@ -29,10 +29,11 @@ src/attest.js       binds the engine keys to the TEE quote (dstack / Phala Cloud
 src/store.js        hand records kept on the TEE disk as an append-only hash chain
 src/verify.js       hand record verifier (CLI and module)
 src/table/          table server: seat tickets signed by the console, turns and timers, settlement notes (amounts only)
-src/public/table/   the table screen the TEE serves itself at /table/ (plain JS, no build step, no third-party code)
+src/public/table/   the table screen the TEE serves itself at /table/ (plain JS, no build step, no third-party code); images and fonts come from the console's resource server
+src/consoleApi.js   console checks of finished hands only (results, signed records); takes only the record store
+LICENSE             all rights reserved — published for verification only
 RULES.md            development rules (Korean): no secrets, no backdoors, no dependencies
 Dockerfile          the image that runs in the TEE (built by GitHub Actions, see .github/workflows)
-client/             the player's browser side: keys, opening hole cards, checking commitments and the attestation
 AUDIT.md            step-by-step checks and the threat model, for human and AI reviewers
 PROOF.md            why the game cannot be manipulated before a hand is played — each claim with the code that enforces it
 tools/              check-deployment.js: checks the live engine against a checkout of its commit (no dependencies)
@@ -81,7 +82,9 @@ The records form a hash chain: each line holds the hash of the line before it, s
 
 **Sending to the console.** The operator cannot read records out of the engine. Each line the engine writes to the chain (engine key, seat-in, settlement note, finished signed hand) is sent by the engine to `TEE_CONSOLE_URL` (in the measured compose — the only place the engine connects to), in order (`src/outbox.js`). The console answers with the next line number it expects; if one is missing the engine sends again from there, and failed sends are retried. A hand in play is not in the chain, so it cannot be sent.
 
-**Retention.** Records are kept on the TEE disk for `TEE_RETENTION_DAYS` days (90, measured). Day files past that age that were already sent are deleted; the kept chain continues from the `prev` hash of its first line. The console keeps every record with the engine's signature.
+**Checks for the console** (`src/consoleApi.js`, given only the record store). `GET /records/finished/<handId>` returns the signed record of a finished hand. `GET /records/results?from=&limit=` (console token) returns, for finished hands only, the seats, start and end stacks, rake and the record hash — no cards, deck or seed — so the console can check what it received. A hand in play is not in the chain, so no route can return it.
+
+**Retention.** Records are kept on the TEE disk for `TEE_RETENTION_DAYS` days (7, measured). Day files past that age that were already sent are deleted; the kept chain continues from the `prev` hash of its first line. The console keeps every record with the engine's signature.
 
 ## Rebuild the image yourself
 
@@ -107,9 +110,14 @@ The test suite covers:
 - rejection of a mid-hand key swap and of an early board
 - input validation
 
+## Licence
+
+All rights reserved (see `LICENSE`). The code is published for inspection and verification only; it may not be copied, reused or hosted. Images, fonts and other design assets are not part of this repository.
+
 ## Status
 
 - **Stage 1–2:** the engine runs as a separate process (`mode: "dev"`). The cryptographic guarantees above hold, but there is no hardware attestation.
+- **0.8.0:** the TEE keeps one week of records (`TEE_RETENTION_DAYS=7`, checked hourly; unsent records are never deleted). `GET /records/results` (console token) returns finished-hand results without cards for reconciliation; a hand in play cannot be read by any route.
 - **0.7.1:** the operator route `/rpc` is removed (public rooms are not used; every hand runs in the TEE table server, and `TEE_CONSOLE_KEY` is required in dstack mode). The operator has no route into the engine.
 - **0.7.0:** the engine sends its records to the console (`TEE_CONSOLE_URL`, retried, resent from the console's next number if one is missing); the operator's record export (`/records`, `/records/hand/<id>`) is removed. Records older than `TEE_RETENTION_DAYS` (90) that were sent are deleted. `/records/head` and `/info` show storage (bytes, files, oldest day, free disk) and how far the console has received.
 - **0.5.9:** basic hardening — HTTP time limits and connection cap, rate limits (join, commands per seat, own-records, operator RPC), at most 3 event connections per seat, security headers on every response; the container runs with no Linux capabilities, no privilege escalation and a read-only root filesystem.

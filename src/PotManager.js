@@ -159,7 +159,7 @@ class PotManager {
         // [FOLD_EXCESS_RETURN_2026_11_01] 폴드한 사람이 살아 있는 사람의 최대 베팅보다 더 낸 부분은
         //   겨룰 사람이 없어 calculateSidePots 의 어느 팟에도 안 잡히고 사라졌다
         //   (대회 46 핸드 13001116: SB 2000 폴드 · BB 900 올인 → 1,100 소실, 09-24 핸드 8975252 790.25 도 같은 모양).
-        //   낸 사람에게 반환으로 돌려준다. 파트너 정산(GameEngine matchedBet/uncalledReturn)은 이미 이 몫을
+        //   낸 사람에게 반환으로 돌려준다. 정산 쪽 계산은 이미 이 몫을
         //   돌려주는 계산이라 칩과 지갑이 같아진다. 살아 있는 베팅 안쪽의 죽은 돈은 그대로 팟에 남는다.
         let liveMax = 0;
         for (const p of potPlayers) {

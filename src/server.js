@@ -6,18 +6,19 @@
  *   GET  /records/head        기록 사슬 끝 { count, head, hands, first, sent, storage } 누구나 — 지금까지 남긴 기록의 지문·용량
  *   GET  /review/manifest     지금 이 엔진이 싣고 도는 파일 목록과 SHA-256(sha256sum 형식) 누구나 — GitHub 커밋의 파일과 대조
  *   GET  /records/keys        엔진 키 줄 전부(뜰 때마다 하나)            누구나 — 옛 기록을 옛 키로 검증
+ *   GET  /records/results, /records/finished/<id>  콘솔만(토큰) — 끝난 판만(consoleApi.js, 기록 보관소만 받는다)
  *   /table/...                테이블 서버 — 회원이 TEE 와 직접 게임한다 (table/http.js)
  *
  * 환경 변수
  *   TEE_MODE            dev(기본) | dstack — dstack 은 Phala Cloud(dstack) TDX 안. 뜨기 전에 증명서를 받는다
  *   TEE_PORT            기본 3900
  *   TEE_HOST            기본 127.0.0.1. 컨테이너 안에서는 0.0.0.0 (밖에서는 TEE 게이트웨이 TLS 로만 들어온다)
- *   TEE_RPC_TOKEN       콘솔로 기록을 보낼 때 붙이는 토큰(콘솔이 확인). dstack 모드에서는 반드시 있어야 한다(32자 이상). 암호화 환경변수로만 넣는다
+ *   TEE_RPC_TOKEN       콘솔과 엔진 사이의 토큰 — 기록을 보낼 때 붙이고, 결과 조회(/records/results) 때 확인한다. dstack 모드에서는 반드시 있어야 한다(32자 이상). 암호화 환경변수로만 넣는다
  *   TEE_RECORD_DIR      판 기록 보관 폴더(TEE 데이터 디스크). dstack 모드에서는 반드시 있어야 한다
  *   TEE_CONSOLE_KEY     콘솔 좌석표 공개키(JWK JSON). 있으면 테이블 서버를 켠다. 배포 설정(측정됨)에 공개로 둔다
  *   TEE_DISCONNECT_GRACE_MS 연결이 끊긴 좌석이 탈락하기까지(기본 60000). 배포 설정(측정됨)에 공개로 둔다
  *   TEE_CONSOLE_URL     사슬에 쓴 줄(끝난 판·정산서 등)을 보내는 콘솔 주소 — 엔진이 밖으로 연결하는 유일한 곳(outbox.js). 배포 설정(측정됨)에 공개로 둔다
- *   TEE_RETENTION_DAYS  보낸 기록을 TEE 에 두는 날 수(기본 90, 최소 7). 지난 하루 파일은 지운다. 배포 설정(측정됨)에 공개로 둔다
+ *   TEE_RETENTION_DAYS  보낸 기록을 TEE 에 두는 날 수(기본 7, 최소 1). 지난 하루 파일은 지운다. 배포 설정(측정됨)에 공개로 둔다
  *   TEE_ALLOW_UNSIGNED  1 이면 키 없는 좌석의 평문 카드·서명 없는 액션 허용 (시험 전용, dev 모드만)
  *
  *
@@ -36,6 +37,7 @@ const { TableServer } = require('./table/TableServer');
 const { tableRoutes } = require('./table/http');
 const { RateLimiter } = require('./limits');
 const { Outbox } = require('./outbox');
+const { consoleRoutes } = require('./consoleApi');
 
 // 요청 폭주 막기(서비스 거부 방지) — 넘치면 429
 const LIMIT = {
@@ -50,7 +52,7 @@ const HOST = process.env.TEE_HOST || '127.0.0.1';
 const TOKEN = process.env.TEE_RPC_TOKEN || '';
 const RECORD_DIR = process.env.TEE_RECORD_DIR || '';
 const CONSOLE_URL = process.env.TEE_CONSOLE_URL || '';
-const RETENTION_DAYS = Math.max(7, Math.floor(Number(process.env.TEE_RETENTION_DAYS) || 90));
+const RETENTION_DAYS = Math.max(1, Math.floor(Number(process.env.TEE_RETENTION_DAYS) || 7));
 const CONSOLE_KEY = process.env.TEE_CONSOLE_KEY ? C.importPublicJwk(JSON.parse(process.env.TEE_CONSOLE_KEY)) : null;
 
 if (MODE !== 'dev' && MODE !== 'dstack') throw new Error(`unknown TEE_MODE ${MODE}`);
@@ -102,9 +104,12 @@ function info() {
     return store ? { ...out, records: { ...store.headInfo(), storage: store.storage(), retentionDays: RETENTION_DAYS, consoleUrl: CONSOLE_URL || null } } : out;
 }
 
+const consoleHandler = consoleRoutes({ store, token: TOKEN, send });
+
 function handleGet(req, res) {
     const u = new URL(req.url, 'http://engine');
     const p = u.pathname;
+    if (consoleHandler(req, res, u)) return;
     if (p === '/info') return send(res, 200, info(), PUBLIC_HEADERS);
     if (p === '/' || p === '/audit') {
         // 사람·AI 가 읽는 감사 보고서 (평문 markdown) — 값은 /info 와 같다
@@ -200,7 +205,7 @@ async function start() {
             } catch (e) { console.error(`[tee-engine] prune failed: ${e.message}`); }
         };
         prune();
-        setInterval(prune, 6 * 60 * 60 * 1000).unref();
+        setInterval(prune, 60 * 60 * 1000).unref();
     }
     // 테이블 화면·검증 화면은 언제나 TEE 가 내보낸다(테이블 서버가 꺼져 있으면 앉기·명령만 닫힌다)
     tableHandler = tableRoutes(tables);

@@ -23,8 +23,9 @@ const ENGINE_FILES = new Set(['verify.js', 'crypto.js', 'cards.js', 'HandCore.js
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json',
     '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg' };
 const PAGE_HEADERS = {
-    'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
-    'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https://resource.pokerzero.site; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src https://resource.pokerzero.site; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    'X-Frame-Options': 'DENY', 'Referrer-Policy': 'strict-origin',   // 리소스 서버는 이 TEE 화면에서 온 요청인지만 본다(경로·해시는 보내지 않는다)
+    'X-Content-Type-Options': 'nosniff',
 };
 const MAX_BODY = 64 * 1024;
 const { RateLimiter } = require('../limits');
