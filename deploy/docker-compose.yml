@@ -7,7 +7,7 @@
 # Hand records are kept on the TEE data disk (volume "records"), encrypted with a key only the TEE receives.
 services:
   engine:
-    image: ghcr.io/buyinofficial/buyin-engine@sha256:af8c6428fe3b945bec9ef5205e040fdd32e4eb449d3497d583c8e464982c6a1b
+    image: ghcr.io/buyinofficial/buyin-engine@sha256:57fa97ddeff063ae72758f9232fddccd4a03050f8c6c26a002c66b5859bb097b
     restart: always
     # Hardening: no Linux capabilities, no privilege escalation, read-only root filesystem
     # (the engine writes only to /data), small /tmp, memory and process limits.
