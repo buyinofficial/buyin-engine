@@ -71,6 +71,10 @@ function auditReport(info, records, keyCount, base, opts = {}) {
     L.push(`| Files the engine loads | ${review ? `${review.files} files, tree hash \`${review.treeHash}\` — ${base}/review/manifest` : 'n/a'} |`);
     L.push(`| Finished hands in the TEE record chain | ${records ? `${records.hands}` : 'n/a'} (only finished hands are ever written) |`);
     L.push(`| Phala app id | ${a && a.appId ? '`' + a.appId + '`' : 'n/a'} |`);
+    let vm = a && a.vmConfig;
+    try { vm = typeof vm === 'string' ? JSON.parse(vm) : vm; } catch (_e) { vm = null; }
+    const devOs = !!vm && /-dev-/.test(String(vm.image));
+    L.push(`| OS image (vm_config) | ${vm ? '`' + vm.image + '` `' + vm.os_image_hash + '`' + (devOs ? ' — **development image: the operator can open an SSH debug shell into this VM, so the conclusion below holds only on a production image**' : ' — production image (no debug shell)') : 'n/a'} — must equal \`deploy/tee-os.txt\` |`);
     L.push('');
     L.push('## How the running program ties to the commit');
     L.push('');
@@ -78,7 +82,8 @@ function auditReport(info, records, keyCount, base, opts = {}) {
     L.push(`2. The deployment file pins the image by digest (above).`);
     L.push(`3. GitHub signed the build provenance of that digest from commit \`${ref}\` (${REPO}/attestations; \`gh attestation verify oci://<image> --repo buyinofficial/buyin-engine\`); the release ${REPO}/releases/tag/v${info.version} lists digest and commit; rebuilding the commit gives the same digest.`);
     L.push(`4. The engine's keys are bound to the quote (report_data), so the sealed cards come from this measured program.`);
-    L.push(`5. ${base}/review/manifest lists the SHA-256 of every file the engine loads; they equal the files at the commit. \`node tools/check-deployment.js ${base}\` in a checkout of the commit checks 1–5 automatically.`);
+    L.push(`5. ${base}/review/manifest lists the SHA-256 of every file the engine loads; they equal the files at the commit.`);
+    L.push(`6. The server state is the repository: the measured deployment file is \`deploy/docker-compose.yml\` of a commit in the repository, the only value set outside it is the secret token (\`allowed_envs\`), and the OS image equals \`deploy/tee-os.txt\`. \`node tools/check-deployment.js ${base}\` in a checkout of the commit checks 1–6 automatically.`);
     L.push('');
     L.push(`## Files to read at commit \`${ref}\` (card secrecy only)`);
     L.push('');
@@ -93,7 +98,7 @@ function auditReport(info, records, keyCount, base, opts = {}) {
     L.push('');
     L.push('## Assumptions (stated, not hidden)');
     L.push('');
-    L.push(`A1 Intel TDX keeps the VM's memory private and its quote signatures are genuine · A2 Phala dstack measures the deployment, keeps the data disk key to this app, and terminates TLS in its own TEE gateway · A3 standard cryptography · A4 the player plays on this address (\`${base.replace(/^https?:\/\//, '')}\`) in an uncompromised browser.`);
+    L.push(`A1 Intel TDX keeps the VM's memory private and its quote signatures are genuine · A2 Phala dstack measures the deployment, keeps the data disk key to this app, and terminates TLS in its own TEE gateway · A3 standard cryptography · A4 the player plays on this address (\`${base.replace(/^https?:\/\//, '')}\`) in an uncompromised browser · A5 the VM runs a production OS image (see the OS row above; a development image allows an operator debug shell).`);
     L.push('');
     return L.join('\n') + '\n';
 }

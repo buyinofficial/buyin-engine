@@ -11,6 +11,8 @@
  * 4. The engine reports the GitHub commit it was built from; the GitHub Release of its version lists the same image digest and
  *    commit (written by the build workflow, next to GitHub's signed build provenance); this checkout is at that commit.
  * 5. Every file the engine loads (/review/manifest) has the same SHA-256 as the file in this checkout.
+ * 6. The server state is the repository: the deployment file the TEE measured is `deploy/docker-compose.yml` of a commit in
+ *    this repository, the only value set outside the repository is the secret token, and the OS image is `deploy/tee-os.txt`.
  * It prints PASS / FAIL per step and exits 1 on any FAIL.
  */
 const crypto = require('crypto');
@@ -79,6 +81,28 @@ const step = (ok, name, detail) => { if (!ok) failed++; console.log(`${ok ? 'PAS
         if (local !== h) bad.push(f);
     }
     step(bad.length === 0, `all ${n} files the engine loads match this checkout`, bad.length ? 'differ: ' + bad.join(', ') : `tree hash ${sha256(manifest)}`);
+
+    // 6. server state = repository: deployment file, values set outside the repository, OS image
+    let app = {};
+    try { app = JSON.parse(a.appCompose); } catch (_e) { /* checked by step 3 */ }
+    const git = (cmd) => execSync(cmd, { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+    let at = null;
+    try {
+        for (const c of git('git rev-list --all -- deploy/docker-compose.yml').trim().split('\n').filter(Boolean)) {
+            if (git(`git show ${c}:deploy/docker-compose.yml`) === app.docker_compose_file) { at = c; break; }
+        }
+    } catch (_e) { /* not a git checkout */ }
+    step(!!at, 'the deployment file the TEE measured is deploy/docker-compose.yml in this repository', at ? `commit ${at}` : 'no commit has this exact file');
+    const envs = JSON.stringify(app.allowed_envs || []);
+    step(envs === '["TEE_RPC_TOKEN"]' && !app.pre_launch_script, 'nothing else is set outside the repository (only the secret token, no pre-launch script)', `allowed_envs ${envs}`);
+    let vm = a.vmConfig;
+    try { vm = typeof vm === 'string' ? JSON.parse(vm) : vm; } catch (_e) { vm = null; }
+    let declared = '';
+    try { declared = git(`git show ${at || 'HEAD'}:deploy/tee-os.txt`).split('\n').filter((l) => l && !l.startsWith('#'))[0] || ''; } catch (_e) { /* missing */ }
+    const [osName, osHash] = declared.trim().split(/\s+/);
+    const osOk = !!vm && vm.image === osName && vm.os_image_hash === osHash;
+    step(osOk, `the OS image is the one declared in deploy/tee-os.txt (${osName || 'none'})`,
+        `TEE reports ${vm ? `${vm.image} ${vm.os_image_hash}` : 'no vm_config'}${/-dev-/.test(String(vm && vm.image)) ? '\n      NOTE: development OS — the operator can open an SSH debug shell; not for real-money play' : ''}`);
 
     console.log(failed ? `\n${failed} check(s) FAILED` : '\nall checks passed — the live engine is this repository at this commit');
     process.exit(failed ? 1 : 0);

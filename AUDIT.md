@@ -28,8 +28,11 @@ Fetch `GET <engine>/info`. Then:
 3. **Measured configuration = published configuration.** `SHA-256(attestation.appCompose)` must equal `attestation.composeHash`. The TEE measures this hash into RTMR3 at boot; Phala's report replays the event log to show it. `appCompose` contains `deploy/docker-compose.yml`, which pins the image by digest.
 4. **Image = source.** Rebuild the tag named in `/info` (`v<version>`) as described in the README ("Rebuild the image yourself"). The digest must equal the one pinned in the compose. The CI log of the tag build prints the same digest.
 5. **Results come from this engine.** Every hand ends with a record signed by `keys.sig`. `node src/verify.js record.json key.json` checks the signature, the seed against the pre-hand commitment, the shuffle against the players' random values, all 52 card commitments, and replays every action under `HandCore` — any difference fails.
-6. **Records are not removed or rewritten.** The engine appends each record to an append-only hash chain on the TEE's encrypted disk (`src/store.js`). `GET /records/head` returns `{count, head}`; save it and compare later — the chain can only grow, and `GET /records/keys` lists every engine key the chain has used.
-7. **The game uses this engine.** In the game, the player's browser compares the engine key it receives from the game server with the attested key it fetches directly from `/info`. A mismatch is shown to the player. (Engine keys change on every engine restart; each one is in `/records/keys` with its attestation `report_data`.)
+6. **Records are not rewritten.** The engine appends each record to a hash chain on the TEE's encrypted disk (`src/store.js`) and sends each line to the console (`src/outbox.js`). `GET /records/head` returns `{count, head, first, sent}`; `count` only grows. Lines older than `TEE_RETENTION_DAYS` (7) that were already sent are deleted; the console keeps them with the engine's signature. `GET /records/keys` lists the engine keys.
+7. **The game uses this engine.** The table page is served by the TEE and checks that the engine key is the attested key from `/info`. (Engine keys change on every engine restart; each one is in `/records/keys` with its attestation `report_data`.)
+8. **Server state = repository.** The measured deployment file (`appCompose.docker_compose_file`) is byte-for-byte `deploy/docker-compose.yml` of a commit in this repository; `appCompose.allowed_envs` is only `TEE_RPC_TOKEN` (the one secret, encrypted); there is no pre-launch script; the OS image reported in `vm_config` equals `deploy/tee-os.txt`. A `dstack-dev-*` image is a development image: the operator can open an SSH debug shell, so the claims in §3 assume a production image.
+
+`node tools/check-deployment.js <engine>` in a checkout of the engine commit runs steps 1–4 and 8 and compares every loaded file.
 
 ## 3. Threat model
 
@@ -55,7 +58,7 @@ Fetch `GET <engine>/info`. Then:
 ### Trust that remains
 
 - Intel TDX hardware and Intel's attestation signing keys.
-- Phala Cloud's dstack OS image and KMS (measured; see `trust.phala.com`).
+- Phala Cloud's dstack OS image and KMS (measured; see `trust.phala.com`). On a development OS image (`dstack-dev-*`, see `deploy/tee-os.txt`) the operator can open an SSH debug shell into the VM; the guarantees above need a production image.
 - The correctness of this source code — which is exactly why it is public.
 
 ## 4. What the operator's systems see, and when
@@ -66,10 +69,10 @@ Since 0.5.x every hand runs in the TEE table server (`src/table/`, "table mode",
 |---|---|---|
 | Sitting down | the buy-in it took and the seat ticket it signed | the player's keys or table session token |
 | During a hand | nothing from the engine — the engine has no operator route (`src/server.js`), and the running hand is not yet in the record chain | — |
-| After the hand ends | the full signed record (every hole card, seed, deck, action), sent by the engine to the console (`src/outbox.js`) | — |
+| After the hand ends | the full signed record (every hole card, seed, deck, action), sent by the engine to the console (`src/outbox.js`); the console's check API (`src/consoleApi.js`, token) returns finished hands only | — |
 | Leaving | the engine-signed settlement note (amounts only) | — |
 
-The engine writes a record only when the hand is closed (`Engine._closeHand`), and `test/server.test.js` checks that game RPC is refused in table mode. The engine prints no cards to its logs.
+The engine writes a record only when the hand is closed (`Engine._closeHand`), `test/server.test.js` checks that there is no operator route (`/rpc` and record export are 404), and `test/results.test.js` checks that a hand in play is not in the record store or the check API. The engine prints no cards to its logs.
 
 ## 5. The player's browser
 

@@ -1,0 +1,3 @@
+# OS image this engine is deployed on (the vm_config the TEE reports must show the same).
+# dstack-dev-* = development image: the operator can open an SSH debug shell. Real-money play must use a production image (dstack-*, no -dev).
+dstack-dev-0.5.12 e866e987221db357129ebc3f066b6706ef955889ea95e5510acbdf3d3055186b

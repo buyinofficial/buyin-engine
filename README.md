@@ -117,6 +117,7 @@ All rights reserved (see `LICENSE`). The code is published for inspection and ve
 ## Status
 
 - **Stage 1–2:** the engine runs as a separate process (`mode: "dev"`). The cryptographic guarantees above hold, but there is no hardware attestation.
+- **0.8.1:** `tools/check-deployment.js` also checks that the server state is this repository: the measured deployment file is `deploy/docker-compose.yml` of a commit here, only the secret token is set outside it, and the OS image equals `deploy/tee-os.txt` (a `dstack-dev-*` image is flagged as development). The pre-game brief shows the OS image.
 - **0.8.0:** the TEE keeps one week of records (`TEE_RETENTION_DAYS=7`, checked hourly; unsent records are never deleted). `GET /records/results` (console token) returns finished-hand results without cards for reconciliation; a hand in play cannot be read by any route.
 - **0.7.1:** the operator route `/rpc` is removed (public rooms are not used; every hand runs in the TEE table server, and `TEE_CONSOLE_KEY` is required in dstack mode). The operator has no route into the engine.
 - **0.7.0:** the engine sends its records to the console (`TEE_CONSOLE_URL`, retried, resent from the console's next number if one is missing); the operator's record export (`/records`, `/records/hand/<id>`) is removed. Records older than `TEE_RETENTION_DAYS` (90) that were sent are deleted. `/records/head` and `/info` show storage (bytes, files, oldest day, free disk) and how far the console has received.
