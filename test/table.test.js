@@ -149,7 +149,7 @@ test('테이블: 좌석표로 앉아 판이 TEE 안에서만 돈다 — 카드�
     assert.deepStrictEqual(verifyChain(env.store.range(0, 1e9)), []);
 });
 
-test('테이블: 차례 밖 액션·남의 토큰·옛 차례 번호는 거절, 자기 차례에 시간 초과면 폴드하고 탈락(판이 끝나면 정산)', () => {
+test('테이블: 차례 밖 액션·남의 토큰·옛 차례 번호는 거절, 시간 초과는 폴드만 하고 자리는 그대로, 연속 3번이면 탈락(판이 끝나면 정산)', () => {
     const env = setup(3);
     const { server, clock, players } = env;
     clock.advance(5000);
@@ -160,14 +160,24 @@ test('테이블: 차례 밖 액션·남의 토큰·옛 차례 번호는 거절, 
     assert.throws(() => server.command('nope', { type: 'act' }), /unknown token/);
     const actor = players.find((p) => p.seat === turn.seat);
     assert.throws(() => server.command(actor.token, { type: 'act', q: turn.q + 5, action: 'FOLD', amount: 0, sig: 'x' }), /stale turn/);
-    // 아무도 안 움직이면 — 차례마다 시간 초과 → 폴드·탈락, 마지막 한 명이 팟을 가져가고 판이 끝난다
-    for (let i = 0; i < 10; i++) clock.advance(21000);
+    // 아무도 안 움직이면 — 차례마다 시간 초과 → 폴드, 마지막 한 명이 팟을 가져가고 판이 끝난다. 아무도 일어나지 않는다
     const room = server.rooms.get('r1');
-    const settled = env.out.filter((x) => x.kind === 'settle');
-    assert.ok(settled.filter((x) => x.note.reason === 'timeout').length >= 2, '시간 초과한 사람은 탈락해 정산된다');
+    for (let i = 0; i < 4 && !env.out.some((x) => x.kind === 'hand-record'); i++) clock.advance(21000);
     assert.ok(env.out.some((x) => x.kind === 'hand-record'), '판은 끝까지 갔다');
+    clock.advance(10000);
+    assert.strictEqual(env.out.filter((x) => x.kind === 'settle').length, 0, '한 번 시간 초과로는 일어나지 않는다');
+    assert.strictEqual(room.seats.filter(Boolean).length, 3);
+    assert.ok(room.hand && room.hand.handId !== h.handId, '다음 판이 시작됐다');
+    // 직접 한 번 행동하면 횟수는 0
+    const t2 = lastTurn(players[0]);
+    const keeper = players.find((p) => p.seat === t2.seat);
+    server.command(keeper.token, { type: 'act', q: t2.q, action: 'FOLD', amount: 0, sig: C.sign(keeper.sig.privateKey, C.msgAction(t2.handId, t2.q, 'FOLD', 0)) });
+    assert.strictEqual(room.seats[keeper.seat].timeouts, 0);
+    // 계속 방치하면 연속 3번째에 탈락해 정산된다
+    for (let i = 0; i < 60 && room.seats.filter(Boolean).length > 1; i++) clock.advance(21000);
+    const settled = env.out.filter((x) => x.kind === 'settle');
+    assert.ok(settled.filter((x) => x.note.reason === 'timeout').length >= 2, '연속 시간 초과한 사람은 탈락해 정산된다');
     assert.ok(room.seats.filter(Boolean).length <= 1);
-    void h;
 });
 
 test('테이블: 좌석표 — 콘솔 서명·만료·재사용·규칙 불일치', () => {

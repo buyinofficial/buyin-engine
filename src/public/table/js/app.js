@@ -704,7 +704,11 @@ function renderActions() {
         const b = el('button', '', `<span>${esc(label)}</span><small>${esc(dmCur(v))}</small>`);
         b.type = 'button';
         b.disabled = !canRaise;
-        b.onclick = () => { S.raiseVal = v; g.value = v; paintRaise(); };
+        // 모바일은 누르면 바로 베팅(이전 게임 화면과 같다), PC 는 금액만 잡고 베팅 버튼으로 확정
+        b.onclick = () => {
+            S.raiseVal = v; g.value = v; paintRaise();
+            if (mobile) act(raise.dataset.act, v);
+        };
         pre.appendChild(b);
     }
 }

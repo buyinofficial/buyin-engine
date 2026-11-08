@@ -18,6 +18,7 @@ const START_DELAY_MS = 3000;       // 판과 판 사이
 const RESULT_PAUSE_MS = 4000;      // 결과를 보여 주는 시간
 const EMPTY_ROOM_MS = 10 * 60 * 1000;
 const DISCONNECT_GRACE_MS = 60 * 1000;
+const TIMEOUT_KICK = 3;                 // 연속 시간 초과가 이만큼이면 탈락(이전 게임 서버와 같다)
 const MAX_CLIENTS_PER_SEAT = 3;          // 한 좌석에 붙는 이벤트 연결 상한(탭 여러 개 정도)   // 연결이 끊긴 뒤 이 시간 안에 다시 붙지 않으면 탈락(배포 설정 TEE_DISCONNECT_GRACE_MS)
 
 class TableError extends Error {
@@ -345,14 +346,18 @@ class TableServer {
     _timeout(room, seat, q) {
         const h = room.hand;
         if (!h || h.toAct !== seat || h.q !== q) return;
-        const core = this._core(h);
-        const p = core.seats.get(seat);
-        void p;
-        // 자기 차례에 시간 안에 행동하지 않았다 → 폴드하고 탈락(판이 끝나면 정산 후 자리에서 뺀다). 나머지 판은 그대로 이어진다
+        // 자기 차례에 시간 안에 행동하지 않았다 → 이번 판은 폴드, 자리는 그대로(다음 판에도 든다).
+        //   연속 TIMEOUT_KICK 번이면 그때 탈락(판이 끝나면 정산 후 자리에서 뺀다). 직접 한 번 행동하면 횟수는 0(_act).
+        //   연결이 끊긴 좌석은 방치가 아니다 — 체크할 수 있으면 체크, 아니면 폴드하고 횟수에 넣지 않는다(끊김 유예가 따로 정리).
+        //   이전 게임 서버(TurnManager._applyTimeout)와 같은 정책이다. 일어날 좌석은 기다리지 않고 폴드
         const s = room.seats[seat];
-        const r = this.engine.call('act', { handId: h.handId, entry: { k: 'host', seat, q, action: 'FOLD', reason: s && s.leaving ? (s.leaveReason || 'left') : 'timeout' } });
+        const leaving = !!(s && s.leaving);
+        const away = !!(s && !leaving && !s.clients.size);
+        const p = this._core(h).seats.get(seat);
+        const action = away && p && this._core(h).currentBet <= p.currentBet ? 'CHECK' : 'FOLD';
+        const r = this.engine.call('act', { handId: h.handId, entry: { k: 'host', seat, q, action, reason: leaving ? (s.leaveReason || 'left') : away ? 'disconnected' : 'timeout' } });
         if (!r.ok) return this._abort(room, r.error);
-        if (s && !s.leaving) {
+        if (s && !leaving && !away && ++s.timeouts >= TIMEOUT_KICK) {
             s.leaving = true;
             s.leaveReason = 'timeout';
             this._broadcast(room, 'seat', { seat: this._publicSeat(room, s) });
