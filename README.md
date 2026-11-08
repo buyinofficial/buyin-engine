@@ -119,6 +119,7 @@ All rights reserved (see `LICENSE`). The code is published for inspection and ve
 ## Status
 
 - **Stage 1–2:** the engine runs as a separate process (`mode: "dev"`). The cryptographic guarantees above hold, but there is no hardware attestation.
+- **0.9.6:** table page: the phone preset buttons now really send the bet (in 0.9.5 a local name hid the action function, so a tap did nothing).
 - **0.9.5:** a turn timeout folds that hand only and the player keeps the seat; three timeouts in a row (no own action in between) stand the player up and cash out, as on the previous game server. A disconnected player's turn is checked when possible, otherwise folded, and does not count. On phones the quarter / half / pot / all-in buttons bet at once; on PC they set the amount for the bet button.
 - **0.9.4:** table page: each player gets one of several default avatars, chosen from the nickname (the same player always looks the same); images stay on the resource server.
 - **0.9.3:** table page: on screens shorter than 900 px the player's own action label sits beside the avatar so it never covers a board card.

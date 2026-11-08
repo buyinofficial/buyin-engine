@@ -1,6 +1,6 @@
 {
   "name": "buyin-engine",
-  "version": "0.9.5",
+  "version": "0.9.6",
   "description": "BUY-IN hold'em game engine meant to run in a TEE: deck, deal, betting rules, pots and results, with player-encrypted hole cards, signed actions and a verifiable hand record",
   "main": "src/Engine.js",
   "scripts": {

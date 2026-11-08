@@ -674,10 +674,10 @@ function renderBets() {
 // ------------------------------------------------------------ 액션
 
 function renderActions() {
-    const act = $('#actions');
+    const box = $('#actions');   // act 라고 부르면 아래 프리셋의 act() 호출을 가린다
     const tr = S.turn;
-    if (!tr || tr.seat !== mySeat() || !S.hand) { act.hidden = true; return; }
-    act.hidden = false;
+    if (!tr || tr.seat !== mySeat() || !S.hand) { box.hidden = true; return; }
+    box.hidden = false;
     const me = S.hand.seats.find((x) => x.seat === mySeat());
     const call = $('.a-call'), raise = $('.a-raise');
     const stackAll = tr.maxBet;
@@ -688,8 +688,8 @@ function renderActions() {
     raise.disabled = !canRaise;
     const g = $('.gauge-input');
     g.min = minTo; g.max = stackAll; g.step = S.room.bb >= 1 ? 1 : 0.01;
-    if (!(S.raiseVal >= minTo && S.raiseVal <= stackAll) || act.dataset.q !== String(tr.q)) S.raiseVal = minTo;
-    act.dataset.q = tr.q;
+    if (!(S.raiseVal >= minTo && S.raiseVal <= stackAll) || box.dataset.q !== String(tr.q)) S.raiseVal = minTo;
+    box.dataset.q = tr.q;
     g.value = S.raiseVal;
     paintRaise();
     const pre = $('.presets');
