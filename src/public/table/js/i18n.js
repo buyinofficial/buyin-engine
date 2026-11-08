@@ -5,13 +5,21 @@ const T = {
         waiting: '다른 참가자를 기다리는 중', joining: '테이블에 들어가는 중…', noTicket: '입장권이 없습니다. 로비에서 다시 들어와 주세요.',
         settled: '자리에서 일어났습니다. 정산 금액', leftAfter: '이번 판이 끝나면 일어납니다', confirmLeave: '나가기', sitout: '자리 비움', back: '돌아왔어요',
         quarter: '쿼터', half: '하프', full: '풀', attOk: 'TEE 증명서와 같은 엔진', attBad: '엔진 키가 증명서와 다름', timeout: '시간 초과', winner: 'WINNER',
-        replaced: '이전 접속을 정리하는 중입니다 — 정산이 끝나면 자동으로 다시 앉습니다' },
+        replaced: '이전 접속을 정리하는 중입니다 — 정산이 끝나면 자동으로 다시 앉습니다',
+        emote: '이모티콘', chat: '채팅', send: '보내기', chatPh: '메시지 입력 (200자)', tooFast: '조금 천천히 보내 주세요', timeBank: '타임뱅크 +20초',
+        emo_angry: '부글부글', emo_sad: '씁쓸하네', emo_win: '승리!', emo_taunt: '쫄~?', emo_thanks: '감사감사', emo_chill: '여유만만', emo_sleepy: '나른해', emo_clap: '박수',
+        tipHint: '팁 보내기', tipPreflop: '팁은 프리플랍에서만 보낼 수 있어요', tipCancel: '스택이 모자라거나 상대가 떠나 팁이 취소됐어요',
+        gift_flower: '장미', gift_kiss: '키스', gift_confetti: '축하', gift_cigarette: '시가', gift_champagne: '샴페인' },
     en: { toLobby: 'Back to lobby', pot: 'POT', potMain: 'MAIN', uncalled: 'UNCALLED', fold: 'Fold', check: 'Check', call: 'Call', raise: 'Raise', bet: 'Bet', allin: 'All-in',
         leave: 'Leave', sound: 'Sound', verify: 'Card check', cardCheck: 'Card check', verified: 'Verified', checking: 'Checking', warn: 'Check needed',
         waiting: 'Waiting for other players', joining: 'Joining the table…', noTicket: 'No seat ticket. Please enter again from the lobby.',
         settled: 'You left the table. Cash-out', leftAfter: 'You will leave after this hand', confirmLeave: 'Leave', sitout: 'Sit out', back: "I'm back",
         quarter: 'Quarter', half: 'Half', full: 'Pot', attOk: 'Engine matches the TEE attestation', attBad: 'Engine key differs from the attestation', timeout: 'Time out', winner: 'WINNER',
-        replaced: 'Closing your previous session — you will sit again automatically once it is settled' },
+        replaced: 'Closing your previous session — you will sit again automatically once it is settled',
+        emote: 'Emotes', chat: 'Chat', send: 'Send', chatPh: 'Message (200 chars)', tooFast: 'Please slow down a little', timeBank: 'Time bank +20s',
+        emo_angry: 'Grr', emo_sad: 'Ouch', emo_win: 'Win!', emo_taunt: 'Scared?', emo_thanks: 'Thanks', emo_chill: 'Chill', emo_sleepy: 'Sleepy', emo_clap: 'Clap',
+        tipHint: 'Send a tip', tipPreflop: 'Tips can be sent only during the pre-flop', tipCancel: 'Tip cancelled (not enough chips or the player left)',
+        gift_flower: 'Rose', gift_kiss: 'Kiss', gift_confetti: 'Cheers', gift_cigarette: 'Cigar', gift_champagne: 'Champagne' },
     zh: { toLobby: '返回大厅', pot: '总底池', potMain: '主池', uncalled: '未跟注', fold: '弃牌', check: '过牌', call: '跟注', raise: '加注', bet: '下注', allin: '全下', leave: '离开', cardCheck: '牌验证', verified: '已验证', waiting: '等待其他玩家', joining: '正在入座…' },
     ja: { toLobby: 'ロビーへ戻る', pot: 'ポット', potMain: 'メイン', uncalled: '未コール', fold: 'フォールド', check: 'チェック', call: 'コール', raise: 'レイズ', bet: 'ベット', allin: 'オールイン', leave: '退出', cardCheck: 'カード検証', verified: '検証済み', waiting: '他のプレイヤーを待っています', joining: '着席中…' },
     vi: { toLobby: 'Về sảnh', pot: 'TỔNG POT', potMain: 'CHÍNH', uncalled: 'CHƯA THEO', fold: 'Bỏ', check: 'Xem', call: 'Theo', raise: 'Tố', bet: 'Cược', allin: 'All-in', leave: 'Rời bàn', cardCheck: 'Kiểm tra bài', verified: 'Đã xác minh', waiting: 'Đang chờ người chơi khác', joining: 'Đang vào bàn…' },
@@ -24,4 +32,5 @@ export function t(k) { return (T[lang] && T[lang][k]) || T.en[k] || k; }
 export function applyStatic(root = document) {
     for (const el of root.querySelectorAll('[data-i18n]')) el.textContent = t(el.getAttribute('data-i18n'));
     for (const el of root.querySelectorAll('[data-i18n-title]')) { el.title = t(el.getAttribute('data-i18n-title')); el.setAttribute('aria-label', el.title); }
+    for (const el of root.querySelectorAll('[data-i18n-ph]')) el.placeholder = t(el.getAttribute('data-i18n-ph'));
 }

@@ -19,6 +19,16 @@ const RESULT_PAUSE_MS = 4000;      // 결과를 보여 주는 시간
 const EMPTY_ROOM_MS = 10 * 60 * 1000;
 const DISCONNECT_GRACE_MS = 60 * 1000;
 const TIMEOUT_KICK = 3;                 // 연속 시간 초과가 이만큼이면 탈락(이전 게임 서버와 같다)
+const TIME_BANK_START = 3;              // 타임뱅크 — 앉을 때 장수, 한 차례에 1장, 쓰면 +TIME_BANK_MS (이전 비밀방과 같다)
+const TIME_BANK_MS = 20 * 1000;
+const EMOTES = ['angry', 'sad', 'win', 'taunt', 'thanks', 'chill', 'sleepy', 'clap'];
+const EMOTE_GAP_MS = 1500;
+const CHAT_MAX = 200;                   // 채팅 — 0.4초 간격 + 5초에 5개, 200자. 저장·로그 없이 같은 방에만 전달
+const CHAT_GAP_MS = 400;
+const CHAT_WINDOW_MS = 5000;
+const CHAT_PER_WINDOW = 5;
+const TIP_TYPES = ['flower', 'kiss', 'confetti', 'cigarette', 'champagne'];   // 팁 — 이전 게임과 같다: 금액은 종류와 무관하게 그 방 BB 1개,
+const TIP_COOLDOWN_MS = 3000;                                                   //   프리플랍에서만 보내고, 칩은 판이 끝난 뒤 옮긴다(모자라면 취소)
 const MAX_CLIENTS_PER_SEAT = 3;          // 한 좌석에 붙는 이벤트 연결 상한(탭 여러 개 정도)   // 연결이 끊긴 뒤 이 시간 안에 다시 붙지 않으면 탈락(배포 설정 TEE_DISCONNECT_GRACE_MS)
 
 class TableError extends Error {
@@ -69,6 +79,9 @@ class TableServer {
                 const x = open.get(e.note.sessionId);
                 if (x) active.delete(x.e.tableId + '|' + x.e.odcId);
                 open.delete(e.note.sessionId);
+            } else if (e.kind === 'tip') {
+                const a = open.get(e.fromSession), b = open.get(e.toSession);
+                if (a && b) { a.stack = round3(a.stack - e.amount); b.stack = round3(b.stack + e.amount); }
             } else if (e.kind === 'hand' && e.record) {
                 const r = e.record;
                 for (const st of r.seats || []) {
@@ -118,6 +131,7 @@ class TableServer {
             seat, token, tid: t.tid, sessionId: t.player.sessionId, odcId: t.player.odcId,
             nickname: t.player.nickname, avatar: t.player.avatar, buyIn: t.buyIn, currency: t.currency, display: t.display,
             stack: t.buyIn, rakePaid: 0, hands: 0, keys: false, sitout: false, timeouts: 0, leaving: false, boundFp: joinFp,
+            timeBank: TIME_BANK_START, emoteAt: 0, chatRate: { last: 0, start: 0, n: 0 }, sigJwk: null, tipN: 0, tipAt: 0, tips: [],
             clients: new Set(), joinedAt: this.clock.now(),
         };
         // 좌석표는 사슬에 먼저 남긴다 — 이후 엔진이 다시 떠도 이 돈은 정산된다
@@ -180,6 +194,10 @@ class TableServer {
             case 'sitout': s.sitout = true; this._broadcast(room, 'seat', { seat: this._publicSeat(room, s) }); return { ok: true };
             case 'back': s.sitout = false; s.timeouts = 0; this._broadcast(room, 'seat', { seat: this._publicSeat(room, s) }); this._maybeStart(room); return { ok: true };
             case 'leave': return this._leave(room, s, 'left');
+            case 'timebank': return this._timeBank(room, s);
+            case 'emote': return this._emote(room, s, m);
+            case 'chat': return this._chat(room, s, m);
+            case 'tip': return this._tip(room, s, m);
             default: throw new TableError('input', 'unknown command');
         }
     }
@@ -197,6 +215,7 @@ class TableServer {
         if (!r.ok) throw new TableError(r.code || 'keys', r.error);
         s.keys = true;
         s.boundFp = fp;
+        s.sigJwk = m.sig;   // 팁 서명 확인용(칩이 움직이는 팁은 본인 서명이 있어야 한다)
         this._maybeStart(room);
         return { ok: true, sigFp: r.sigFp, ecdhFp: r.ecdhFp, confirm: r.confirm, seedCommit: r.seedCommit };
     }
@@ -218,6 +237,99 @@ class TableServer {
         s.timeouts = 0;
         this._afterAction(room, s.seat, r.res, 'act');
         return { ok: true, res: r.res };
+    }
+
+    /** 타임뱅크 1장 — 내 차례에, 한 차례에 한 번, 남은 시간 + TIME_BANK_MS. 칩·카드와 무관해 좌석 토큰만으로 된다 */
+    _timeBank(room, s) {
+        const h = room.hand;
+        if (!h || h.toAct !== s.seat || !h.timer) throw new TableError('turn', 'not your turn');
+        if (s.timeBank <= 0) throw new TableError('timebank', 'no time bank left');
+        if (h.timeBankQ === h.q) throw new TableError('timebank', 'time bank already used this turn');
+        s.timeBank -= 1;
+        h.timeBankQ = h.q;
+        h.deadline += TIME_BANK_MS;
+        const seat = h.toAct, q = h.q;
+        this.clock.clearTimeout(h.timer);
+        h.timer = this.clock.setTimeout(() => this._timeout(room, seat, q), Math.max(0, h.deadline - this.clock.now()));
+        this._broadcast(room, 'turn', this._turnInfo(room));
+        this._broadcast(room, 'timebank', { seat, left: s.timeBank, addedMs: TIME_BANK_MS });
+        return { ok: true, left: s.timeBank, deadline: h.deadline };
+    }
+
+    /** 감정 이모티콘 — 정해진 목록만, 같은 방 좌석에 전달만 한다(기록·로그 없음) */
+    _emote(room, s, m) {
+        const id = String(m.id || '');
+        if (!EMOTES.includes(id)) throw new TableError('input', 'unknown emote');
+        const now = this.clock.now();
+        if (now - s.emoteAt < EMOTE_GAP_MS) throw new TableError('rate', 'too fast');
+        s.emoteAt = now;
+        this._broadcast(room, 'emote', { seat: s.seat, id });
+        return { ok: true };
+    }
+
+    /** 채팅 — 제어문자 제거·200자, 도배 제한. 같은 방 좌석에 전달만 하고 저장·로그·콘솔 전송은 없다 */
+    _chat(room, s, m) {
+        const text = String(m.text == null ? '' : m.text).replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, CHAT_MAX);
+        if (!text) throw new TableError('input', 'empty message');
+        const now = this.clock.now(), r = s.chatRate;
+        if (now - r.start > CHAT_WINDOW_MS) { r.start = now; r.n = 0; }
+        if (now - r.last < CHAT_GAP_MS || r.n >= CHAT_PER_WINDOW) throw new TableError('rate', 'too fast');
+        r.last = now; r.n += 1;
+        this._broadcast(room, 'chat', { seat: s.seat, nickname: s.nickname, text, at: now });
+        return { ok: true };
+    }
+
+    /**
+     * 팁 — 칩이 움직이므로 보내는 사람의 서명(msgTip, 좌석마다 1부터 하나씩 느는 번호)이 있어야 한다.
+     * 받으면 연출만 바로 알리고, 칩은 판이 끝난 뒤(_settleTips) 옮긴다. 그때 스택이 모자라거나 한쪽이 일어나면 취소.
+     */
+    _tip(room, s, m) {
+        const h = room.hand;
+        if (!h || h.stage !== 'preflop') throw new TableError('tip', 'tips can be sent only during the pre-flop');
+        if (s.leaving) throw new TableError('tip', 'you are leaving the table');
+        const to = room.seats[Number(m.to)];
+        if (!to || to === s) throw new TableError('input', 'bad tip target');
+        if (to.leaving) throw new TableError('tip', 'that player is leaving the table');
+        const type = String(m.gift || '');   // 명령 이름이 type 이라 팁 종류는 gift
+        if (!TIP_TYPES.includes(type)) throw new TableError('input', 'unknown tip type');
+        const n = Number(m.n);
+        if (!Number.isInteger(n) || n !== s.tipN + 1) throw new TableError('tip', 'stale tip number');
+        const amount = room.rules.bb;
+        let ok = false;
+        try { ok = !!s.sigJwk && C.verify(C.importPublicJwk(s.sigJwk), C.msgTip(room.tableId, s.odcId, n, to.odcId, type, amount), m.sig); } catch (_e) { ok = false; }
+        if (!ok) throw new TableError('auth', 'bad tip signature');
+        const now = this.clock.now();
+        if (now - s.tipAt < TIP_COOLDOWN_MS) throw new TableError('rate', 'too fast');
+        // 지금 가진 칩 — 판에 든 좌석은 판 안의 스택. 이미 예약한 팁까지 더해 본다(같은 칩을 두 번 약속하지 않는다)
+        const p = h.seats.includes(s.seat) ? this._core(h).seats.get(s.seat) : null;
+        const live = p ? p.stack : s.stack;
+        const queued = s.tips.reduce((a, x) => a + x.amount, 0);
+        if (live < round3(queued + amount)) throw new TableError('tip', 'not enough chips');
+        s.tipN = n; s.tipAt = now;
+        s.tips.push({ to, toSeat: to.seat, type, amount, n, sig: String(m.sig) });
+        this._broadcast(room, 'tip', { from: s.seat, to: to.seat, type, amount, queued: true });
+        return { ok: true, n };
+    }
+
+    /** 판이 끝난 뒤 예약된 팁을 옮긴다 — 사슬에 먼저 남기고(서명 포함) 스택을 바꾼다 */
+    _settleTips(room) {
+        for (const s of room.seats) {
+            if (!s || !s.tips.length) continue;
+            const list = s.tips;
+            s.tips = [];
+            for (const x of list) {
+                const to = x.to;
+                const ok = room.seats[s.seat] === s && !s.leaving && room.seats[x.toSeat] === to && !to.leaving && s.stack >= x.amount;
+                if (ok && this.store) {
+                    this.store.appendEvent('tip', { tableId: room.tableId, roomId: room.id, fromSession: s.sessionId, toSession: to.sessionId,
+                        fromOdc: s.odcId, toOdc: to.odcId, n: x.n, type: x.type, amount: x.amount, sigJwk: s.sigJwk, sig: x.sig });
+                }
+                if (!ok) { this._broadcast(room, 'tip-cancel', { from: s.seat, to: x.toSeat, amount: x.amount }); continue; }
+                s.stack = round3(s.stack - x.amount);
+                to.stack = round3(to.stack + x.amount);
+                this._broadcast(room, 'tip-done', { from: s.seat, to: x.toSeat, type: x.type, amount: x.amount, stacks: { [s.seat]: s.stack, [x.toSeat]: to.stack } });
+            }
+        }
     }
 
     _leave(room, s, reason) {
@@ -409,6 +521,7 @@ class TableServer {
     }
 
     _afterHand(room) {
+        this._settleTips(room);
         for (const s of room.seats) {
             if (!s) continue;
             if (s.leaving) this._unseat(room, s, s.leaveReason || 'left');
@@ -504,7 +617,7 @@ class TableServer {
         return {
             room: { id: room.id, name: room.rules.name, sb: room.rules.sb, bb: room.rules.bb, maxPlayers: room.rules.maxPlayers, rake: room.rules.rake, turnSec: room.rules.turnSec, endsAt: room.rules.endsAt },
             tableId: room.tableId, seedCommit: room.seedCommit, engine: this.engine.call('info').keys,
-            me: { seat: s.seat, odcId: s.odcId, nickname: s.nickname, stack: s.stack, buyIn: s.buyIn, currency: s.currency, display: s.display, keys: s.keys, sitout: s.sitout },
+            me: { seat: s.seat, odcId: s.odcId, nickname: s.nickname, stack: s.stack, buyIn: s.buyIn, currency: s.currency, display: s.display, keys: s.keys, sitout: s.sitout, timeBank: s.timeBank, tipN: s.tipN },
             seats: room.seats.map((x) => (x ? this._publicSeat(room, x) : null)),
             hand: this._publicHand(room),
             hole: h && h.seats.includes(s.seat) ? { handId: h.handId, envelope: h.envelopes[s.seat] || null } : null,

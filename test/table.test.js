@@ -294,3 +294,102 @@ test('테이블: 한 좌석에 붙는 이벤트 연결은 3개까지', () => {
     server.subscribe(p.token, conn()); server.subscribe(p.token, conn());   // 이미 1개 + 2개 = 3개
     assert.throws(() => server.subscribe(p.token, conn()), /too many connections/);
 });
+
+test('테이블: 타임뱅크 — 앉을 때 3장, 내 차례에 한 차례 한 장, 마감 +20초, 남의 차례엔 안 됨', () => {
+    const env = setup(2);
+    const { server, clock, players } = env;
+    clock.advance(5000);
+    const room = server.rooms.get('r1');
+    const turn = lastTurn(players[0]);
+    const me = players.find((p) => p.seat === turn.seat), other = players.find((p) => p.seat !== turn.seat);
+    assert.throws(() => server.command(other.token, { type: 'timebank' }), /not your turn/);
+    const before = room.hand.deadline;
+    const r = server.command(me.token, { type: 'timebank' });
+    assert.strictEqual(r.left, 2);
+    assert.strictEqual(room.hand.deadline, before + 20000);
+    assert.throws(() => server.command(me.token, { type: 'timebank' }), /already used this turn/);
+    assert.ok(other.events.some(([ev, d]) => ev === 'timebank' && d.seat === me.seat && d.left === 2), '같은 방에 알린다');
+    // 원래 마감(20초)이 지나도 시간 초과가 아니다 — 늘어난 마감에서만
+    clock.advance(25000);
+    assert.strictEqual(room.hand.toAct, me.seat, '아직 내 차례');
+    clock.advance(16000);
+    assert.notStrictEqual(room.hand && room.hand.handId === turn.handId && room.hand.toAct, me.seat);
+    assert.strictEqual(server.snapshot(room, room.seats[me.seat]).me.timeBank, 2);
+});
+
+test('테이블: 이모티콘·채팅 — 같은 방 좌석에만 전달, 목록 밖·빈 글·도배는 거절, 기록·콘솔로 가지 않는다', () => {
+    const env = setup(2);
+    const { server, clock, players, out } = env;
+    const [a, b] = players;
+    assert.ok(server.command(a.token, { type: 'emote', id: 'clap' }).ok);
+    assert.ok(b.events.some(([ev, d]) => ev === 'emote' && d.seat === a.seat && d.id === 'clap'));
+    assert.throws(() => server.command(a.token, { type: 'emote', id: 'clap' }), /too fast/);
+    assert.throws(() => server.command(a.token, { type: 'emote', id: '<img>' }), /unknown emote/);
+    clock.advance(500);
+    assert.ok(server.command(a.token, { type: 'chat', text: '  안녕\u0000하세요  ' + 'x'.repeat(300) }).ok);
+    const msg = b.events.find(([ev]) => ev === 'chat')[1];
+    assert.strictEqual(msg.seat, a.seat);
+    assert.ok(msg.text.startsWith('안녕 하세요') && msg.text.length === 200, '제어문자 없애고 200자');
+    assert.throws(() => server.command(a.token, { type: 'chat', text: 'again' }), /too fast/);
+    assert.throws(() => server.command(a.token, { type: 'chat', text: '   ' }), /empty/);
+    for (let i = 0; i < 5; i++) { clock.advance(450); server.command(b.token, { type: 'chat', text: 'm' + i }); }
+    clock.advance(450);
+    assert.throws(() => server.command(b.token, { type: 'chat', text: 'sixth' }), /too fast/, '5초에 5개까지');
+    assert.ok(!out.some((x) => JSON.stringify(x).includes('안녕')), '콘솔로 나가지 않는다');
+    assert.ok(!JSON.stringify(env.store.range(0, 1e9)).includes('안녕'), '기록 사슬에 남지 않는다');
+});
+
+test('테이블: 팁 — 본인 서명·번호 필수, 프리플랍에서만, BB 1개, 판이 끝난 뒤 옮김(사슬에 서명째 남음), 방 전체 돈은 그대로', () => {
+    const env = setup(3);
+    const { server, clock, players } = env;
+    clock.advance(5000);
+    const room = server.rooms.get('r1');
+    const [a, b] = players;
+    const tableId = room.tableId;
+    const sign = (p, n, to, type, amount) => C.sign(p.sig.privateKey, C.msgTip(tableId, p.odcId, n, to.odcId, type, amount));
+    const before = room.seats.filter(Boolean).reduce((x, s) => x + s.stack, 0);
+        assert.throws(() => server.command(a.token, { type: 'tip', to: b.seat, gift: 'flower', n: 1, sig: sign(b, 1, b, 'flower', 2) }), /bad tip signature/, '남의 키로는 못 보낸다');
+    assert.throws(() => server.command(a.token, { type: 'tip', to: b.seat, gift: 'flower', n: 1, sig: sign(a, 1, b, 'flower', 99) }), /bad tip signature/, '금액은 서버가 정한다(BB)');
+    assert.throws(() => server.command(a.token, { type: 'tip', to: a.seat, gift: 'flower', n: 1, sig: sign(a, 1, a, 'flower', 2) }), /bad tip target/);
+    assert.throws(() => server.command(a.token, { type: 'tip', to: b.seat, gift: 'gold', n: 1, sig: sign(a, 1, b, 'gold', 2) }), /unknown tip type/);
+    assert.ok(server.command(a.token, { type: 'tip', to: b.seat, gift: 'flower', n: 1, sig: sign(a, 1, b, 'flower', 2) }).ok);
+    assert.ok(b.events.some(([ev, d]) => ev === 'tip' && d.from === a.seat && d.to === b.seat && d.amount === 2));
+    assert.throws(() => server.command(a.token, { type: 'tip', to: b.seat, gift: 'flower', n: 1, sig: sign(a, 1, b, 'flower', 2) }), /stale tip number/, '같은 서명 다시 쓰기 불가');
+    assert.throws(() => server.command(a.token, { type: 'tip', to: b.seat, gift: 'kiss', n: 2, sig: sign(a, 2, b, 'kiss', 2) }), /too fast/);
+    // 판이 끝나기 전에는 칩이 그대로
+    const aStack = room.seats[a.seat].stack, bStack = room.seats[b.seat].stack;
+    const handId = room.hand.handId;
+    for (let i = 0; i < 6 && room.hand && room.hand.handId === handId; i++) clock.advance(21000);
+    const done = b.events.find(([ev]) => ev === 'tip-done');
+    assert.ok(done, '판이 끝나면 옮긴다');
+    const rec = env.out.filter((x) => x.kind === 'hand-record').pop().record;
+    assert.strictEqual(room.seats[a.seat].stack, Math.round((rec.stacksEnd[a.seat] - 2) * 1000) / 1000);
+    assert.strictEqual(room.seats[b.seat].stack, Math.round((rec.stacksEnd[b.seat] + 2) * 1000) / 1000);
+    void aStack; void bStack;
+    const tipLine = env.store.range(0, 1e9).find((e) => e.kind === 'tip');
+    assert.ok(tipLine && tipLine.amount === 2 && C.verify(C.importPublicJwk(tipLine.sigJwk), C.msgTip(tableId, a.odcId, 1, b.odcId, 'flower', 2), tipLine.sig), '사슬의 팁 줄은 보낸 사람 서명으로 확인된다');
+    const rake = env.out.filter((x) => x.kind === 'hand-record').reduce((x, r) => x + ((r.record.result.rake && r.record.result.rake.totalRake) || 0), 0);
+    const after = room.seats.filter(Boolean).reduce((x, s) => x + s.stack, 0);
+    assert.ok(Math.abs(before - rake - after) < 1e-6, '방 전체 돈 = 이전 − 레이크');
+    // 프리플랍이 아니면 거절
+    clock.advance(8000);
+    if (room.hand) { room.hand.stage = 'flop'; clock.advance(3100); assert.throws(() => server.command(a.token, { type: 'tip', to: b.seat, gift: 'kiss', n: 2, sig: sign(a, 2, b, 'kiss', 2) }), /pre-flop/); }
+});
+
+test('테이블: 팁을 옮긴 뒤 엔진이 다시 떠도 정산서에 팁이 반영된다(사슬의 팁 줄로 다시 계산)', () => {
+    const env = setup(2);
+    const { server, clock, players } = env;
+    clock.advance(5000);
+    const room = server.rooms.get('r1');
+    const [a, b] = players;
+    const sig = C.sign(a.sig.privateKey, C.msgTip(room.tableId, a.odcId, 1, b.odcId, 'champagne', 2));
+    assert.ok(server.command(a.token, { type: 'tip', to: b.seat, gift: 'champagne', n: 1, sig }).ok);
+    const handId = room.hand.handId;
+    for (let i = 0; i < 6 && room.hand && room.hand.handId === handId; i++) clock.advance(21000);
+    assert.ok(b.events.some(([ev]) => ev === 'tip-done'));
+    const want = Object.fromEntries(room.seats.filter(Boolean).map((s) => [s.odcId, s.stack]));
+    const out2 = [];
+    new TableServer({ engine: new Engine({ mode: 'dev' }), store: new RecordStore(env.dir), consoleKey: env.consoleKeys.publicKey, outbox: (k, p) => out2.push({ kind: k, ...p }), clock });
+    const got = Object.fromEntries(out2.filter((x) => x.kind === 'settle').map((x) => [x.note.odcId, x.note.cashOut]));
+    assert.deepStrictEqual(got, want);
+});

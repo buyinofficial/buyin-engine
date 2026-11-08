@@ -114,6 +114,11 @@ function msgJoin(tid, sigFp) {
     return JSON.stringify(['pz-join-v1', String(tid), String(sigFp)]);
 }
 
+/** 팁 — 이 테이블에서 n 번째로 보내는 팁(좌석마다 1부터, 한 번만 쓴다). 금액은 그 방 BB 1개 */
+function msgTip(tableId, fromOdcId, n, toOdcId, type, amount) {
+    return JSON.stringify(['pz-tip-v1', String(tableId), String(fromOdcId), Number(n), String(toOdcId), String(type), Number(amount) || 0]);
+}
+
 /** 내 판 기록 요청 — 그 판에 앉았던 키로만 받는다. ts 는 요청 시각(ms), 5분 안에서만 받는다 */
 function msgMine(sigFp, ts, handId) {
     return JSON.stringify(['pz-mine-v1', String(sigFp), Number(ts), String(handId || '')]);
@@ -149,6 +154,6 @@ module.exports = {
     b64u, fromB64u, sha256, sha256hex, stableStringify,
     generateKeyPair, publicJwk, importPublicJwk, fingerprint,
     sign, verify,
-    msgRegister, msgKeyConfirm, msgAction, msgPreAction, msgRaiseCommit, msgEntropy, msgMine, msgJoin,
+    msgRegister, msgKeyConfirm, msgAction, msgPreAction, msgRaiseCommit, msgEntropy, msgMine, msgJoin, msgTip,
     sealEnvelope, openEnvelope,
 };

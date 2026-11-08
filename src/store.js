@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS chain (
     i       INTEGER PRIMARY KEY,   -- 줄 번호(0 부터, 빈틈 없이)
     prev    TEXT    NOT NULL,      -- 앞 줄의 hash
     hash    TEXT    NOT NULL,      -- 이 줄의 hash
-    kind    TEXT    NOT NULL,      -- engine-key | seat-in | settle | hand
+    kind    TEXT    NOT NULL,      -- engine-key | seat-in | settle | hand | tip
     at      INTEGER NOT NULL,      -- 쓴 시각(ms)
     hand_id TEXT,                  -- kind = hand 일 때 판 번호
     line    TEXT    NOT NULL       -- 줄 전체(JSON). hash 는 이 줄의 본문으로 계산된다
@@ -194,9 +194,10 @@ class RecordStore {
         return this._append({ kind: 'hand', at: Date.now(), record, sig });
     }
 
-    /** 테이블 서버 사건 — 'seat-in'(좌석표로 앉음), 'settle'(정산서). 판 기록과 같은 사슬에 남아 재시작 뒤에도 돈이 정산된다 */
+    /** 테이블 서버 사건 — 'seat-in'(좌석표로 앉음), 'settle'(정산서), 'tip'(보낸 사람 서명이 붙은 팁, 판과 판 사이에 옮김).
+     *  판 기록과 같은 사슬에 남아 재시작 뒤에도 돈이 정산된다 */
     appendEvent(kind, body) {
-        if (!['seat-in', 'settle'].includes(kind)) throw new Error('unknown event kind');
+        if (!['seat-in', 'settle', 'tip'].includes(kind)) throw new Error('unknown event kind');
         return this._append({ kind, at: Date.now(), ...body });
     }
 

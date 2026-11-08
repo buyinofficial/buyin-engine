@@ -12,7 +12,7 @@ The operator's servers handle lobbies, timers, animations and wallets. They neve
 | Cards cannot change mid-hand | All 52 card commitments `SHA-256(handId \| i \| card \| salt)` are published when the hand starts. Each revealed card comes with its salt, and the player's browser checks it immediately. |
 | The operator cannot see your hole cards | Hole cards are encrypted to your browser's key: ECDH P-256 → HKDF-SHA256 → AES-256-GCM. The operator's server only relays the ciphertext. |
 | The board is never shown early | The engine reveals a street only after its own copy of the betting rules says the round is over. |
-| Nobody can spend your chips for you | Calls, bets, raises and all-ins need your ECDSA signature, bound to this hand and this turn number. The operator can only fold or check for you (timeouts, leaving), and the hand record shows each time it did. |
+| Nobody can spend your chips for you | Calls, bets, raises and all-ins need your ECDSA signature, bound to this hand and this turn number. The operator can only fold or check for you (timeouts, leaving), and the hand record shows each time it did. A tip to another player also needs your signature (numbered, so it cannot be replayed) and is kept in the record chain with that signature. |
 | The rake follows the table rule | The engine takes the rake itself, using the table's published percent and minimum pot. Split pots are not raked, and each player's share is computed from what they actually matched. The rule and every share are in the signed record. |
 | Results can be re-checked | Every hand ends with a record signed by the engine. `src/verify.js` replays it from the seed and fails on any difference. |
 
@@ -119,6 +119,7 @@ All rights reserved (see `LICENSE`). The code is published for inspection and ve
 ## Status
 
 - **Stage 1–2:** the engine runs as a separate process (`mode: "dev"`). The cryptographic guarantees above hold, but there is no hardware attestation.
+- **0.9.7:** table page: action sounds, emotes, chat, a time bank (3 per seat, +20 s, one per turn) and tips (1 big blind, pre-flop only, signed by the sender, moved between hands and written to the record chain), as on the previous game. Design images can be versioned (`?v=`) so a change shows at once.
 - **0.9.6:** table page: the phone preset buttons now really send the bet (in 0.9.5 a local name hid the action function, so a tap did nothing).
 - **0.9.5:** a turn timeout folds that hand only and the player keeps the seat; three timeouts in a row (no own action in between) stand the player up and cash out, as on the previous game server. A disconnected player's turn is checked when possible, otherwise folded, and does not count. On phones the quarter / half / pot / all-in buttons bet at once; on PC they set the amount for the bet button.
 - **0.9.4:** table page: each player gets one of several default avatars, chosen from the nickname (the same player always looks the same); images stay on the resource server.
@@ -139,7 +140,7 @@ All rights reserved (see `LICENSE`). The code is published for inspection and ve
 - **0.5.3:** the engine reports its source commit and the SHA-256 of every file it loads (`/review/manifest`); `/` is a pre-game brief that asks an AI to investigate this repository at that commit and check `PROOF.md`; `tools/check-deployment.js` checks the live engine against a checkout. Every dealt-in player must add random for the hand; the table event stream takes its token in a header.
 - **0.5.2:** table mode closes the operator's game RPC (`/rpc` answers only `info`); the live audit report at `/` is written to be pasted into an AI reviewer as is.
 - **0.5.0:** the TEE serves its own pages — the table at `/table/` and **Verify my hands** at `/table/verify.html`. A player's hand records come straight from the TEE to that page (`POST /records/mine`, signed with the player's key; no operator token), and the page replays them with the engine's own files. Public receipts: `GET /records/receipt/<handId>`.
-- **Table server (in progress):** with `TEE_CONSOLE_KEY` set, the engine also runs the table and serves the table screen at `/table/`. The player's browser talks only to the TEE (`connect-src 'self'`, no framing): seat ticket in, cards and turns out over SSE, signed actions back. The operator's server sees settlement notes (amounts) and, after each hand, the signed hand record.
+- **Table server (in progress):** with `TEE_CONSOLE_KEY` set, the engine also runs the table and serves the table screen at `/table/`. The player's browser talks only to the TEE (`connect-src 'self'` plus fixed sound files from the resource server's `sfx/` folder, no framing): seat ticket in, cards and turns out over SSE, signed actions back. The operator's server sees settlement notes (amounts) and, after each hand, the signed hand record.
 - **Stage 3 (now):** the engine runs in a TDX TEE on Phala Cloud (`mode: "dstack"`), binds its keys to the hardware quote, keeps every hand record on the TEE disk (0.4.0), and the build is reproducible. The player's browser checks the key ↔ quote binding itself.
 
 ## Third-party assets

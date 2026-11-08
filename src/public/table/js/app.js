@@ -14,6 +14,8 @@ import { liveHandName, prettyRank, bigHandName } from './hand.js';
 /** 디자인 리소스(배경·칩·아바타·딜러·카드 뒷면·글꼴)는 콘솔 리소스 서버에서 받는다 — 그림만 받고 아무것도 보내지 않는다.
  *  어떤 그림을 부르는지는 카드와 무관하다(칩은 공개된 베팅 금액, 카드 앞면은 글자로 그린다). CSP 가 이 주소의 그림·글꼴만 허용한다(table/http.js). */
 const ASSET = 'https://resource.pokerzero.site/buyin-table/';
+/** 리소스를 바꿔 끼우면 이 값을 올린다 — 브라우저에 남은 예전 그림 대신 바로 새로 받는다 */
+const AV = '?v=20261108';
 
 const $ = (s, r = document) => r.querySelector(s);
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
@@ -56,6 +58,7 @@ const S = {
     room: null, tableId: '', me: null, seats: [], hand: null, turn: null,
     hole: null, holeOk: null, holeHandId: '', reveal: {}, bubbles: {}, winners: null,
     entropySentFor: '', sound: true, layout: 'pc', es: null, retry: 0, timerTick: null, raiseVal: 0,
+    chat: [], tbUsed: '', chatAt: 0,
 };
 
 // ------------------------------------------------------------ 카드
@@ -175,9 +178,28 @@ function listen() {
     on('seat', (d) => { const x = d.seat; S.seats[x.seat] = x.empty ? null : x; if (S.me && x.seat === S.me.seat && !x.empty) Object.assign(S.me, x); render(); });
     on('hand', onHand);
     on('hole', (d) => openHole(d));
-    on('turn', (d) => { S.turn = d; if (S.hand) { S.hand.toAct = d.seat; S.hand.q = d.q; } render(); });
+    on('turn', (d) => {
+        const fresh = !S.turn || S.turn.handId !== d.handId || S.turn.q !== d.q;
+        S.turn = d; if (S.hand) { S.hand.toAct = d.seat; S.hand.q = d.q; }
+        if (fresh && d.seat === mySeat()) play('turn');
+        render();
+    });
     on('action', onAction);
-    on('board', (d) => { if (!S.hand) return; checkPublic(d.handId, d.cards); S.hand.board.push(...d.cards); S.hand.stage = d.stage; clearBets(); render(); });
+    on('board', (d) => { if (!S.hand) return; checkPublic(d.handId, d.cards); S.hand.board.push(...d.cards); S.hand.stage = d.stage; clearBets(); play('card'); render(); });
+    on('emote', showEmote);
+    on('tip', (d) => { flyGift(d.from, d.to, d.type); });
+    on('tip-done', (d) => {
+        for (const [seat, st] of Object.entries(d.stacks || {})) if (S.seats[seat]) S.seats[seat].stack = st;
+        floatTag(d.to, '+' + dm(d.amount));
+        render();
+    });
+    on('tip-cancel', (d) => { if (d.from === mySeat()) toast(t('tipCancel')); });
+    on('chat', onChat);
+    on('timebank', (d) => {
+        if (d.seat === mySeat() && S.me) { S.me.timeBank = d.left; if (S.turn) S.tbUsed = S.turn.handId + ':' + S.turn.q; }
+        floatTag(d.seat, '+' + Math.round(d.addedMs / 1000) + 's');
+        render();
+    });
     on('runout', (d) => {
         if (!S.hand) return;
         checkPublic(d.handId, [...Object.values(d.holes || {}).flat(), ...(d.stages || []).flatMap((x) => x.cards)]);
@@ -234,6 +256,7 @@ function onHand(h) {
         if (p.bet > 0) S.bubbles[p.seat] = { a: 'BLIND', amt: p.bet, at: Date.now() };
     }
     sendEntropy(h.nextSeedCommit);
+    play('card');
     render();
 }
 
@@ -293,6 +316,7 @@ function onResult(d) {
     const hands = Object.fromEntries((r.hands || []).filter((h) => h.handRank).map((h) => [h.seat, prettyRank(h.handRank)]));
     const top = real.find((w) => hands[w.seat]);
     S.winners = { seats: win, hands, cards, big: top ? bigHandName(hands[top.seat]) : '' };
+    if (win[mySeat()] > 0) play('win');
     S.turn = null; S.hand.toAct = null;
     for (const p of S.hand.seats) p.bet = 0;   // 말풍선은 남긴다(운영 화면처럼 마지막 액션이 보인다)
     hideActions();
@@ -315,7 +339,7 @@ function layoutMode() {
     S.layout = portrait ? 'mobile' : 'pc';
     tb.classList.toggle('pc', !portrait);
     tb.classList.toggle('mobile', portrait);
-    $('.bg-img').src = ASSET + (portrait ? 'img/bg_mobile.jpg' : 'img/bg_pc.jpg');
+    $('.bg-img').src = ASSET + (portrait ? 'img/bg_mobile.jpg' : 'img/bg_pc.jpg') + AV;
     // 운영 화면: 높이 900 에서 0.742 배
     $('#actions').style.transform = portrait ? '' : `translateX(-50%) scale(${(0.742 * innerHeight / 900).toFixed(3)})`;
     // 모바일: 390x844 화폭을 가로에 맞춰 늘리고 세로 가운데
@@ -408,7 +432,7 @@ function chipStackEl(amount, { single = false, cap = 0 } = {}) {
             const c = el('div', 'chip');
             const rot = ((i * 13 + si * 7) % 360) % 10 - 5, xo = (i % 3) - 1.5;
             c.style.zIndex = i; c.style.transform = `translateY(${-i * 4}px)`;
-            const im = el('img'); im.src = `${ASSET}img/${CHIP_FILE[v]}.webp`; im.alt = ''; im.style.transform = `rotate(${rot}deg) translateX(${xo}px)`;
+            const im = el('img'); im.src = `${ASSET}img/${CHIP_FILE[v]}.webp${AV}`; im.alt = ''; im.style.transform = `rotate(${rot}deg) translateX(${xo}px)`;
             c.appendChild(im); col.appendChild(c);
         });
         box.appendChild(col);
@@ -449,7 +473,7 @@ function avatarFile(s) {
 function avatarEl(s, size, seat, ring = true) {
     const av = el('div', 'avatar');
     av.style.width = av.style.height = size + 'px';
-    const im = el('img'); im.alt = ''; im.src = ASSET + 'img/' + avatarFile(s); av.appendChild(im);
+    const im = el('img'); im.alt = ''; im.src = ASSET + 'img/' + avatarFile(s) + AV; av.appendChild(im);
     if (ring && S.turn && S.turn.seat === seat) av.appendChild(turnRing(size));   // 모바일 영웅은 링 대신 차례 막대
     return av;
 }
@@ -461,7 +485,7 @@ function turnRing(size) {
     const c = document.createElementNS(ns, 'circle');
     c.setAttribute('cx', 50); c.setAttribute('cy', 50); c.setAttribute('r', 48); c.setAttribute('fill', 'none');
     c.setAttribute('stroke', '#fbbf24'); c.setAttribute('stroke-width', 4); c.setAttribute('pathLength', 100);
-    const left = Math.max(0, (S.turn.deadline - Date.now()) / (S.room.turnSec * 1000));
+    const left = Math.min(1, Math.max(0, (S.turn.deadline - Date.now()) / (S.room.turnSec * 1000)));   // 타임뱅크로 늘면 가득 찬 채로
     c.setAttribute('stroke-dasharray', `${(left * 100).toFixed(1)} 100`);
     c.classList.add('ring-arc');
     svg.appendChild(c);
@@ -489,7 +513,7 @@ function otherSeat(node, s, a, inHand) {
     const seat = s.seat;
     const [dx, dy] = S.layout === 'pc' ? (PC_ROLE_ADJ[a.role] || PC_ROLE_ADJ_DEFAULT) : [0, 0];
     const ox = -66 + dx, oy = -77 + dy;   // 132x154 상자의 왼쪽 위
-    const av = avatarEl(s, 122, seat); av.style.left = (ox + 20) + 'px'; av.style.top = (oy + 8) + 'px'; node.appendChild(av);
+    const av = avatarEl(s, 122, seat); av.style.left = (ox + 20) + 'px'; av.style.top = (oy + 8) + 'px'; tipTarget(av, seat); node.appendChild(av);
     const nb = nameboxEl(s, 132, 48, 12, 14); nb.style.left = (ox + 15) + 'px'; nb.style.top = (oy + 106) + 'px'; node.appendChild(nb);
     const tag = blindTag(seat);
     if (tag) { const b = el('span', 'blind', tag); b.style.left = (ox + 20) + 'px'; b.style.top = (oy + 109) + 'px'; node.appendChild(b); }
@@ -537,6 +561,7 @@ function heroSeat(node, s, a, inHand) {
         tm.innerHTML = `<span><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/></svg><b class="tsec">${left}</b></span>`;
         tm.style.left = ((-211 + 120) / sc - 25) + 'px'; tm.style.top = ((-95 + 80) / sc - 25) + 'px';
         wrap.appendChild(tm);
+        timeBankButton(wrap, (-211 + 120) / sc - 31, (-95 + 80) / sc + 30);
     }
     // 결과 족보 글자(보드 아래)가 떠 있는 동안 내 말풍선은 숨긴다 — 같은 높이라 글자를 가린다.
     // 세로가 기준(900)보다 짧은 화면에서는 내 자리가 보드 쪽으로 올라와 말풍선이 카드에 닿는다 — 아바타 왼쪽 아래에 둔다
@@ -557,7 +582,7 @@ function mobileAvatarX(a) {
 function otherSeatMobile(node, s, a, inHand) {
     const seat = s.seat;
     node.style.left = mobileAvatarX(a) + 'px';
-    const av = avatarEl(s, 69, seat); av.style.left = '-34.5px'; av.style.top = '-34.5px'; node.appendChild(av);
+    const av = avatarEl(s, 69, seat); av.style.left = '-34.5px'; av.style.top = '-34.5px'; tipTarget(av, seat); node.appendChild(av);
     const nb = nameboxEl(s, 74, 25, 8, 9); nb.style.left = '-37px'; nb.style.top = '25px'; node.appendChild(nb);
     const tag = blindTag(seat);
     if (tag) { const b = el('span', 'blind sm', tag); b.style.left = '-33px'; b.style.top = '27px'; node.appendChild(b); }
@@ -597,13 +622,14 @@ function heroSeatMobile(node, s, a, inHand) {
         tm.innerHTML = `<span><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/></svg><b class="tsec">${left}</b></span>`;
         tm.style.left = '102px'; tm.style.top = '617px';
         node.appendChild(tm);
+        timeBankButton(node, 100, 671, 'm');
     }
     if (!(S.winners && S.winners.big)) bubbleFor(node, seat, cx, cy - 60, 'sm');
     resultFor(node, seat, cx, 794, cx, cy - 8, 'sm');
 }
 
 function dealerEl() {
-    const d = el('div', 'dealer'); const im = el('img'); im.src = ASSET + 'img/dealer.png'; im.alt = 'D'; d.appendChild(im); return d;
+    const d = el('div', 'dealer'); const im = el('img'); im.src = ASSET + 'img/dealer.png' + AV; im.alt = 'D'; d.appendChild(im); return d;
 }
 
 function bubbleFor(parent, seat, cx, top, size = '') {
@@ -754,7 +780,23 @@ function wireButtons() {
         const r = await cmd('leave');
         if (r.ok && r.pending) toast(t('leftAfter'));
     };
-    $('#btn-sound').onclick = (e) => { S.sound = !S.sound; e.currentTarget.classList.toggle('on', !S.sound); };
+    $('#btn-sound').onclick = (e) => { S.sound = !S.sound; e.currentTarget.classList.toggle('on', !S.sound); if (S.sound) play('check'); };
+    buildEmotePick();
+    $('#btn-emote').onclick = (e) => { e.stopPropagation(); $('#chat').hidden = true; $('#emote-pick').hidden = !$('#emote-pick').hidden; };
+    $('#btn-chat').onclick = (e) => {
+        e.stopPropagation(); $('#emote-pick').hidden = true;
+        const c = $('#chat'); c.hidden = !c.hidden;
+        if (!c.hidden) { $('#btn-chat .dot').hidden = true; renderChat(); $('.chat-input').focus(); }
+    };
+    $('.chat-send').onclick = () => sendChat();
+    $('.chat-input').onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); sendChat(); } };
+    $('.chat-close').onclick = () => { $('#chat').hidden = true; };
+    document.addEventListener('pointerdown', (e) => {
+        if (!e.target.closest('#emote-pick, #btn-emote')) $('#emote-pick').hidden = true;
+        if (!e.target.closest('#tip-pick, .avatar.tippable')) $('#tip-pick').hidden = true;
+    });
+    // 소리는 처음 손댈 때 켜진다(브라우저 규칙). 앱에 돌아온 뒤에도 첫 터치에서 다시 살린다
+    document.addEventListener('pointerdown', () => { if (audio()) preloadSfx(); }, { passive: true });
     $('#btn-verify').onclick = () => window.open('verify.html', '_blank', 'noopener');
     // 들어온 화면(로비)으로 — 이 화면은 새 주소를 알 필요 없이 브라우저 기록으로 돌아간다
     $('.gate-back').onclick = () => { if (history.length > 1) history.back(); else window.close(); };
@@ -763,10 +805,10 @@ function wireButtons() {
         const bar = $('.turnbar');
         bar.hidden = !(S.turn && S.layout === 'mobile' && S.turn.seat === mySeat());
         if (!S.turn) return;
-        if (!bar.hidden) bar.firstChild.style.width = (Math.max(0, (S.turn.deadline - Date.now()) / (S.room.turnSec * 1000)) * 100).toFixed(1) + '%';
+        if (!bar.hidden) bar.firstChild.style.width = (Math.min(1, Math.max(0, (S.turn.deadline - Date.now()) / (S.room.turnSec * 1000))) * 100).toFixed(1) + '%';
         const left = Math.max(0, (S.turn.deadline - Date.now()) / 1000);
         const secEl = $('.tsec'); if (secEl) secEl.textContent = Math.ceil(left);
-        const frac = S.room ? left / S.room.turnSec : 0;
+        const frac = S.room ? Math.min(1, left / S.room.turnSec) : 0;
         document.querySelectorAll('.ring-arc').forEach((c) => c.setAttribute('stroke-dasharray', `${(frac * 100).toFixed(1)} 100`));
     }, 250);
 }
@@ -810,16 +852,206 @@ function gate(msg, back = false) {
 
 function hideGate() { $('#gate').hidden = true; }
 
+// 효과음 — 이전 게임과 같은 파일(리소스 서버 sfx/)을 받아 Web Audio 로 재생한다. 받기만 하고 아무것도 보내지 않는다
 let actx = null;
-function sfx(action) {
-    if (!S.sound) return;
+const sfxBuf = new Map();
+const SFX_ALL = ['fold', 'check', 'call', 'bet', 'raise', 'allin', 'minichip', 'raise_chip', 'allin_chip', 'card', 'turn', 'win'];
+const ACT_SFX = { FOLD: ['fold'], CHECK: ['check'], CALL: ['call', 'minichip'], BET: ['bet', 'raise_chip'], RAISE: ['raise', 'raise_chip'], ALL_IN: ['allin', 'allin_chip'] };
+function audio() {
     try {
-        actx = actx || new AudioContext();
-        const o = actx.createOscillator(), g = actx.createGain();
-        o.frequency.value = action === 'FOLD' ? 220 : action === 'CHECK' ? 440 : 660;
-        g.gain.setValueAtTime(0.06, actx.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + 0.12);
-        o.connect(g).connect(actx.destination); o.start(); o.stop(actx.currentTime + 0.13);
-    } catch (_e) { /* 소리 없이 */ }
+        if (actx && actx.state !== 'running' && actx.state !== 'suspended') { actx.close().catch(() => {}); actx = null; }   // iOS 'interrupted' — 새로 만든다
+        if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+        if (actx.state === 'suspended') actx.resume().catch(() => {});
+        return actx;
+    } catch (_e) { return null; }
+}
+function loadSfx(name) {
+    if (!sfxBuf.has(name)) {
+        sfxBuf.set(name, fetch(`${ASSET}sfx/${name}.mp3${AV}`)
+            .then((r) => r.arrayBuffer())
+            .then((ab) => new Promise((ok, no) => audio().decodeAudioData(ab, ok, no)))
+            .catch(() => { sfxBuf.delete(name); return null; }));
+    }
+    return sfxBuf.get(name);
+}
+let preloaded = false;
+function preloadSfx() { if (preloaded) return; preloaded = true; for (const n of SFX_ALL) loadSfx(n); }
+function play(name, vol = 0.6) {
+    if (!S.sound) return;
+    const ctx = audio();
+    if (!ctx || ctx.state !== 'running') return;   // 아직 손대기 전 — 쌓아 두지 않는다(풀릴 때 한꺼번에 나지 않게)
+    loadSfx(name).then((b) => {
+        if (!b || !S.sound) return;
+        const src = ctx.createBufferSource(), g = ctx.createGain();
+        g.gain.value = vol; src.buffer = b; src.connect(g).connect(ctx.destination); src.start();
+    });
+}
+function sfx(action) { for (const n of ACT_SFX[action] || []) play(n); }
+
+// ------------------------------------------------------------ 이모티콘 · 채팅 · 타임뱅크 (카드·칩과 무관 — TEE 가 같은 방에 전달만 한다)
+
+const EMOTES = [['angry', '🤬'], ['sad', '😭'], ['win', '🏆'], ['taunt', '😏'], ['thanks', '🙏'], ['chill', '😎'], ['sleepy', '😴'], ['clap', '👏']];
+const rateMsg = (r) => (r.code === 'rate' ? t('tooFast') : (r.error || ''));
+
+function buildEmotePick() {
+    const box = $('#emote-pick');
+    box.innerHTML = '';
+    for (const [id, emo] of EMOTES) {
+        const b = el('button', '', `<span>${emo}</span><small>${esc(t('emo_' + id))}</small>`);
+        b.type = 'button'; b.dataset.emote = id;
+        b.onclick = async () => { box.hidden = true; const r = await cmd('emote', { id }); if (!r.ok) toast(rateMsg(r)); };
+        box.appendChild(b);
+    }
+}
+
+/** 좌석 아바타의 화면 위치 — 효과는 좌석 그림과 따로 #fx 층에 띄운다(좌석은 이벤트마다 다시 그려진다) */
+function avatarRect(seat) {
+    const a = document.querySelector(`#seats .seat[data-seat="${seat}"] .avatar`);
+    return a ? a.getBoundingClientRect() : null;
+}
+
+function showEmote(d) {
+    const r = avatarRect(d.seat);
+    const info = EMOTES.find((x) => x[0] === d.id);
+    if (!r || !info) return;
+    const box = el('div', 'emo-fx');
+    box.dataset.emote = d.id;
+    box.style.left = r.left + 'px'; box.style.top = r.top + 'px'; box.style.width = r.width + 'px'; box.style.height = r.height + 'px';
+    const v = document.createElement('video');
+    v.muted = true; v.playsInline = true; v.autoplay = true; v.setAttribute('playsinline', '');
+    v.onerror = () => { v.remove(); box.classList.add('txt'); box.textContent = info[1]; };
+    v.src = `${ASSET}emo/emo_${d.id}.mp4${AV}`;
+    box.appendChild(v);
+    $('#fx').appendChild(box);
+    setTimeout(() => box.remove(), 3600);
+}
+
+function floatTag(seat, text) {
+    const r = avatarRect(seat);
+    if (!r) return;
+    const b = el('div', 'tag-fx');
+    b.textContent = text;
+    b.style.left = (r.left + r.width / 2) + 'px'; b.style.top = (r.top + r.height / 2) + 'px';
+    $('#fx').appendChild(b);
+    setTimeout(() => b.remove(), 1600);
+}
+
+function onChat(d) {
+    S.chat.push(d);
+    if (S.chat.length > 100) S.chat.shift();
+    if ($('#chat').hidden) { if (d.seat !== mySeat()) $('#btn-chat .dot').hidden = false; } else renderChat();
+    const r = avatarRect(d.seat);
+    if (!r) return;
+    const b = el('div', 'chat-fx');
+    b.textContent = d.text.length > 40 ? d.text.slice(0, 40) + '…' : d.text;   // 글자로만 넣는다(HTML 로 해석하지 않는다)
+    b.style.left = (r.left + r.width / 2) + 'px'; b.style.top = r.top + 'px';
+    $('#fx').appendChild(b);
+    setTimeout(() => b.remove(), 4000);
+}
+
+function renderChat() {
+    const box = $('.chat-lines');
+    box.innerHTML = '';
+    for (const m of S.chat) {
+        const line = el('div', 'chat-line' + (m.seat === mySeat() ? ' me' : ''));
+        const n = el('b'); n.textContent = m.nickname;
+        const x = el('span'); x.textContent = m.text;
+        line.append(n, x);
+        box.appendChild(line);
+    }
+    box.scrollTop = box.scrollHeight;
+}
+
+async function sendChat() {
+    const i = $('.chat-input');
+    const text = i.value.trim();
+    if (!text) return;
+    if (Date.now() - S.chatAt < 400) return toast(t('tooFast'));
+    S.chatAt = Date.now();
+    const r = await cmd('chat', { text: text.slice(0, 200) });
+    if (r.ok) i.value = ''; else toast(rateMsg(r));
+}
+
+// ------------------------------------------------------------ 팁 (칩이 움직인다 — 내 서명 키로 서명해 보낸다. 금액은 그 방 BB 1개, 프리플랍에서만)
+
+const GIFTS = [['flower', '🌹'], ['kiss', '💋'], ['confetti', '🎉'], ['cigarette', '🚬'], ['champagne', '🍾']];
+
+function tipTarget(av, seat) {
+    if (seat === mySeat()) return;
+    av.classList.add('tippable');
+    av.onclick = (e) => { e.stopPropagation(); openTip(seat); };
+}
+
+function openTip(seat) {
+    const box = $('#tip-pick');
+    const target = S.seats[seat];
+    if (!target || !S.room) return;
+    box.innerHTML = '';
+    const head = el('div', 'tip-head');
+    const nm = el('b'); nm.textContent = target.nickname;
+    head.append(nm, el('span', '', esc(t('tipHint')) + ` · ${esc(dmCur(S.room.bb))}`));
+    box.appendChild(head);
+    const row = el('div', 'tip-row');
+    const can = S.hand && S.hand.stage === 'preflop';
+    for (const [id, emo] of GIFTS) {
+        const b = el('button', '', `<span>${emo}</span><small>${esc(t('gift_' + id))}</small>`);
+        b.type = 'button'; b.dataset.gift = id; b.disabled = !can;
+        b.onclick = () => sendTip(seat, id);
+        row.appendChild(b);
+    }
+    box.appendChild(row);
+    if (!can) box.appendChild(el('div', 'tip-note', esc(t('tipPreflop'))));
+    const r = avatarRect(seat);
+    const W = innerWidth;
+    box.hidden = false;
+    const bw = box.offsetWidth, bh = box.offsetHeight;
+    box.style.left = Math.max(8, Math.min(W - bw - 8, (r ? r.left + r.width / 2 : W / 2) - bw / 2)) + 'px';
+    box.style.top = Math.max(8, (r ? r.top : 100) - bh - 8) + 'px';
+}
+
+async function sendTip(seat, gift) {
+    $('#tip-pick').hidden = true;
+    const to = S.seats[seat];
+    if (!to || !S.keys || !S.me || !S.room) return;
+    const n = (S.me.tipN || 0) + 1;
+    const sig = await V.sign(S.keys, V.msg.tip(S.tableId, S.me.odcId, n, to.odcId, gift, S.room.bb));
+    const r = await cmd('tip', { to: seat, gift, n, sig });
+    if (r.ok) S.me.tipN = n;
+    else toast(r.code === 'rate' ? t('tooFast') : (r.error || ''));
+}
+
+/** 보낸 사람 아바타에서 받는 사람 아바타로 선물이 날아간다 */
+function flyGift(from, to, gift) {
+    const a = avatarRect(from), b = avatarRect(to);
+    const emo = (GIFTS.find((x) => x[0] === gift) || [])[1];
+    if (!a || !b || !emo) return;
+    const g = el('div', 'gift-fx');
+    g.textContent = emo;
+    g.style.left = (a.left + a.width / 2) + 'px'; g.style.top = (a.top + a.height / 2) + 'px';
+    $('#fx').appendChild(g);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        g.style.transform = `translate(calc(-50% + ${b.left + b.width / 2 - (a.left + a.width / 2)}px), calc(-50% + ${b.top + b.height / 2 - (a.top + a.height / 2)}px)) scale(1.4)`;
+    }));
+    setTimeout(() => { g.classList.add('land'); }, 950);
+    setTimeout(() => g.remove(), 2200);
+}
+
+/** 타임뱅크 — 내 차례에, 한 차례에 한 장, 남은 장수가 있을 때만 보인다 */
+function timeBankButton(parent, x, y, size = '') {
+    const tr = S.turn;
+    if (!S.me || !(S.me.timeBank > 0) || !tr || tr.seat !== mySeat()) return;
+    const key = tr.handId + ':' + tr.q;
+    if (S.tbUsed === key) return;
+    const b = el('button', 'tb' + (size ? ' ' + size : ''), `+20s <small>×${S.me.timeBank}</small>`);
+    b.type = 'button'; b.dataset.testid = 'timebank'; b.title = t('timeBank');
+    b.style.left = x + 'px'; b.style.top = y + 'px';
+    b.onclick = async (e) => {
+        e.stopPropagation();
+        S.tbUsed = key; b.remove();
+        const r = await cmd('timebank');
+        if (!r.ok) { S.tbUsed = ''; toast(r.error || ''); render(); }
+    };
+    parent.appendChild(b);
 }
 
 boot();

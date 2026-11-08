@@ -56,7 +56,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .card.d .pip { font-size: 34cqw; }
 .card.d .big { font-size: 108cqw; }
 .card.dim { filter: brightness(.55); }
-.card.back { border: 0; background: #0b1020 center/cover no-repeat; background-image: url('https://resource.pokerzero.site/buyin-table/img/card_back.jpg'); }
+.card.back { border: 0; background: #0b1020 center/cover no-repeat; background-image: url('https://resource.pokerzero.site/buyin-table/img/card_back.jpg?v=20261108'); }
 
 /* ── 좌석 (PC) ── */
 .seat { position: absolute; width: 0; height: 0; z-index: 20; }
@@ -68,7 +68,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .seat.sitout .avatar { opacity: .55; }
 .namebox { display: flex; align-items: stretch; border-radius: 6px; border: 1px solid rgba(251, 191, 36, .4); overflow: hidden;
   box-shadow: 0 0 0 1px rgba(251, 191, 36, .4), inset 0 1px 0 rgba(255, 255, 255, .06), 0 10px 20px rgba(0, 0, 0, .55); background: #05070b; }
-.namebox .flag { position: absolute; inset: 0; background: url('https://resource.pokerzero.site/buyin-table/img/flag_kr.webp') right center/cover no-repeat; }
+.namebox .flag { position: absolute; inset: 0; background: url('https://resource.pokerzero.site/buyin-table/img/flag_kr.webp?v=20261108') right center/cover no-repeat; }
 .namebox .fade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(0, 0, 0, .85) 0%, rgba(0, 0, 0, .35) 50%, transparent 100%); }
 .namebox .info { position: relative; z-index: 2; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 0; }
 .namebox .nm { color: var(--gray-300); font-weight: 700; letter-spacing: .025em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
@@ -267,3 +267,63 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #table.mobile .a-fold { background: linear-gradient(180deg, #232a39 0%, #0d111b 100%); }
 #table.mobile .a-call { background: linear-gradient(180deg, #13907f 0%, #0b5d52 100%); border-color: rgba(52, 211, 153, .5); }
 #table.mobile .a-raise { background: linear-gradient(180deg, #e2a52a 0%, #9a6410 100%); }
+
+/* 이모티콘 · 채팅 · 타임뱅크 — 카드·칩과 무관한 화면 */
+#emote-pick[hidden], #chat[hidden], .round .dot[hidden] { display: none !important; }
+.round { position: relative; }
+.round .dot { position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%; background: #f87171; }
+#emote-pick { position: absolute; top: 70px; right: 16px; z-index: 130; display: grid; grid-template-columns: repeat(4, 64px); gap: 6px; padding: 10px; border-radius: 12px;
+  background: rgba(16, 13, 8, .94); border: 1px solid rgba(217, 180, 106, .45); box-shadow: 0 8px 24px rgba(0, 0, 0, .5); }
+#emote-pick button { height: 60px; border-radius: 10px; border: 1px solid rgba(217, 180, 106, .2); background: rgba(255, 255, 255, .04); color: var(--amber-100);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer; }
+#emote-pick button:hover { background: rgba(217, 180, 106, .15); }
+#emote-pick button span { font-size: 24px; line-height: 1; }
+#emote-pick button small { font-size: 10px; opacity: .85; }
+#chat { position: absolute; top: 70px; right: 16px; z-index: 130; width: 300px; height: 340px; display: flex; flex-direction: column; border-radius: 12px; overflow: hidden;
+  background: rgba(16, 13, 8, .94); border: 1px solid rgba(217, 180, 106, .45); box-shadow: 0 8px 24px rgba(0, 0, 0, .5); }
+.chat-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; font: 700 13px/1 var(--sans); color: var(--amber-200); border-bottom: 1px solid rgba(217, 180, 106, .2); }
+.chat-close { background: none; border: 0; color: var(--amber-100); font-size: 20px; line-height: 1; cursor: pointer; padding: 0 2px; }
+.chat-lines { flex: 1; overflow-y: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 5px; font-size: 13px; line-height: 1.4; }
+.chat-line { word-break: break-word; color: #f5f0e6; }
+.chat-line b { color: var(--amber-300); margin-right: 6px; font-weight: 700; }
+.chat-line.me b { color: #86efac; }
+.chat-form { display: flex; gap: 6px; padding: 8px; border-top: 1px solid rgba(217, 180, 106, .2); }
+.chat-input { flex: 1; min-width: 0; height: 34px; padding: 0 10px; border-radius: 8px; border: 1px solid rgba(217, 180, 106, .35); background: rgba(0, 0, 0, .5); color: #fff; font: 14px var(--sans); }
+.chat-send { height: 34px; padding: 0 12px; border-radius: 8px; border: 1px solid rgba(217, 180, 106, .6); background: linear-gradient(180deg, #3a2f17, #1a150b); color: var(--amber-100); font: 700 13px/1 var(--sans); cursor: pointer; }
+#fx { position: fixed; inset: 0; pointer-events: none; z-index: 95; }
+.emo-fx { position: fixed; border-radius: 50%; overflow: hidden; animation: fx-in .2s ease-out; }
+.emo-fx video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.emo-fx.txt { display: flex; align-items: center; justify-content: center; font-size: 40px; background: rgba(0, 0, 0, .55); }
+.chat-fx { position: fixed; transform: translate(-50%, -100%); max-width: 200px; padding: 6px 10px; border-radius: 10px; background: rgba(255, 250, 235, .95); color: #1b1712;
+  font: 600 12px/1.35 var(--sans); word-break: break-word; box-shadow: 0 3px 10px rgba(0, 0, 0, .4); animation: fx-in .2s ease-out; }
+.tag-fx { position: fixed; transform: translate(-50%, -50%); font: 800 20px/1 var(--sans); color: var(--amber-300); text-shadow: 0 2px 6px #000; animation: fx-up 1.6s ease-out forwards; }
+@keyframes fx-in { from { opacity: 0; transform: scale(.85); } }
+@keyframes fx-up { to { opacity: 0; margin-top: -40px; } }
+.chat-fx { animation-name: fx-in-chat; } @keyframes fx-in-chat { from { opacity: 0; } }
+.tb { position: absolute; z-index: 91; height: 26px; padding: 0 8px; border-radius: 13px; border: 1px solid rgba(251, 191, 36, .7); background: linear-gradient(180deg, #3a2f17, #1a150b);
+  color: var(--amber-100); font: 800 12px/1 var(--sans); white-space: nowrap; cursor: pointer; box-shadow: 0 2px 8px rgba(0, 0, 0, .5); }
+.tb small { font-weight: 600; opacity: .8; }
+.tb.m { height: 20px; padding: 0 6px; border-radius: 10px; font-size: 9px; }
+#table.mobile #emote-pick, #table.mobile #chat { top: 40px; right: 8px; }
+#table.mobile #emote-pick { grid-template-columns: repeat(4, 54px); padding: 8px; gap: 5px; }
+#table.mobile #emote-pick button { height: 50px; }
+#table.mobile #chat { width: calc(100vw - 16px); max-width: 340px; height: 300px; }
+
+/* 팁 */
+#tip-pick[hidden] { display: none !important; }
+.avatar.tippable { cursor: pointer; }
+#tip-pick { position: fixed; z-index: 140; padding: 10px; border-radius: 12px; background: rgba(16, 13, 8, .96); border: 1px solid rgba(217, 180, 106, .5); box-shadow: 0 8px 24px rgba(0, 0, 0, .55); }
+.tip-head { display: flex; align-items: baseline; gap: 8px; margin: 0 2px 8px; font-size: 12px; color: var(--amber-200); white-space: nowrap; }
+.tip-head b { color: var(--amber-100); font-size: 13px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.tip-row { display: flex; gap: 6px; }
+.tip-row button { width: 58px; height: 58px; border-radius: 10px; border: 1px solid rgba(217, 180, 106, .25); background: rgba(255, 255, 255, .05); color: var(--amber-100);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer; }
+.tip-row button:hover:not(:disabled) { background: rgba(217, 180, 106, .18); }
+.tip-row button:disabled { opacity: .4; cursor: default; }
+.tip-row button span { font-size: 24px; line-height: 1; }
+.tip-row button small { font-size: 10px; }
+.tip-note { margin-top: 8px; font-size: 11px; color: #fca5a5; text-align: center; }
+.gift-fx { position: fixed; z-index: 96; font-size: 34px; line-height: 1; transform: translate(-50%, -50%); transition: transform .9s cubic-bezier(.3, .7, .3, 1); filter: drop-shadow(0 3px 6px rgba(0, 0, 0, .6)); }
+.gift-fx.land { animation: gift-pop 1.2s ease-out forwards; }
+@keyframes gift-pop { 30% { opacity: 1; } 100% { opacity: 0; margin-top: -30px; } }
+#table.mobile ~ #tip-pick, #table.mobile #tip-pick { padding: 8px; }

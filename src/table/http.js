@@ -24,7 +24,8 @@ const ENGINE_FILE_CACHE = new Map();
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json',
     '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg' };
 const PAGE_HEADERS = {
-    'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https://resource.pokerzero.site; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src https://resource.pokerzero.site; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    // 리소스 서버에서는 받기만 한다 — 그림·글꼴, 효과음(sfx/ 폴더만, fetch 로 받아 재생), 이모티콘 영상(emo/ 폴더만)
+    'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https://resource.pokerzero.site; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://resource.pokerzero.site/buyin-table/sfx/; media-src https://resource.pokerzero.site/buyin-table/emo/; font-src https://resource.pokerzero.site; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
     'X-Frame-Options': 'DENY', 'Referrer-Policy': 'strict-origin',   // 리소스 서버는 이 TEE 화면에서 온 요청인지만 본다(경로·해시는 보내지 않는다)
     'X-Content-Type-Options': 'nosniff',
 };
@@ -56,7 +57,8 @@ function serveFile(res, rel) {
     let data;
     try { data = fs.readFileSync(fs.statSync(file).isDirectory() ? path.join(file, 'index.html') : file); } catch (_e) { return false; }
     const type = TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream';
-    res.writeHead(200, { 'Content-Type': type, 'Content-Length': data.length, 'Cache-Control': type.startsWith('text/html') ? 'no-store' : 'public, max-age=3600', ...PAGE_HEADERS });
+    // 화면 코드는 no-cache — 배포하면 브라우저가 바로 새 코드를 받는다(파일이 작다)
+    res.writeHead(200, { 'Content-Type': type, 'Content-Length': data.length, 'Cache-Control': type.startsWith('text/html') ? 'no-store' : 'no-cache', ...PAGE_HEADERS });
     res.end(data);
     return true;
 }

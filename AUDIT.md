@@ -44,6 +44,7 @@ Fetch `GET <engine>/info`. Then:
 | Pick or re-roll the deck | `SHA-256(seed)` is committed before the hand; players add signed random values; shuffle = `HMAC-SHA256(seed, …)`. A started hand consumes the commitment even if voided. | `cards.js`, `Engine.startHand` |
 | Swap a card mid-hand | 52 card commitments are published at hand start; each revealed card comes with its salt and is checked in the browser. | `cards.js` |
 | Bet, call or raise for a player | Chip-moving actions need the player's ECDSA signature bound to this hand and turn. The operator can only fold/check (timeouts), and the record marks each one. | `HandCore._authorize` |
+| Move chips between players outside a hand | Only a tip does this: 1 big blind, signed by the sender (`msgTip`, a per-seat number so a signature works once), moved after the hand ends and written to the record chain with the signature and the sender's public key. | `TableServer._tip`, `_settleTips` |
 | Change results or rake | The engine computes pots, winners and rake from the published table rule; the signed record replays exactly. | `HandCore`, `verify.js` |
 | Delete or edit past hands | Records are signed and chained on the TEE disk; the chain head is public. | `store.js` |
 | Run a modified engine | A modified image has a different digest → different compose hash → a different attestation; it cannot produce a key bound to this measurement. | §2 steps 2–4 |
@@ -83,13 +84,15 @@ The browser code that holds the player's keys and opens the hole-card envelope i
 - Every revealed card is checked against the 52 commitments published at hand start.
 - The page checks that the engine key is the attested key (`/info`).
 
-Images and fonts are loaded from the console's resource server (`https://resource.pokerzero.site/buyin-table/`, allowed by the page's CSP for images and fonts only). Which image is loaded never depends on a card: card faces are drawn as text, chips show public bet amounts. The page's scripts and styles all come from the TEE.
+Images and fonts are loaded from the console's resource server (`https://resource.pokerzero.site/buyin-table/`, allowed by the page's CSP for images and fonts, plus the `sfx/` folder for sound files and the `emo/` folder for emote videos). Which file is loaded never depends on a card: card faces are drawn as text, chips show public bet amounts, sounds follow public actions, emotes are what a player picked. The page's scripts and styles all come from the TEE.
+
+Emotes, chat and the time bank are handled by the TEE table server (`TableServer._emote`, `_chat`, `_timeBank`) and only relayed to the seats of the same table: they are not stored, not logged, not sent to the console, and never touch cards or chips. A time-bank chip (3 per seat, one per turn, +20 s) only moves the turn deadline. Tips are different because chips move: see the table above (`_tip`).
 
 ## 5a. Pages served by the TEE (0.5.0)
 
 These files are in this repository (`src/public/table/`), are inside the attested image, and are served by the engine at its own address — the operator cannot change them without changing the image digest and therefore the attestation.
 
-- **`/table/`** — the table. The browser talks only to the TEE: `connect-src 'self'`, `frame-ancestors 'none'` (no operator page can wrap it). A seat ticket signed by the console key (`TEE_CONSOLE_KEY`, public JWK in the measured compose) brings the player in; cards, turns and results come from the TEE over SSE; actions go back signed with the player's key. The operator receives only settlement notes (amounts, engine-signed) and, after each hand, the signed record.
+- **`/table/`** — the table. The browser talks only to the TEE: `connect-src 'self'` (plus GET of fixed sound files from the resource server's `sfx/` folder), `frame-ancestors 'none'` (no operator page can wrap it). A seat ticket signed by the console key (`TEE_CONSOLE_KEY`, public JWK in the measured compose) brings the player in; cards, turns and results come from the TEE over SSE; actions go back signed with the player's key. The operator receives only settlement notes (amounts, engine-signed) and, after each hand, the signed record.
 - **`/table/verify.html`** — Verify my hands. With the key in the player's browser it asks the TEE for that player's hands (`POST /records/mine`, signature over `["pz-mine-v1", keyFingerprint, time, handId]`, five-minute window; only hands where that key held a seat). For a chosen hand it checks, in the browser:
   1. the chain line hash and the public receipt `/records/receipt/<handId>`;
   2. the engine key line in the chain and its TDX `report_data` (and the live quote for the current key);

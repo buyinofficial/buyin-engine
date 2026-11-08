@@ -46,6 +46,7 @@ export const msg = {
     entropy: (tableId, seedCommit, entropyHex) => JSON.stringify(['pz-ent-v1', String(tableId), String(seedCommit), String(entropyHex)]),
     join: (tid, sigFp) => JSON.stringify(['pz-join-v1', String(tid), String(sigFp)]),
     mine: (sigFp, ts, handId) => JSON.stringify(['pz-mine-v1', String(sigFp), Number(ts), String(handId || '')]),
+    tip: (tableId, fromOdcId, n, toOdcId, type, amount) => JSON.stringify(['pz-tip-v1', String(tableId), String(fromOdcId), Number(n), String(toOdcId), String(type), Number(amount) || 0]),
 };
 
 /** 카드 약속 확인 — 엔진 src/cards.js */
