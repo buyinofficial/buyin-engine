@@ -114,9 +114,9 @@ function msgJoin(tid, sigFp) {
     return JSON.stringify(['pz-join-v1', String(tid), String(sigFp)]);
 }
 
-/** 팁 — 이 테이블에서 n 번째로 보내는 팁(좌석마다 1부터, 한 번만 쓴다). 금액은 그 방 BB 1개 */
-function msgTip(tableId, fromOdcId, n, toOdcId, type, amount) {
-    return JSON.stringify(['pz-tip-v1', String(tableId), String(fromOdcId), Number(n), String(toOdcId), String(type), Number(amount) || 0]);
+/** 팁 — 이 테이블에서 n 번째로 보내는 팁(좌석마다 1부터, 한 번만 쓴다). 받는 쪽은 좌석 번호(화면은 남의 회원 ID 를 모른다). 금액은 그 방 BB 1개 */
+function msgTip(tableId, fromOdcId, n, toSeat, type, amount) {
+    return JSON.stringify(['pz-tip-v1', String(tableId), String(fromOdcId), Number(n), Number(toSeat), String(type), Number(amount) || 0]);
 }
 
 /** 내 판 기록 요청 — 그 판에 앉았던 키로만 받는다. ts 는 요청 시각(ms), 5분 안에서만 받는다 */

@@ -1014,7 +1014,7 @@ async function sendTip(seat, gift) {
     const to = S.seats[seat];
     if (!to || !S.keys || !S.me || !S.room) return;
     const n = (S.me.tipN || 0) + 1;
-    const sig = await V.sign(S.keys, V.msg.tip(S.tableId, S.me.odcId, n, to.odcId, gift, S.room.bb));
+    const sig = await V.sign(S.keys, V.msg.tip(S.tableId, S.me.odcId, n, seat, gift, S.room.bb));
     const r = await cmd('tip', { to: seat, gift, n, sig });
     if (r.ok) S.me.tipN = n;
     else toast(r.code === 'rate' ? t('tooFast') : (r.error || ''));

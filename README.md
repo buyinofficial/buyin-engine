@@ -119,6 +119,7 @@ All rights reserved (see `LICENSE`). The code is published for inspection and ve
 ## Status
 
 - **Stage 1–2:** the engine runs as a separate process (`mode: "dev"`). The cryptographic guarantees above hold, but there is no hardware attestation.
+- **0.9.8:** tips are signed with the receiver's seat number (the page never sees another player's member id); a bad tip signature no longer looks like a lost seat.
 - **0.9.7:** table page: action sounds, emotes, chat, a time bank (3 per seat, +20 s, one per turn) and tips (1 big blind, pre-flop only, signed by the sender, moved between hands and written to the record chain), as on the previous game. Design images can be versioned (`?v=`) so a change shows at once.
 - **0.9.6:** table page: the phone preset buttons now really send the bet (in 0.9.5 a local name hid the action function, so a tap did nothing).
 - **0.9.5:** a turn timeout folds that hand only and the player keeps the seat; three timeouts in a row (no own action in between) stand the player up and cash out, as on the previous game server. A disconnected player's turn is checked when possible, otherwise folded, and does not count. On phones the quarter / half / pot / all-in buttons bet at once; on PC they set the amount for the bet button.

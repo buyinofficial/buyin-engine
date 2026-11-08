@@ -296,8 +296,8 @@ class TableServer {
         if (!Number.isInteger(n) || n !== s.tipN + 1) throw new TableError('tip', 'stale tip number');
         const amount = room.rules.bb;
         let ok = false;
-        try { ok = !!s.sigJwk && C.verify(C.importPublicJwk(s.sigJwk), C.msgTip(room.tableId, s.odcId, n, to.odcId, type, amount), m.sig); } catch (_e) { ok = false; }
-        if (!ok) throw new TableError('auth', 'bad tip signature');
+        try { ok = !!s.sigJwk && C.verify(C.importPublicJwk(s.sigJwk), C.msgTip(room.tableId, s.odcId, n, to.seat, type, amount), m.sig); } catch (_e) { ok = false; }
+        if (!ok) throw new TableError('tip', 'bad tip signature');   // 'auth' 가 아니다 — 좌석 토큰은 멀쩡하다
         const now = this.clock.now();
         if (now - s.tipAt < TIP_COOLDOWN_MS) throw new TableError('rate', 'too fast');
         // 지금 가진 칩 — 판에 든 좌석은 판 안의 스택. 이미 예약한 팁까지 더해 본다(같은 칩을 두 번 약속하지 않는다)
@@ -322,7 +322,7 @@ class TableServer {
                 const ok = room.seats[s.seat] === s && !s.leaving && room.seats[x.toSeat] === to && !to.leaving && s.stack >= x.amount;
                 if (ok && this.store) {
                     this.store.appendEvent('tip', { tableId: room.tableId, roomId: room.id, fromSession: s.sessionId, toSession: to.sessionId,
-                        fromOdc: s.odcId, toOdc: to.odcId, n: x.n, type: x.type, amount: x.amount, sigJwk: s.sigJwk, sig: x.sig });
+                        fromOdc: s.odcId, toOdc: to.odcId, toSeat: x.toSeat, n: x.n, type: x.type, amount: x.amount, sigJwk: s.sigJwk, sig: x.sig });
                 }
                 if (!ok) { this._broadcast(room, 'tip-cancel', { from: s.seat, to: x.toSeat, amount: x.amount }); continue; }
                 s.stack = round3(s.stack - x.amount);

@@ -346,7 +346,7 @@ test('테이블: 팁 — 본인 서명·번호 필수, 프리플랍에서만, BB
     const room = server.rooms.get('r1');
     const [a, b] = players;
     const tableId = room.tableId;
-    const sign = (p, n, to, type, amount) => C.sign(p.sig.privateKey, C.msgTip(tableId, p.odcId, n, to.odcId, type, amount));
+    const sign = (p, n, to, type, amount) => C.sign(p.sig.privateKey, C.msgTip(tableId, p.odcId, n, to.seat, type, amount));
     const before = room.seats.filter(Boolean).reduce((x, s) => x + s.stack, 0);
         assert.throws(() => server.command(a.token, { type: 'tip', to: b.seat, gift: 'flower', n: 1, sig: sign(b, 1, b, 'flower', 2) }), /bad tip signature/, '남의 키로는 못 보낸다');
     assert.throws(() => server.command(a.token, { type: 'tip', to: b.seat, gift: 'flower', n: 1, sig: sign(a, 1, b, 'flower', 99) }), /bad tip signature/, '금액은 서버가 정한다(BB)');
@@ -367,7 +367,7 @@ test('테이블: 팁 — 본인 서명·번호 필수, 프리플랍에서만, BB
     assert.strictEqual(room.seats[b.seat].stack, Math.round((rec.stacksEnd[b.seat] + 2) * 1000) / 1000);
     void aStack; void bStack;
     const tipLine = env.store.range(0, 1e9).find((e) => e.kind === 'tip');
-    assert.ok(tipLine && tipLine.amount === 2 && C.verify(C.importPublicJwk(tipLine.sigJwk), C.msgTip(tableId, a.odcId, 1, b.odcId, 'flower', 2), tipLine.sig), '사슬의 팁 줄은 보낸 사람 서명으로 확인된다');
+    assert.ok(tipLine && tipLine.amount === 2 && C.verify(C.importPublicJwk(tipLine.sigJwk), C.msgTip(tableId, a.odcId, 1, b.seat, 'flower', 2), tipLine.sig), '사슬의 팁 줄은 보낸 사람 서명으로 확인된다');
     const rake = env.out.filter((x) => x.kind === 'hand-record').reduce((x, r) => x + ((r.record.result.rake && r.record.result.rake.totalRake) || 0), 0);
     const after = room.seats.filter(Boolean).reduce((x, s) => x + s.stack, 0);
     assert.ok(Math.abs(before - rake - after) < 1e-6, '방 전체 돈 = 이전 − 레이크');
@@ -382,7 +382,7 @@ test('테이블: 팁을 옮긴 뒤 엔진이 다시 떠도 정산서에 팁이 �
     clock.advance(5000);
     const room = server.rooms.get('r1');
     const [a, b] = players;
-    const sig = C.sign(a.sig.privateKey, C.msgTip(room.tableId, a.odcId, 1, b.odcId, 'champagne', 2));
+    const sig = C.sign(a.sig.privateKey, C.msgTip(room.tableId, a.odcId, 1, b.seat, 'champagne', 2));
     assert.ok(server.command(a.token, { type: 'tip', to: b.seat, gift: 'champagne', n: 1, sig }).ok);
     const handId = room.hand.handId;
     for (let i = 0; i < 6 && room.hand && room.hand.handId === handId; i++) clock.advance(21000);
