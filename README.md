@@ -119,6 +119,7 @@ All rights reserved (see `LICENSE`). The code is published for inspection and ve
 ## Status
 
 - **Stage 1–2:** the engine runs as a separate process (`mode: "dev"`). The cryptographic guarantees above hold, but there is no hardware attestation.
+- **0.9.11:** table page loads the emote and gift pictures as soon as you sit down, so the pickers open with their pictures at once.
 - **0.9.10:** table page matches the previous game's screen again: card faces, deal and flip animations, GAME START / SHOWDOWN banners, a "raising…" hint (new `raising` command, sent only on your turn), all-in flames, emote and tip pickers next to your name, rabbit hunt (board cards that were not dealt, shown after a fold-out from the result's `peekBoard`), in the dark (new `dark` command: hide your own cards for one hand), check/fold pre-action, a bottom-left chat panel with translation (received chat text only goes to the operator's translation address), room / hand label and a volume setting. No rule about cards or chips changed.
 - **0.9.9:** the service domain is now buyinholdem.com: the table page loads design files from `resource.buyinholdem.com` (CSP updated) and the engine sends its record chain to `https://buyinholdem.com/tee-records`. No game rule changed.
 - **0.9.8:** tips are signed with the receiver's seat number (the page never sees another player's member id); a bad tip signature no longer looks like a lost seat.

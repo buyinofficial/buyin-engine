@@ -267,6 +267,7 @@ async function onSnapshot(d) {
     if (d.hole && d.hole.envelope) await openHole(d.hole);
     await sendEntropy(d.hand ? d.hand.nextSeedCommit : d.seedCommit);
     S.live = true;   // 이제부터 오는 이벤트는 실시간 — 연출을 한다
+    preloadPickImages();
     render();
 }
 
@@ -1166,12 +1167,20 @@ function sfx(action) { for (const n of ACT_SFX[action] || []) play(n); }
 const EMOTES = ['angry', 'sad', 'win', 'taunt', 'thanks', 'chill', 'sleepy', 'clap'];
 const rateMsg = (r) => (r.code === 'rate' ? t('tooFast') : (r.error || ''));
 
-/** 감정 고르기 — 이름 상자 옆 버튼에서 연다. 2열 그림 타일(예전 화면), 한 판에 한 번 */
+/** 감정·선물 그림은 들어오자마자 미리 받아 둔다 — 창을 처음 열 때 빈 타일로 보이지 않게 */
+const pickImgs = [];
+function preloadPickImages() {
+    if (pickImgs.length) return;
+    for (const id of EMOTES) { const im = new Image(); im.src = `${ASSET}emo/emo_${id}.jpg${AV}`; pickImgs.push(im); }
+    for (const id of GIFTS) { const im = new Image(); im.src = `${ASSET}tip/${id}.png${AV}`; pickImgs.push(im); }
+}
+
+/** 감정 고르기 — 이름 상자 옆 버튼에서 연다. 2열 그림 타일(예전 화면), 한 판에 한 번. 타일은 한 번만 만들어 다시 쓴다 */
 function openEmotePick(anchorEl) {
     const box = $('#emote-pick');
     if (!box.hidden) { box.hidden = true; return; }
     $('#tip-pick').hidden = true;
-    box.innerHTML = '';
+    if (box.childElementCount) { placePop(box, anchorEl); return; }
     for (const id of EMOTES) {
         const b = el('button', '', `<img alt="" src="${ASSET}emo/emo_${id}.jpg${AV}"><small>${esc(t('emo_' + id))}</small>`);
         b.type = 'button'; b.dataset.emote = id;
