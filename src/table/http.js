@@ -26,7 +26,7 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
 const PAGE_HEADERS = {
     // 리소스 서버에서는 받기만 한다 — 그림·글꼴, 효과음(sfx/ 폴더만, fetch 로 받아 재생), 이모티콘·올인 영상(emo/·fx/ 폴더만)
     // 채팅 번역: 받은 채팅 글 한 줄만 운영 서버의 번역 주소 하나로 보낸다(app.js translateLine)
-    'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https://resource.buyinholdem.com; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://resource.buyinholdem.com/buyin-table/sfx/ https://buyinholdem.com/chat-translate; media-src https://resource.buyinholdem.com/buyin-table/emo/ https://resource.buyinholdem.com/buyin-table/fx/; font-src https://resource.buyinholdem.com; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https://resource.buyinholdem.com; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://resource.buyinholdem.com/buyin-table/sfx/ https://buyinholdem.com/chat-translate; media-src https://resource.buyinholdem.com/buyin-table/emo/ https://resource.buyinholdem.com/buyin-table/fx/; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
     'X-Frame-Options': 'DENY', 'Referrer-Policy': 'strict-origin',   // 리소스 서버는 이 TEE 화면에서 온 요청인지만 본다(경로·해시는 보내지 않는다)
     'X-Content-Type-Options': 'nosniff',
 };
