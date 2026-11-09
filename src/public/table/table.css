@@ -1,6 +1,6 @@
 /* BUY-IN 테이블 화면 — 운영 게임 테이블과 같은 모양을 새 코드로 그린다(위치·크기·색은 운영 화면에서 잰 값).
    PC(가로) = #table.pc, 모바일(세로) = #table.mobile. 글꼴: 시스템 산세리프 · 카드 숫자 Georgia · 무늬 DejaVu Sans(TEE 가 내보냄). */
-@font-face { font-family: 'DejaVu Sans'; src: url('https://resource.pokerzero.site/buyin-table/font/dejavu-sans.woff2') format('woff2'); font-display: swap; }
+@font-face { font-family: 'DejaVu Sans'; src: url('https://resource.buyinholdem.com/buyin-table/font/dejavu-sans.woff2') format('woff2'); font-display: swap; }
 
 :root {
   --amber-100: #fef3c7; --amber-200: #fde68a; --amber-300: #fcd34d; --amber-400: #fbbf24; --amber-500: #f59e0b; --amber-600: #d97706; --amber-700: #b45309;
@@ -56,7 +56,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .card.d .pip { font-size: 34cqw; }
 .card.d .big { font-size: 108cqw; }
 .card.dim { filter: brightness(.55); }
-.card.back { border: 0; background: #0b1020 center/cover no-repeat; background-image: url('https://resource.pokerzero.site/buyin-table/img/card_back.jpg?v=20261108'); }
+.card.back { border: 0; background: #0b1020 center/cover no-repeat; background-image: url('https://resource.buyinholdem.com/buyin-table/img/card_back.jpg?v=20261108'); }
 
 /* ── 좌석 (PC) ── */
 .seat { position: absolute; width: 0; height: 0; z-index: 20; }
@@ -68,7 +68,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .seat.sitout .avatar { opacity: .55; }
 .namebox { display: flex; align-items: stretch; border-radius: 6px; border: 1px solid rgba(251, 191, 36, .4); overflow: hidden;
   box-shadow: 0 0 0 1px rgba(251, 191, 36, .4), inset 0 1px 0 rgba(255, 255, 255, .06), 0 10px 20px rgba(0, 0, 0, .55); background: #05070b; }
-.namebox .flag { position: absolute; inset: 0; background: url('https://resource.pokerzero.site/buyin-table/img/flag_kr.webp?v=20261108') right center/cover no-repeat; }
+.namebox .flag { position: absolute; inset: 0; background: url('https://resource.buyinholdem.com/buyin-table/img/flag_kr.webp?v=20261108') right center/cover no-repeat; }
 .namebox .fade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(0, 0, 0, .85) 0%, rgba(0, 0, 0, .35) 50%, transparent 100%); }
 .namebox .info { position: relative; z-index: 2; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 0; }
 .namebox .nm { color: var(--gray-300); font-weight: 700; letter-spacing: .025em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }

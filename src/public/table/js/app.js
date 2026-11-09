@@ -13,7 +13,7 @@ import { liveHandName, prettyRank, bigHandName } from './hand.js';
 
 /** 디자인 리소스(배경·칩·아바타·딜러·카드 뒷면·글꼴)는 콘솔 리소스 서버에서 받는다 — 그림만 받고 아무것도 보내지 않는다.
  *  어떤 그림을 부르는지는 카드와 무관하다(칩은 공개된 베팅 금액, 카드 앞면은 글자로 그린다). CSP 가 이 주소의 그림·글꼴만 허용한다(table/http.js). */
-const ASSET = 'https://resource.pokerzero.site/buyin-table/';
+const ASSET = 'https://resource.buyinholdem.com/buyin-table/';
 /** 리소스를 바꿔 끼우면 이 값을 올린다 — 브라우저에 남은 예전 그림 대신 바로 새로 받는다 */
 const AV = '?v=20261108';
 

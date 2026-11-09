@@ -84,7 +84,7 @@ The browser code that holds the player's keys and opens the hole-card envelope i
 - Every revealed card is checked against the 52 commitments published at hand start.
 - The page checks that the engine key is the attested key (`/info`).
 
-Images and fonts are loaded from the console's resource server (`https://resource.pokerzero.site/buyin-table/`, allowed by the page's CSP for images and fonts, plus the `sfx/` folder for sound files and the `emo/` folder for emote videos). Which file is loaded never depends on a card: card faces are drawn as text, chips show public bet amounts, sounds follow public actions, emotes are what a player picked. The page's scripts and styles all come from the TEE.
+Images and fonts are loaded from the console's resource server (`https://resource.buyinholdem.com/buyin-table/`, allowed by the page's CSP for images and fonts, plus the `sfx/` folder for sound files and the `emo/` folder for emote videos). Which file is loaded never depends on a card: card faces are drawn as text, chips show public bet amounts, sounds follow public actions, emotes are what a player picked. The page's scripts and styles all come from the TEE.
 
 Emotes, chat and the time bank are handled by the TEE table server (`TableServer._emote`, `_chat`, `_timeBank`) and only relayed to the seats of the same table: they are not stored, not logged, not sent to the console, and never touch cards or chips. A time-bank chip (3 per seat, one per turn, +20 s) only moves the turn deadline. Tips are different because chips move: see the table above (`_tip`).
 
