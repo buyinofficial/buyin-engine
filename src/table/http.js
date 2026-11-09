@@ -10,7 +10,7 @@
  *   GET  /table/engine/<파일>     검증 화면이 그대로 돌리는 엔진 소스(지금 도는 그 파일)
  *
  * 테이블 화면은 다른 사이트의 틀(iframe) 안에서 열리지 않는다(frame-ancestors 'none') — 운영 화면이 덮어씌우지 못하게.
- * 화면이 부를 수 있는 곳은 이 TEE 뿐이다(connect-src 'self').
+ * 화면이 부를 수 있는 곳은 이 TEE 와, 받은 채팅 한 줄을 번역하는 주소 하나뿐이다(카드·게임 정보는 보내지 않는다).
  */
 
 const fs = require('fs');
@@ -24,8 +24,9 @@ const ENGINE_FILE_CACHE = new Map();
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json',
     '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg' };
 const PAGE_HEADERS = {
-    // 리소스 서버에서는 받기만 한다 — 그림·글꼴, 효과음(sfx/ 폴더만, fetch 로 받아 재생), 이모티콘 영상(emo/ 폴더만)
-    'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https://resource.buyinholdem.com; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://resource.buyinholdem.com/buyin-table/sfx/; media-src https://resource.buyinholdem.com/buyin-table/emo/; font-src https://resource.buyinholdem.com; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    // 리소스 서버에서는 받기만 한다 — 그림·글꼴, 효과음(sfx/ 폴더만, fetch 로 받아 재생), 이모티콘·올인 영상(emo/·fx/ 폴더만)
+    // 채팅 번역: 받은 채팅 글 한 줄만 운영 서버의 번역 주소 하나로 보낸다(app.js translateLine)
+    'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https://resource.buyinholdem.com; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://resource.buyinholdem.com/buyin-table/sfx/ https://buyinholdem.com/chat-translate; media-src https://resource.buyinholdem.com/buyin-table/emo/ https://resource.buyinholdem.com/buyin-table/fx/; font-src https://resource.buyinholdem.com; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
     'X-Frame-Options': 'DENY', 'Referrer-Policy': 'strict-origin',   // 리소스 서버는 이 TEE 화면에서 온 요청인지만 본다(경로·해시는 보내지 않는다)
     'X-Content-Type-Options': 'nosniff',
 };

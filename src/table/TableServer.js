@@ -29,6 +29,8 @@ const CHAT_WINDOW_MS = 5000;
 const CHAT_PER_WINDOW = 5;
 const TIP_TYPES = ['flower', 'kiss', 'confetti', 'cigarette', 'champagne'];   // 팁 — 이전 게임과 같다: 금액은 종류와 무관하게 그 방 BB 1개,
 const TIP_COOLDOWN_MS = 3000;                                                   //   프리플랍에서만 보내고, 칩은 판이 끝난 뒤 옮긴다(모자라면 취소)
+/** 「레이즈 중」 알림 최소 간격 */
+const RAISING_GAP_MS = 300;
 const MAX_CLIENTS_PER_SEAT = 3;          // 한 좌석에 붙는 이벤트 연결 상한(탭 여러 개 정도)   // 연결이 끊긴 뒤 이 시간 안에 다시 붙지 않으면 탈락(배포 설정 TEE_DISCONNECT_GRACE_MS)
 
 class TableError extends Error {
@@ -131,7 +133,7 @@ class TableServer {
             seat, token, tid: t.tid, sessionId: t.player.sessionId, odcId: t.player.odcId,
             nickname: t.player.nickname, avatar: t.player.avatar, buyIn: t.buyIn, currency: t.currency, display: t.display,
             stack: t.buyIn, rakePaid: 0, hands: 0, keys: false, sitout: false, timeouts: 0, leaving: false, boundFp: joinFp,
-            timeBank: TIME_BANK_START, emoteAt: 0, chatRate: { last: 0, start: 0, n: 0 }, sigJwk: null, tipN: 0, tipAt: 0, tips: [],
+            timeBank: TIME_BANK_START, emoteAt: 0, chatRate: { last: 0, start: 0, n: 0 }, sigJwk: null, tipN: 0, tipAt: 0, tips: [], raisingAt: 0, darkNext: false,
             clients: new Set(), joinedAt: this.clock.now(),
         };
         // 좌석표는 사슬에 먼저 남긴다 — 이후 엔진이 다시 떠도 이 돈은 정산된다
@@ -198,6 +200,8 @@ class TableServer {
             case 'emote': return this._emote(room, s, m);
             case 'chat': return this._chat(room, s, m);
             case 'tip': return this._tip(room, s, m);
+            case 'raising': return this._raising(room, s, m);
+            case 'dark': return this._dark(room, s, m);
             default: throw new TableError('input', 'unknown command');
         }
     }
@@ -265,6 +269,30 @@ class TableServer {
         s.emoteAt = now;
         this._broadcast(room, 'emote', { seat: s.seat, id });
         return { ok: true };
+    }
+
+    /**
+     * 「레이즈 중」 — 내 차례에 레이즈 금액을 고르는 동안 같은 방에 알린다(예전 게임의 raise_adjusting). 금액·카드는 없다.
+     * 내 차례일 때만, 0.3초에 한 번까지. 차례가 끝나면 화면이 스스로 지운다.
+     */
+    _raising(room, s, m) {
+        const h = room.hand;
+        if (!h || h.toAct !== s.seat) return { ok: true, ignored: true };
+        const now = this.clock.now();
+        if (now - s.raisingAt < RAISING_GAP_MS) return { ok: true, ignored: true };
+        s.raisingAt = now;
+        this._broadcast(room, 'raising', { seat: s.seat, active: !!m.active, q: h.q });
+        return { ok: true };
+    }
+
+    /**
+     * 인더다크 — 다음 판 내 패를 보지 않고 친다(예전 게임과 같은 한 판짜리 예약). 판 시작 때 예약한 좌석을 방에 알리고,
+     * 화면은 그 판 동안 내 패를 가린다. 베팅 규칙·카드는 그대로다(남의 카드가 새지도, 내 카드를 운영자가 보지도 않는다).
+     */
+    _dark(room, s, m) {
+        s.darkNext = !!m.on;
+        this._send(s, 'dark', { reserved: s.darkNext });
+        return { ok: true, reserved: s.darkNext };
     }
 
     /** 채팅 — 제어문자 제거·200자, 도배 제한. 같은 방 좌석에 전달만 하고 저장·로그·콘솔 전송은 없다 */
@@ -395,6 +423,8 @@ class TableServer {
             board: [], reveal: {}, stage: 'preflop',
         };
         for (const s of players) s.hands += 1;
+        h.dark = players.filter((s) => s.darkNext).map((s) => s.seat);   // 인더다크 — 한 판짜리 예약을 쓴다
+        for (const s of players) s.darkNext = false;
         this._broadcast(room, 'hand', this._publicHand(room));
         for (const s of players) this._send(s, 'hole', { handId: h.handId, envelope: r.envelopes[s.seat] || null });
         this._drive(room);
@@ -607,7 +637,7 @@ class TableServer {
             seats: h.seats.map((seat) => { const p = core.seats.get(seat); return { seat, stack: p.stack, bet: p.currentBet, folded: p.isFolded, allIn: p.isAllIn }; }),
             pot: core.pot, currentBet: core.currentBet, board: h.board, reveal: h.reveal,
             commitments: h.commitments, deckCommit: h.deckCommit, seedCommit: h.seedCommit, nextSeedCommit: room.seedCommit,
-            toAct: h.toAct, q: h.q, deadline: h.deadline,
+            toAct: h.toAct, q: h.q, deadline: h.deadline, dark: h.dark || [],
         };
     }
 
@@ -617,7 +647,7 @@ class TableServer {
         return {
             room: { id: room.id, name: room.rules.name, sb: room.rules.sb, bb: room.rules.bb, maxPlayers: room.rules.maxPlayers, rake: room.rules.rake, turnSec: room.rules.turnSec, endsAt: room.rules.endsAt },
             tableId: room.tableId, seedCommit: room.seedCommit, engine: this.engine.call('info').keys,
-            me: { seat: s.seat, odcId: s.odcId, nickname: s.nickname, stack: s.stack, buyIn: s.buyIn, currency: s.currency, display: s.display, keys: s.keys, sitout: s.sitout, timeBank: s.timeBank, tipN: s.tipN },
+            me: { seat: s.seat, odcId: s.odcId, nickname: s.nickname, stack: s.stack, buyIn: s.buyIn, currency: s.currency, display: s.display, keys: s.keys, sitout: s.sitout, timeBank: s.timeBank, tipN: s.tipN, darkNext: s.darkNext },
             seats: room.seats.map((x) => (x ? this._publicSeat(room, x) : null)),
             hand: this._publicHand(room),
             hole: h && h.seats.includes(s.seat) ? { handId: h.handId, envelope: h.envelopes[s.seat] || null } : null,

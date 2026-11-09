@@ -393,3 +393,32 @@ test('테이블: 팁을 옮긴 뒤 엔진이 다시 떠도 정산서에 팁이 �
     const got = Object.fromEntries(out2.filter((x) => x.kind === 'settle').map((x) => [x.note.odcId, x.note.cashOut]));
     assert.deepStrictEqual(got, want);
 });
+
+test('테이블: 레이즈 중 — 내 차례에만 같은 방에 알린다(금액·카드 없음), 인더다크 — 한 판짜리 예약이 다음 판 시작 때 방에 알려지고 지워진다', () => {
+    const env = setup(2);
+    const { server, clock, players } = env;
+    clock.advance(5000);
+    const room = server.rooms.get('r1');
+    const turn = lastTurn(players[0]);
+    const me = players.find((p) => p.seat === turn.seat), other = players.find((p) => p.seat !== turn.seat);
+    assert.ok(server.command(other.token, { type: 'raising', active: true }).ignored, '남의 차례엔 알리지 않는다');
+    assert.ok(server.command(me.token, { type: 'raising', active: true }).ok);
+    const ev = other.events.filter(([e]) => e === 'raising').map(([, d]) => d);
+    assert.strictEqual(ev.length, 1);
+    assert.deepStrictEqual(Object.keys(ev[0]).sort(), ['active', 'q', 'seat']);
+    assert.strictEqual(ev[0].seat, me.seat);
+    assert.ok(server.command(me.token, { type: 'raising', active: false }).ignored, '0.3초 안에 다시 보내면 무시');
+    // 인더다크 예약 — 이번 판에는 없고, 다음 판에 들어간다
+    assert.strictEqual(server.command(other.token, { type: 'dark', on: true }).reserved, true);
+    assert.deepStrictEqual(room.hand.dark, [], '이번 판에는 쓰지 않는다');
+    assert.ok(other.events.some(([e, d]) => e === 'dark' && d.reserved === true), '본인에게 예약을 알린다');
+    assert.ok(!me.events.some(([e]) => e === 'dark'), '예약은 남에게 알리지 않는다');
+    const first = room.hand.handId;
+    server.command(me.token, { type: 'act', q: turn.q, action: 'FOLD', amount: 0, sig: C.sign(me.sig.privateKey, C.msgAction(turn.handId, turn.q, 'FOLD', 0)) });
+    for (let i = 0; i < 6 && !(room.hand && room.hand.handId !== first); i++) clock.advance(3000);
+    assert.ok(room.hand && room.hand.handId !== first, '다음 판');
+    assert.deepStrictEqual(room.hand.dark, [other.seat]);
+    const hev = [...me.events].reverse().find(([e]) => e === 'hand')[1];
+    assert.deepStrictEqual(hev.dark, [other.seat], '판 시작 때 방에 알린다');
+    assert.strictEqual(room.seats[other.seat].darkNext, false, '한 판짜리 — 다시 눌러야 한다');
+});

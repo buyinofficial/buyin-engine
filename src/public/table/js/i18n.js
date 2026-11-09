@@ -9,7 +9,10 @@ const T = {
         emote: '이모티콘', chat: '채팅', send: '보내기', chatPh: '메시지 입력 (200자)', tooFast: '조금 천천히 보내 주세요', timeBank: '타임뱅크 +20초',
         emo_angry: '부글부글', emo_sad: '씁쓸하네', emo_win: '승리!', emo_taunt: '쫄~?', emo_thanks: '감사감사', emo_chill: '여유만만', emo_sleepy: '나른해', emo_clap: '박수',
         tipHint: '팁 보내기', tipPreflop: '팁은 프리플랍에서만 보낼 수 있어요', tipCancel: '스택이 모자라거나 상대가 떠나 팁이 취소됐어요',
-        gift_flower: '장미', gift_kiss: '키스', gift_confetti: '축하', gift_cigarette: '시가', gift_champagne: '샴페인' },
+        gift_flower: '장미', gift_kiss: '키스', gift_confetti: '축하', gift_cigarette: '시가', gift_champagne: '샴페인',
+        settings: '설정', volume: '소리 크기', chatTitle: '초대방 채팅', translated: '번역됨', original: '원문', tipPick: '받을 사람을 선택하세요', tipQueued: '핸드 종료 후 전달', tipDone: '전달 완료',
+        darkTitle: '인 더 다크', darkSub: '다음 판 패 안 보기', darkOn: '다음 판 예약됨', darkActive: 'IN THE DARK', darkMyHand: '이번 판 내 패', darkSeal: 'DARK',
+        preCheckFold: '체크/폴드', reserved: '예약됨', rabbit: 'RABBIT', copied: '복사됨 ✓', emoOnce: '이모티콘은 한 판에 한 번' },
     en: { toLobby: 'Back to lobby', pot: 'POT', potMain: 'MAIN', uncalled: 'UNCALLED', fold: 'Fold', check: 'Check', call: 'Call', raise: 'Raise', bet: 'Bet', allin: 'All-in',
         leave: 'Leave', sound: 'Sound', verify: 'Card check', cardCheck: 'Card check', verified: 'Verified', checking: 'Checking', warn: 'Check needed',
         waiting: 'Waiting for other players', joining: 'Joining the table…', noTicket: 'No seat ticket. Please enter again from the lobby.',
@@ -19,7 +22,10 @@ const T = {
         emote: 'Emotes', chat: 'Chat', send: 'Send', chatPh: 'Message (200 chars)', tooFast: 'Please slow down a little', timeBank: 'Time bank +20s',
         emo_angry: 'Grr', emo_sad: 'Ouch', emo_win: 'Win!', emo_taunt: 'Scared?', emo_thanks: 'Thanks', emo_chill: 'Chill', emo_sleepy: 'Sleepy', emo_clap: 'Clap',
         tipHint: 'Send a tip', tipPreflop: 'Tips can be sent only during the pre-flop', tipCancel: 'Tip cancelled (not enough chips or the player left)',
-        gift_flower: 'Rose', gift_kiss: 'Kiss', gift_confetti: 'Cheers', gift_cigarette: 'Cigar', gift_champagne: 'Champagne' },
+        gift_flower: 'Rose', gift_kiss: 'Kiss', gift_confetti: 'Cheers', gift_cigarette: 'Cigar', gift_champagne: 'Champagne',
+        settings: 'Settings', volume: 'Volume', chatTitle: 'Table chat', translated: 'Translated', original: 'Original', tipPick: 'Choose who gets the tip', tipQueued: 'Delivered after the hand', tipDone: 'Delivered',
+        darkTitle: 'In the dark', darkSub: 'Next hand without looking', darkOn: 'Reserved for next hand', darkActive: 'IN THE DARK', darkMyHand: 'My cards this hand', darkSeal: 'DARK',
+        preCheckFold: 'Check/Fold', reserved: 'Reserved', rabbit: 'RABBIT', copied: 'Copied ✓', emoOnce: 'One emote per hand' },
     zh: { toLobby: '返回大厅', pot: '总底池', potMain: '主池', uncalled: '未跟注', fold: '弃牌', check: '过牌', call: '跟注', raise: '加注', bet: '下注', allin: '全下', leave: '离开', cardCheck: '牌验证', verified: '已验证', waiting: '等待其他玩家', joining: '正在入座…' },
     ja: { toLobby: 'ロビーへ戻る', pot: 'ポット', potMain: 'メイン', uncalled: '未コール', fold: 'フォールド', check: 'チェック', call: 'コール', raise: 'レイズ', bet: 'ベット', allin: 'オールイン', leave: '退出', cardCheck: 'カード検証', verified: '検証済み', waiting: '他のプレイヤーを待っています', joining: '着席中…' },
     vi: { toLobby: 'Về sảnh', pot: 'TỔNG POT', potMain: 'CHÍNH', uncalled: 'CHƯA THEO', fold: 'Bỏ', check: 'Xem', call: 'Theo', raise: 'Tố', bet: 'Cược', allin: 'All-in', leave: 'Rời bàn', cardCheck: 'Kiểm tra bài', verified: 'Đã xác minh', waiting: 'Đang chờ người chơi khác', joining: 'Đang vào bàn…' },
@@ -28,6 +34,7 @@ const T = {
 
 let lang = 'ko';
 export function setLang(l) { lang = T[l] ? l : 'en'; document.documentElement.lang = lang; }
+export function getLang() { return lang; }
 export function t(k) { return (T[lang] && T[lang][k]) || T.en[k] || k; }
 export function applyStatic(root = document) {
     for (const el of root.querySelectorAll('[data-i18n]')) el.textContent = t(el.getAttribute('data-i18n'));
