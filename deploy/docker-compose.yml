@@ -9,7 +9,7 @@
 # Container logs are capped (7 files of 5 MB) so nothing piles up; the engine logs only start-up and clean-up lines, never cards.
 services:
   engine:
-    image: ghcr.io/buyinofficial/buyin-engine@sha256:83c82bfb8aadc853f05e094de114ffd52b185acf4d04fa37f0cd56de3ba95643
+    image: ghcr.io/buyinofficial/buyin-engine@sha256:111d0ffa2863e2e0e7a6bb473596901cccd951acb91c23f6482b2020056e4ff4
     restart: always
     # Hardening: no Linux capabilities, no privilege escalation, read-only root filesystem
     # (the engine writes only to /data), small /tmp, memory and process limits.
