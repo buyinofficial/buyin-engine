@@ -54,7 +54,7 @@ services:
     environment:
       - DOMAIN=tee.buyinholdem.com
       - TARGET_ENDPOINT=engine:3900
-      - GATEWAY_DOMAIN=gateway.${DSTACK_GATEWAY_DOMAIN}
+      - GATEWAY_DOMAIN=gateway.dstack-pha1-prod5.phala.network
       - CERTBOT_EMAIL=tee@buyinholdem.com
       - SET_CAA=true
       - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
