@@ -98,7 +98,7 @@ function auditReport(info, records, keyCount, base, opts = {}) {
     L.push('');
     L.push('## Assumptions (stated, not hidden)');
     L.push('');
-    L.push(`A1 Intel TDX keeps the VM's memory private and its quote signatures are genuine · A2 Phala dstack measures the deployment, keeps the data disk key to this app, and terminates TLS in its own TEE gateway · A3 standard cryptography · A4 the player plays on this address (\`${base.replace(/^https?:\/\//, '')}\`) in an uncompromised browser · A5 the VM runs a production OS image (see the OS row above; a development image allows an operator debug shell).`);
+    L.push(`A1 Intel TDX keeps the VM's memory private and its quote signatures are genuine · A2 Phala dstack measures the deployment, keeps the data disk key to this app; TLS for tee.buyinholdem.com ends inside this TEE (dstack-ingress), for the gateway address in dstack's own TEE gateway · A3 standard cryptography · A4 the player plays on this address (\`${base.replace(/^https?:\/\//, '')}\`) in an uncompromised browser · A5 the VM runs a production OS image (see the OS row above; a development image allows an operator debug shell).`);
     L.push('');
     return L.join('\n') + '\n';
 }

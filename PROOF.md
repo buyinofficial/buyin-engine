@@ -32,9 +32,9 @@ This holds for the code at the commit the engine reports (`/info` → `commit`),
 | # | Assumption | Why it is reasonable / how it is checked |
 |---|---|---|
 | A1 | Intel TDX keeps a confidential VM's memory and registers private from the host, and Intel's quote signatures are genuine. | Industry hardware root of trust. The quote can be verified with Intel DCAP (`dcap-qvl`) or Phala's TEE Attestation Explorer (https://proof.t16z.com). |
-| A2 | Phala's dstack OS measures the deployment file (compose) into RTMR3, starts only the images it pins, gives the data-disk key only to that app, and its gateway (itself in a TEE) terminates TLS for the app's address. | dstack is open source; the measurement is in the quote. |
+| A2 | Phala's dstack OS measures the deployment file (compose) into RTMR3, starts only the images it pins, gives the data-disk key only to that app. TLS for `tee.buyinholdem.com` ends inside this app's TEE (the pinned `dstack-ingress` container gets the certificate there; a CAA record allows only that ACME account); for the gateway address the dstack gateway (itself in a TEE) terminates TLS. | dstack is open source; the measurement is in the quote. |
 | A3 | SHA-256, HMAC-SHA-256, ECDSA P-256, ECDH P-256 + HKDF + AES-256-GCM are secure. | Standard primitives (Node `crypto`, browser WebCrypto). |
-| A4 | The player plays on this TEE's own address (shown in `/info`: Phala app id) in an uncompromised browser. | The address is the attested app's address; a page on any other address is not this program. |
+| A4 | The player plays on this TEE's address — `tee.buyinholdem.com` or the gateway address with the Phala app id shown in `/info` — in an uncompromised browser. | The address is the attested app's address; a page on any other address is not this program. |
 
 Nothing else is trusted: not the operator, its database, its game/console servers, its lobby web site, its Phala account, or its GitHub account.
 

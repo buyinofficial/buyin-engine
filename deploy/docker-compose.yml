@@ -2,10 +2,15 @@
 # The image is pinned by digest: the image GitHub Actions built from this repository (see the GitHub Release of the version).
 # The build is reproducible — rebuilding the tag gives the same digest (README → "Rebuild the image yourself").
 # This file's hash is measured into the TEE (compose-hash in RTMR3), so anyone can recompute it and compare.
-# TEE_RPC_TOKEN is the one encrypted secret: only the TEE can decrypt it. The engine sends its records to the console with it,
+# Encrypted secrets (only the TEE can decrypt them): TEE_RPC_TOKEN and CLOUDFLARE_API_TOKEN.
+# TEE_RPC_TOKEN: The engine sends its records to the console with it,
 # and the console uses it for the check API. It cannot open any route into a hand in play — there is none.
 # TEE_CONSOLE_KEY is public: the console's key for seat tickets. Only tickets it signed can seat a player; it cannot see or move cards.
 # Hand records are kept on the TEE data disk (volume "records", SQLite), encrypted with a key only the TEE receives, for TEE_RETENTION_DAYS.
+# Address tee.buyinholdem.com: the dstack-ingress container (pinned below) gets the TLS certificate inside this TEE (Let's Encrypt,
+# DNS challenge) and terminates TLS here, so the certificate key never leaves the TEE. CLOUDFLARE_API_TOKEN can only edit DNS of
+# buyinholdem.com — it lets the ingress publish the CNAME, the app-address TXT and a CAA record that allows only this TEE's ACME account.
+# The Phala gateway address (<app-id>-3900.<gateway>) keeps working too.
 # Container logs are capped (7 files of 5 MB) so nothing piles up; the engine logs only start-up and clean-up lines, never cards.
 services:
   engine:
@@ -41,5 +46,29 @@ services:
       - /var/run/dstack.sock:/var/run/dstack.sock
       - records:/data
 
+  ingress:
+    image: dstacktee/dstack-ingress:2.2@sha256:d05a7b343c37c1cca1bba8dbf7e8f3c6d2118158af2d41c455103796db4f67f0
+    restart: always
+    ports:
+      - "443:443"
+    environment:
+      - DOMAIN=tee.buyinholdem.com
+      - TARGET_ENDPOINT=engine:3900
+      - GATEWAY_DOMAIN=gateway.${DSTACK_GATEWAY_DOMAIN}
+      - CERTBOT_EMAIL=tee@buyinholdem.com
+      - SET_CAA=true
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+    volumes:
+      - /var/run/dstack.sock:/var/run/dstack.sock
+      - cert-data:/etc/letsencrypt
+      - evidences:/evidences
+
 volumes:
   records:
+  cert-data:
+  evidences:

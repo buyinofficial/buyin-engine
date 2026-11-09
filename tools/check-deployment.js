@@ -12,7 +12,7 @@
  *    commit (written by the build workflow, next to GitHub's signed build provenance); this checkout is at that commit.
  * 5. Every file the engine loads (/review/manifest) has the same SHA-256 as the file in this checkout.
  * 6. The server state is the repository: the deployment file the TEE measured is `deploy/docker-compose.yml` of a commit in
- *    this repository, the only value set outside the repository is the secret token, and the OS image is `deploy/tee-os.txt`.
+ *    this repository, the only values set outside the repository are the two secret tokens (TEE_RPC_TOKEN, CLOUDFLARE_API_TOKEN), and the OS image is `deploy/tee-os.txt`.
  * It prints PASS / FAIL per step and exits 1 on any FAIL.
  */
 const crypto = require('crypto');
@@ -93,8 +93,9 @@ const step = (ok, name, detail) => { if (!ok) failed++; console.log(`${ok ? 'PAS
         }
     } catch (_e) { /* not a git checkout */ }
     step(!!at, 'the deployment file the TEE measured is deploy/docker-compose.yml in this repository', at ? `commit ${at}` : 'no commit has this exact file');
-    const envs = JSON.stringify(app.allowed_envs || []);
-    step(envs === '["TEE_RPC_TOKEN"]' && !app.pre_launch_script, 'nothing else is set outside the repository (only the secret token, no pre-launch script)', `allowed_envs ${envs}`);
+    const envs = JSON.stringify([...(app.allowed_envs || [])].sort());
+    // CLOUDFLARE_API_TOKEN: DNS-only token for buyinholdem.com, used by dstack-ingress to obtain the TLS certificate inside the TEE
+    step(envs === '["CLOUDFLARE_API_TOKEN","TEE_RPC_TOKEN"]' && !app.pre_launch_script, 'nothing else is set outside the repository (only the two secret tokens, no pre-launch script)', `allowed_envs ${envs}`);
     let vm = a.vmConfig;
     try { vm = typeof vm === 'string' ? JSON.parse(vm) : vm; } catch (_e) { vm = null; }
     let declared = '';
