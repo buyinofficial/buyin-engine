@@ -119,6 +119,7 @@ All rights reserved (see `LICENSE`). The code is published for inspection and ve
 ## Status
 
 - **Stage 1–2:** the engine runs as a separate process (`mode: "dev"`). The cryptographic guarantees above hold, but there is no hardware attestation.
+- **0.9.19:** public table record `GET /records/table/<tableId>` (JSON) and `.html` (for AI web tools): every finished hand of the table with seat numbers, chips at start and end, rake, chain position and receipt — no cards, deck, seed or member numbers. A player compares the game record the operator showed them with this page. No game code changed.
 - **0.9.18:** `/ai.html` makes every address a real link, so AI web tools follow it instead of retyping long hashes. No game code changed.
 - **0.9.17:** at start the engine submits its own quote (public data) to the Phala TEE Attestation Explorer (`src/explorer.js`) and the audit report links the explorer report directly — no operator server in between. This is the engine's second outbound connection; it sends only the quote. No game code changed.
 - **0.9.16:** the audit report lists a link to the independent check of the live quote (Phala TEE Attestation Explorer, via the page in `TEE_ATTEST_LINKS`), with the current composeHash in the address so each deployment has its own address. The engine only prints the link; it makes no connection there. No game code changed.

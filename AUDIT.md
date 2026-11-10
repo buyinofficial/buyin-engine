@@ -109,3 +109,7 @@ Security issues: open a private security advisory on this repository. Fixes are 
 
 1. `src/outbox.js` — lines of the record chain (finished hands only) to `TEE_CONSOLE_URL` in the measured compose.
 2. `src/explorer.js` — at start, its own TDX quote (public) to the Phala TEE Attestation Explorer (https://proof.t16z.com), so the audit report can link an independent verification of the running engine. Nothing else is sent.
+
+### Public table record (0.9.19)
+
+`GET /records/table/<tableId>` and `/records/table/<tableId>.html` list every finished hand of one table from the TEE's own hash chain: seat numbers, chips at the start and end of each hand, rake, chain line and receipt link. No cards, deck, seed or member numbers. A player (or an AI they ask) compares the game record the operator showed them with this page, value by value.

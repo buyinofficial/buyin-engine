@@ -105,3 +105,21 @@ test('기록 보관소: 공개 영수증은 카드 없이 위치·해시만, 내
     const again = new RecordStore(dir);
     assert.deepStrictEqual(again.handsOfKey(C.fingerprint(a)), ['h2', 'h1']);
 });
+
+test('기록 보관소: 테이블 공개 기록은 그 테이블의 끝난 판만, 카드·회원 번호 없이 [TABLE_RECORD_2026_11_10]', () => {
+    const store = new RecordStore(tmpDir());
+    const rec = (handId, tableId) => ({ v: 1, handId, tableId, endedAt: 1, engine: { sigFp: 'x' }, deck: ['As'], seed: 'secretseed',
+        seats: [{ seat: 0, odcId: '501', keys: null }, { seat: 3, odcId: '502', keys: null }],
+        stacksStart: { 0: 10, 3: 10 }, stacksEnd: { 0: 9.5, 3: 10.45 }, result: { type: 'showdown', rake: { perSeat: [{ seat: 0, fee: 0.025 }, { seat: 3, fee: 0.025 }] } } });
+    store.appendHand(rec('tA.1', 'tA'), 's1');
+    store.appendHand(rec('tAB.1', 'tAB'), 's2');
+    store.appendHand(rec('tA.2', 'tA'), 's3');
+    const t = store.tableResults('tA');
+    assert.deepStrictEqual(t.map((h) => h.handId), ['tA.1', 'tA.2']);
+    assert.deepStrictEqual(t.map((h) => h.handNo), [1, 2]);
+    assert.deepStrictEqual(t[0].seats, [{ seat: 0, start: 10, end: 9.5, rake: 0.025 }, { seat: 3, start: 10, end: 10.45, rake: 0.025 }]);
+    const txt = JSON.stringify(t);
+    assert.ok(!txt.includes('"As"') && !txt.includes('secretseed') && !txt.includes('501'), 'no cards, seed or member numbers');
+    assert.strictEqual(t[0].recordHash, store.receipt('tA.1').recordHash);
+    assert.deepStrictEqual(store.tableResults('nope'), []);
+});

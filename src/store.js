@@ -71,6 +71,23 @@ function bodyOf(entry) {
     return body;
 }
 
+/** 사슬 한 줄(끝난 판)의 결과 — 좌석·시작/끝 스택·레이크·기록 해시. 카드·덱·시드 없음 */
+function resultOf(e) {
+    const r = e.record;
+    const rake = (r.result && r.result.rake && r.result.rake.perSeat) || [];
+    return {
+        i: e.i, handId: String(r.handId), tableId: r.tableId, endedAt: r.endedAt,
+        type: r.result && r.result.type,
+        seats: (r.seats || []).map((s) => ({
+            seat: s.seat, odcId: String(s.odcId),
+            start: r.stacksStart[s.seat], end: r.stacksEnd[s.seat],
+            rake: (rake.find((f) => f.seat === s.seat) || {}).fee || 0,
+        })),
+        recordHash: C.sha256hex(C.stableStringify(r)),
+        engineSigFp: r.engine && r.engine.sigFp,
+    };
+}
+
 class RecordStore {
     /** @param {string} dir 보관 폴더 (TEE 데이터 디스크) */
     constructor(dir) {
@@ -87,6 +104,8 @@ class RecordStore {
             range: q('SELECT line FROM chain WHERE i >= ? ORDER BY i LIMIT ?'),
             hands: q("SELECT i, line FROM chain WHERE kind = 'hand' AND i >= ? ORDER BY i LIMIT ?"),
             hand: q('SELECT line FROM chain WHERE hand_id = ?'),
+            // [TABLE_RECORD_2026_11_10] 판 번호는 '<tableId>.<판 번호>' — '.' 다음 글자 '/' 앞까지가 그 테이블의 판이다
+            ofTable: q("SELECT i, line FROM chain WHERE kind = 'hand' AND hand_id >= ? AND hand_id < ? ORDER BY i LIMIT ?"),
             keys: q("SELECT line FROM chain WHERE kind = 'engine-key' ORDER BY i"),
             ofKey: q('SELECT hand_id FROM seat_keys WHERE sig_fp = ? ORDER BY i DESC LIMIT ?'),
             handCount: q("SELECT COUNT(*) AS n FROM chain WHERE kind = 'hand'"),
@@ -213,23 +232,20 @@ class RecordStore {
      */
     results(from, limit) {
         const rows = this.sql.hands.all(Math.max(from, this.first), limit);
-        const entries = rows.map((row) => {
-            const e = JSON.parse(row.line);
-            const r = e.record;
-            const rake = (r.result && r.result.rake && r.result.rake.perSeat) || [];
-            return {
-                i: e.i, handId: String(r.handId), tableId: r.tableId, endedAt: r.endedAt,
-                type: r.result && r.result.type,
-                seats: (r.seats || []).map((s) => ({
-                    seat: s.seat, odcId: String(s.odcId),
-                    start: r.stacksStart[s.seat], end: r.stacksEnd[s.seat],
-                    rake: (rake.find((f) => f.seat === s.seat) || {}).fee || 0,
-                })),
-                recordHash: C.sha256hex(C.stableStringify(r)),
-                engineSigFp: r.engine && r.engine.sigFp,
-            };
-        });
+        const entries = rows.map((row) => resultOf(JSON.parse(row.line)));
         return { entries, next: rows.length === limit ? rows[rows.length - 1].i + 1 : this.count };
+    }
+
+    /**
+     * [TABLE_RECORD_2026_11_10] 한 테이블의 끝난 판 결과 — 누구나 보는 공개 기록(GET /records/table/<id>).
+     *   results() 와 같은 모양에서 회원 번호(odcId)를 뺀다 — 좌석 번호·칩·레이크·해시뿐, 카드·덱·시드·회원 번호 없음.
+     */
+    tableResults(tableId, limit = 1000) {
+        const t = String(tableId);
+        return this.sql.ofTable.all(t + '.', t + '/', limit).map((row) => {
+            const r = resultOf(JSON.parse(row.line));
+            return { ...r, handNo: Number(r.handId.slice(t.length + 1)) || null, seats: r.seats.map(({ odcId, ...s }) => s) };
+        });
     }
 
     /** 공개 영수증 — 카드 없이 사슬 위치와 해시만 */
