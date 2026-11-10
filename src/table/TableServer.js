@@ -593,6 +593,12 @@ class TableServer {
     }
 
     /** 주기 정리 — 시간이 끝난 방, 오래 빈 방 */
+    /** [TABLE_RECORD_2026_11_10] 이 테이블이 아직 열려 있나 — 열린 테이블의 기록은 밖에 내보내지 않는다 */
+    isOpen(tableId) {
+        for (const r of this.rooms.values()) if (r.tableId === String(tableId)) return true;
+        return false;
+    }
+
     sweep() {
         const now = this.clock.now();
         for (const room of [...this.rooms.values()]) {

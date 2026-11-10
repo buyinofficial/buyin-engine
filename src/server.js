@@ -156,7 +156,9 @@ function handleGet(req, res) {
     if (tb) {
         if (!LIMIT.table.take()) return send(res, 429, { ok: false, error: 'too many requests' }, PUBLIC_HEADERS);
         if (!store) return send(res, 404, { ok: false, error: 'no record store' }, PUBLIC_HEADERS);
-        const report = tableReport(store, tb[1]);   // 판마다 src/verify.js 로 덱·재생 검증(결과만 내보낸다)
+        // 진행 중인 테이블은 없는 테이블과 똑같이 답한다 — 밖에서 지금 열린 게임을 알아낼 수 없게(닫힌 뒤에 열린다)
+        const report = tables && tables.isOpen(tb[1]) ? { hands: [] } : tableReport(store, tb[1]);
+        if (report.hands.length === 0) return send(res, 404, { ok: false, error: 'no finished table with this id — a table record opens after the table closes' }, PUBLIC_HEADERS);   // 판마다 src/verify.js 로 덱·재생 검증(결과만 내보낸다)
         if (!tb[2]) return send(res, 200, { ok: true, tableId: tb[1], engine: engineId(), ...report, head: store.headInfo() }, PUBLIC_HEADERS);
         const base = `https://${String(req.headers.host || '').replace(/[^\w.:-]/g, '')}`;
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', ...PUBLIC_HEADERS });
@@ -165,6 +167,8 @@ function handleGet(req, res) {
     const rc = p.match(/^\/records\/receipt\/([A-Za-z0-9_.:-]{1,128})$/);
     if (rc) {
         if (!store) return send(res, 404, { ok: false, error: 'no record store' }, PUBLIC_HEADERS);
+        // [TABLE_RECORD_2026_11_10] 열린 테이블의 판 영수증도 닫힌 뒤에 — 없는 판과 똑같이 404
+        if (tables && tables.isOpen(String(rc[1]).split('.')[0])) return send(res, 404, { ok: false, error: 'not found' }, PUBLIC_HEADERS);
         const r = store.receipt(rc[1]);
         return r ? send(res, 200, { ok: true, receipt: r, head: store.headInfo() }, PUBLIC_HEADERS) : send(res, 404, { ok: false, error: 'not found' }, PUBLIC_HEADERS);
     }

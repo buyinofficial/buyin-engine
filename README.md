@@ -119,6 +119,7 @@ All rights reserved (see `LICENSE`). The code is published for inspection and ve
 ## Status
 
 - **Stage 1–2:** the engine runs as a separate process (`mode: "dev"`). The cryptographic guarantees above hold, but there is no hardware attestation.
+- **0.9.22:** a table's record and its hands' receipts open only after the table closes; while it is open both answer exactly like an unknown id (404), so nobody outside can tell which games are in play. No game code changed.
 - **0.9.21:** the public table record also lists the table's tips in chain order (seat to seat, amount, signed by the sender), so chip changes between hands are explained on the same page. No game code changed.
 - **0.9.20:** the public table record also re-checks every hand inside the engine with `src/verify.js` (`src/tableRecord.js`): engine signature, seed = the commitment announced before the hand, deck = shuffle of seed + the players' signed random values, card commitments, and a replay of every action giving the same cards, board, result and chips. Only PASS/FAIL and the reason are shown — no cards, deck or seed. No game code changed.
 - **0.9.19:** public table record `GET /records/table/<tableId>` (JSON) and `.html` (for AI web tools): every finished hand of the table with seat numbers, chips at start and end, rake, chain position and receipt — no cards, deck, seed or member numbers. A player compares the game record the operator showed them with this page. No game code changed.

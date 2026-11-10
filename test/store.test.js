@@ -158,4 +158,13 @@ test('테이블 공개 기록: 실제 판은 엔진 안 검증(src/verify.js)을
     const h3 = tableRecordHtml(tableId, r3, { name: 'e', version: 't', commit: 'c' }, 'https://e');
     assert.ok(h3.includes('seat 0 &rarr; seat 1: 0.200') && h3.includes('Tips: 1'));
     assert.ok(!h3.includes('"a"') && !h3.includes('fromOdc'), 'no member numbers');
+    assert.ok(!/"kty"|"d":|privateKey|TOKEN/i.test(JSON.stringify(r3) + h3), 'no keys or tokens');
+});
+
+test('열린 테이블은 밖에서 알 수 없다 — isOpen 은 지금 열린 방의 테이블만 [TABLE_RECORD_2026_11_10]', () => {
+    const { TableServer } = require('../src/table/TableServer');
+    const ts = Object.create(TableServer.prototype);
+    ts.rooms = new Map([[7, { tableId: 'tOpen' }]]);
+    assert.strictEqual(ts.isOpen('tOpen'), true);
+    assert.strictEqual(ts.isOpen('tClosed'), false);
 });
