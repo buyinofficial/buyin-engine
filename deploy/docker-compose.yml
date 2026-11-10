@@ -1,4 +1,5 @@
 # Phala Cloud (dstack, Intel TDX) deployment of the BUY-IN engine.
+# OS image: production dstack-0.5.12 (no SSH debug shell) — must equal deploy/tee-os.txt.
 # The image is pinned by digest: the image GitHub Actions built from this repository (see the GitHub Release of the version).
 # The build is reproducible — rebuilding the tag gives the same digest (README → "Rebuild the image yourself").
 # This file's hash is measured into the TEE (compose-hash in RTMR3), so anyone can recompute it and compare.
