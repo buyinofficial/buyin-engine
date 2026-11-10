@@ -119,6 +119,7 @@ All rights reserved (see `LICENSE`). The code is published for inspection and ve
 ## Status
 
 - **Stage 1–2:** the engine runs as a separate process (`mode: "dev"`). The cryptographic guarantees above hold, but there is no hardware attestation.
+- **0.9.20:** the public table record also re-checks every hand inside the engine with `src/verify.js` (`src/tableRecord.js`): engine signature, seed = the commitment announced before the hand, deck = shuffle of seed + the players' signed random values, card commitments, and a replay of every action giving the same cards, board, result and chips. Only PASS/FAIL and the reason are shown — no cards, deck or seed. No game code changed.
 - **0.9.19:** public table record `GET /records/table/<tableId>` (JSON) and `.html` (for AI web tools): every finished hand of the table with seat numbers, chips at start and end, rake, chain position and receipt — no cards, deck, seed or member numbers. A player compares the game record the operator showed them with this page. No game code changed.
 - **0.9.18:** `/ai.html` makes every address a real link, so AI web tools follow it instead of retyping long hashes. No game code changed.
 - **0.9.17:** at start the engine submits its own quote (public data) to the Phala TEE Attestation Explorer (`src/explorer.js`) and the audit report links the explorer report directly — no operator server in between. This is the engine's second outbound connection; it sends only the quote. No game code changed.

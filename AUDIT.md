@@ -113,3 +113,5 @@ Security issues: open a private security advisory on this repository. Fixes are 
 ### Public table record (0.9.19)
 
 `GET /records/table/<tableId>` and `/records/table/<tableId>.html` list every finished hand of one table from the TEE's own hash chain: seat numbers, chips at the start and end of each hand, rake, chain line and receipt link. No cards, deck, seed or member numbers. A player (or an AI they ask) compares the game record the operator showed them with this page, value by value.
+
+Since 0.9.20 the table record also shows, per hand, the result of `verifyRecord` (`src/verify.js`) run inside the engine when the page is served: engine signature, seed = pre-announced seedCommit, deck = shuffle(seed + players' signed random values), deckCommit, and a full replay (`src/HandCore.js`). PASS/FAIL only — cards, deck and seed are not published.

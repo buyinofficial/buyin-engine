@@ -123,3 +123,31 @@ test('기록 보관소: 테이블 공개 기록은 그 테이블의 끝난 판�
     assert.strictEqual(t[0].recordHash, store.receipt('tA.1').recordHash);
     assert.deepStrictEqual(store.tableResults('nope'), []);
 });
+
+test('테이블 공개 기록: 실제 판은 엔진 안 검증(src/verify.js)을 통과하고, 고친 기록은 실패로 나온다 — 카드·씨앗은 안 나간다 [TABLE_RECORD_2026_11_10]', () => {
+    const { tableReport, tableRecordHtml } = require('../src/tableRecord');
+    const store = new RecordStore(tmpDir());
+    const engine = new Engine({ mode: 'dev', allowUnsigned: true, onRecord: (rec, sig) => store.appendHand(rec, sig) });
+    store.appendEngineKey(engine.call('info'));
+    const { start, act } = playFoldHand(engine);
+    assert.ok(act.ok, act.error);
+    const tableId = start.handId.split('.')[0];
+    const rep = tableReport(store, tableId);
+    assert.strictEqual(rep.hands.length, 1);
+    assert.ok(rep.hands[0].check.ok, JSON.stringify(rep.hands[0].check.errors));
+    assert.ok(rep.allOk);
+    const line = store.getHand(start.handId);
+    const html = tableRecordHtml(tableId, rep, { name: 'buyin-engine', version: 't', commit: 'c' }, 'https://e');
+    assert.ok(html.includes('PASS') && html.includes('all passed: <b>YES</b>'));
+    assert.ok(!html.includes(line.record.seed), 'seed not shown');
+    assert.ok(!line.record.deck.some((c) => html.includes(`"${c}"`) || html.includes(` ${c} `)), 'deck not shown');
+    // 같은 판을 덱만 바꿔 다른 보관소에 넣으면 검증 실패
+    const bad = new RecordStore(tmpDir());
+    bad.appendEngineKey(engine.call('info'));
+    const rec = JSON.parse(JSON.stringify(line.record)); rec.deck = [...rec.deck].reverse();
+    bad.appendHand(rec, line.sig);
+    const r2 = tableReport(bad, tableId);
+    assert.strictEqual(r2.hands[0].check.ok, false);
+    assert.ok(r2.hands[0].check.errors.some((e) => /signature|deck/.test(e)));
+    assert.strictEqual(r2.allOk, false);
+});

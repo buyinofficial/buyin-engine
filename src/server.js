@@ -39,6 +39,7 @@ const { tableRoutes } = require('./table/http');
 const { RateLimiter } = require('./limits');
 const { Outbox } = require('./outbox');
 const { consoleRoutes } = require('./consoleApi');
+const { tableReport, tableRecordHtml } = require('./tableRecord');   // [TABLE_RECORD_2026_11_10]
 
 // 요청 폭주 막기(서비스 거부 방지) — 넘치면 429
 const LIMIT = {
@@ -108,33 +109,6 @@ function engineId() {
     return { name: i.name, version: i.version, commit: i.commit, sigFp: i.keys && i.keys.sigFp };
 }
 
-/** [TABLE_RECORD_2026_11_10] 테이블 공개 기록 HTML — 주소는 진짜 링크(/ai.html 과 같은 까닭) */
-function tableRecordHtml(tableId, hands, base) {
-    const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const n3 = (v) => (Math.round(Number(v || 0) * 1000) / 1000).toFixed(3);
-    const net = (s) => { const d = Math.round((Number(s.end) - Number(s.start)) * 1000) / 1000; return (d > 0 ? '+' : d < 0 ? '-' : '') + Math.abs(d).toFixed(3); };
-    const e = engineId();
-    const link = (u) => `<a href="${esc(u)}">${esc(u)}</a>`;
-    const rows = hands.map((h) => `<tr><td>${h.handNo ?? ''}</td><td>${esc(h.handId)}</td><td>${new Date(h.endedAt).toISOString().replace('.000', '')}</td><td>#${h.i}</td><td>${esc(h.type || '')}</td><td>`
-        + h.seats.map((s) => `seat ${s.seat}: ${n3(s.start)} &rarr; ${n3(s.end)} (${net(s)}), rake ${n3(s.rake)}`).join('<br>') + `</td><td>${link(`${base}/records/receipt/${h.handId}`)}</td></tr>`).join('\n');
-    const seats = [...new Set(hands.flatMap((h) => h.seats.map((s) => s.seat)))].sort((a, b) => a - b).map((seat) => {
-        const mine = hands.filter((h) => h.seats.some((s) => s.seat === seat));
-        const f = mine[0].seats.find((s) => s.seat === seat), l = mine[mine.length - 1].seats.find((s) => s.seat === seat);
-        return `<li>seat ${seat}: ${mine.length} hand(s), first start ${n3(f.start)}, last end ${n3(l.end)}</li>`;
-    }).join('');
-    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">`
-        + `<title>BUY-IN table record ${esc(tableId)} — from inside the TEE</title>`
-        + `<style>body{font:14px/1.55 ui-monospace,Consolas,monospace;max-width:1100px;margin:24px auto;padding:0 16px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #999;padding:4px 6px;text-align:left;vertical-align:top}</style></head><body>`
-        + `<h1>BUY-IN table record — produced inside the TEE</h1>`
-        + `<p>Engine: ${esc(e.name)} ${esc(e.version)} · Source commit ${esc(e.commit)} · engine key ${esc(e.sigFp || '')}<br>`
-        + `This page is served by the engine itself. Which public source this engine is, and its hardware attestation: ${link(base + '/ai.html')}</p>`
-        + `<p>Table: <b>${esc(tableId)}</b> · finished hands recorded: <b>${hands.length}</b> · amounts in USDT · chips per seat at the start and end of each hand.<br>`
-        + `Cards, deck, seed and member numbers are not shown on this page. Only the players of a hand can read its cards (signed with their own key, at ${link(base + '/table/verify.html')}).<br>`
-        + `Each hand is a line in this engine's hash chain; the receipt link gives its chain position and record hash. A finished hand line cannot be changed (src/store.js).</p>`
-        + `<table><thead><tr><th>Hand no.</th><th>Hand ID</th><th>Ended (UTC)</th><th>Chain line</th><th>Result</th><th>Seat: start &rarr; end (net), rake</th><th>Receipt</th></tr></thead><tbody>\n${rows}\n</tbody></table>`
-        + `<h2>Per seat</h2><ul>${seats || '<li>no finished hands</li>'}</ul></body></html>`;
-}
-
 function info() {
     const i = engine.call('info');
     const out = { ...i, review: { files: MANIFEST.count, treeHash: MANIFEST.treeHash } };
@@ -176,17 +150,17 @@ function handleGet(req, res) {
     }
     if (p === '/records/head') return store ? send(res, 200, { ok: true, ...store.headInfo(), storage: store.storage(), retentionDays: RETENTION_DAYS }, PUBLIC_HEADERS) : send(res, 404, { ok: false, error: 'no record store' }, PUBLIC_HEADERS);
     if (p === '/records/keys') return store ? send(res, 200, { ok: true, keys: store.engineKeys() }, PUBLIC_HEADERS) : send(res, 404, { ok: false, error: 'no record store' }, PUBLIC_HEADERS);
-    // [TABLE_RECORD_2026_11_10] 한 테이블의 끝난 판 결과 — 좌석 번호·시작/끝 칩·레이크·사슬 위치·기록 해시(카드·덱·회원 번호 없음).
+    // [TABLE_RECORD_2026_11_10] 한 테이블의 끝난 판 결과 — 좌석 번호·시작/끝 칩·레이크·사슬 위치·기록 해시 + 판마다 덱·재생 검증 결과(카드·덱·씨앗·회원 번호 없음).
     //   회원이 운영 서버에서 받은 자기 게임 기록을 사람·AI 가 이 TEE 글과 글자 그대로 대조한다(.html 은 AI 웹 열람기용).
     const tb = p.match(/^\/records\/table\/([A-Za-z0-9_-]{1,40})(\.html)?$/);
     if (tb) {
         if (!LIMIT.table.take()) return send(res, 429, { ok: false, error: 'too many requests' }, PUBLIC_HEADERS);
         if (!store) return send(res, 404, { ok: false, error: 'no record store' }, PUBLIC_HEADERS);
-        const hands = store.tableResults(tb[1]);
-        if (!tb[2]) return send(res, 200, { ok: true, tableId: tb[1], engine: engineId(), hands, head: store.headInfo() }, PUBLIC_HEADERS);
+        const report = tableReport(store, tb[1]);   // 판마다 src/verify.js 로 덱·재생 검증(결과만 내보낸다)
+        if (!tb[2]) return send(res, 200, { ok: true, tableId: tb[1], engine: engineId(), ...report, head: store.headInfo() }, PUBLIC_HEADERS);
         const base = `https://${String(req.headers.host || '').replace(/[^\w.:-]/g, '')}`;
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', ...PUBLIC_HEADERS });
-        return res.end(tableRecordHtml(tb[1], hands, base));
+        return res.end(tableRecordHtml(tb[1], report, engineId(), base));
     }
     const rc = p.match(/^\/records\/receipt\/([A-Za-z0-9_.:-]{1,128})$/);
     if (rc) {
