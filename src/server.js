@@ -53,6 +53,8 @@ const HOST = process.env.TEE_HOST || '127.0.0.1';
 const TOKEN = process.env.TEE_RPC_TOKEN || '';
 const RECORD_DIR = process.env.TEE_RECORD_DIR || '';
 const CONSOLE_URL = process.env.TEE_CONSOLE_URL || '';
+/** [ATTEST_LINK_2026_11_10] 이 엔진의 증명서를 Phala 탐색기에 올려 독립 확인 주소를 보여 주는 페이지(공개, 배포 설정에 있다). 엔진은 이 주소를 글로 적기만 하고 연결하지 않는다 */
+const ATTEST_LINKS = process.env.TEE_ATTEST_LINKS || '';
 const RETENTION_DAYS = Math.max(1, Math.floor(Number(process.env.TEE_RETENTION_DAYS) || 7));
 const CONSOLE_KEY = process.env.TEE_CONSOLE_KEY ? C.importPublicJwk(JSON.parse(process.env.TEE_CONSOLE_KEY)) : null;
 
@@ -116,7 +118,7 @@ function handleGet(req, res) {
         // 사람·AI 가 읽는 감사 보고서 (평문 markdown) — 값은 /info 와 같다.
         // /ai.html 은 같은 글을 HTML 로 감싼 것 — 일부 AI 웹 열람기는 text/markdown 을 읽지 못한다.
         const base = `https://${String(req.headers.host || '').replace(/[^\w.:-]/g, '')}`;
-        const text = auditReport(engine.call('info'), store ? store.headInfo() : null, store ? store.engineKeys().length : 0, base, { tableMode: !!tables, review: { files: MANIFEST.count, treeHash: MANIFEST.treeHash } });
+        const text = auditReport(engine.call('info'), store ? store.headInfo() : null, store ? store.engineKeys().length : 0, base, { tableMode: !!tables, review: { files: MANIFEST.count, treeHash: MANIFEST.treeHash }, attestLinks: ATTEST_LINKS });
         if (p === '/ai.html') {
             const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">`

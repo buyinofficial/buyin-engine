@@ -119,6 +119,7 @@ All rights reserved (see `LICENSE`). The code is published for inspection and ve
 ## Status
 
 - **Stage 1–2:** the engine runs as a separate process (`mode: "dev"`). The cryptographic guarantees above hold, but there is no hardware attestation.
+- **0.9.16:** the audit report lists a link to the independent check of the live quote (Phala TEE Attestation Explorer, via the page in `TEE_ATTEST_LINKS`), with the current composeHash in the address so each deployment has its own address. The engine only prints the link; it makes no connection there. No game code changed.
 - **0.9.15:** the engine runs on the production OS image `dstack-0.5.12` (no SSH debug shell); `deploy/tee-os.txt` at this commit declares it. No game code changed.
 - **0.9.14:** the audit report is also served as HTML at `/ai.html` and the file list as JSON at `/review/manifest.json` — some AI web browsers cannot read `text/markdown` or `text/plain`, so they could not compare the live values. Same content as `/` and `/review/manifest`. No game code changed.
 - **0.9.13:** the font that draws card ranks and suits is now inside the image (`src/public/table/font/`, DejaVu Sans with its license; CSP `font-src 'self'`) — before, it came from the operator's resource server, so a changed font file could have changed how a card looks. The other design files (images, sounds, videos) stay on the resource server; their SHA-256 are published in `resources.sha256` and `tools/check-resources.js` compares them with what the server sends. No game code changed.

@@ -65,6 +65,8 @@ function auditReport(info, records, keyCount, base, opts = {}) {
     L.push(`| Source commit | ${info.commit ? `\`${info.commit}\` — ${REPO}/tree/${info.commit}` : `not reported (tag \`v${info.version}\`)`} |`);
     L.push(`| Image, pinned by digest in the measured compose | ${image ? '`' + image + '`' : 'n/a'} |`);
     L.push(`| composeHash (measured into RTMR3) | ${a && a.composeHash ? '`' + a.composeHash + '`' : 'n/a'} |`);
+    // [ATTEST_LINK_2026_11_10] Phala 탐색기의 독립 확인 — 주소 끝에 지금 composeHash 를 붙여 배포마다 주소가 달라진다(웹 도구의 옛 사본 방지)
+    if (opts.attestLinks && a && a.composeHash) L.push(`| Independent check of this quote (Phala TEE Attestation Explorer) | ${opts.attestLinks}${opts.attestLinks.includes('?') ? '&' : '?'}c=${a.composeHash} — the explorer report must say VERIFIED and its MRCONFIG must be 0x01 followed by the composeHash above |`);
     L.push(`| SHA-256(appCompose), recomputed here | ${recomputed ? '`' + recomputed + '`' + (recomputed === a.composeHash ? ' — matches' : ' — DOES NOT MATCH') : 'n/a'} |`);
     L.push(`| Quote report_data = SHA-256(engine public keys) | ${a ? (binding.length ? 'FAILED: ' + binding.join('; ') : '`' + a.reportData + '` — matches: the engine keys were created inside this TEE') : 'no attestation (not in a TEE)'} |`);
     L.push(`| Table mode | ${tableMode ? 'on — every hand runs here; the operator has no route into the engine' : 'off'} |`);
