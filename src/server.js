@@ -122,9 +122,11 @@ function handleGet(req, res) {
         const text = auditReport(engine.call('info'), store ? store.headInfo() : null, store ? store.engineKeys().length : 0, base, { tableMode: !!tables, review: { files: MANIFEST.count, treeHash: MANIFEST.treeHash }, attestLinks: ATTEST_LINKS, explorerReport });
         if (p === '/ai.html') {
             const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            // 주소는 진짜 링크로 — AI 웹 도구가 64자리 해시가 든 주소를 옮겨 적다 틀리지 않고 그대로 따라가게
+            const linkify = (h) => h.replace(/https:\/\/[^\s)`|<>"']+/g, (u) => { const clean = u.replace(/[.,;]+$/, ''); return `<a href="${clean}">${clean}</a>${u.slice(clean.length)}`; });
             const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">`
                 + `<title>BUY-IN engine — audit report from inside the TEE</title></head>`
-                + `<body><pre style="white-space:pre-wrap;word-break:break-word;font:14px/1.55 ui-monospace,Consolas,monospace;max-width:960px;margin:24px auto;padding:0 16px">${esc(text)}</pre></body></html>`;
+                + `<body><pre style="white-space:pre-wrap;word-break:break-word;font:14px/1.55 ui-monospace,Consolas,monospace;max-width:960px;margin:24px auto;padding:0 16px">${linkify(esc(text))}</pre></body></html>`;
             res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', ...PUBLIC_HEADERS });
             return res.end(html);
         }
