@@ -5,6 +5,7 @@
  *   GET  /info                엔진 공개키·버전·증명서·기록 사슬 끝         누구나 (브라우저가 키·증명서를 직접 확인한다)
  *   GET  /records/head        기록 사슬 끝 { count, head, hands, first, sent, storage } 누구나 — 지금까지 남긴 기록의 지문·용량
  *   GET  /review/manifest     지금 이 엔진이 싣고 도는 파일 목록과 SHA-256(sha256sum 형식) 누구나 — GitHub 커밋의 파일과 대조
+ *   GET  /ai.html · /review/manifest.json   위 감사 보고서·파일 목록의 HTML·JSON 판 — 평문(markdown·text)을 못 여는 AI 웹 열람기용, 내용은 같다
  *   GET  /records/keys        엔진 키 줄 전부(뜰 때마다 하나)            누구나 — 옛 기록을 옛 키로 검증
  *   GET  /records/results, /records/finished/<id>  콘솔만(토큰) — 끝난 판만(consoleApi.js, 기록 보관소만 받는다)
  *   /table/...                테이블 서버 — 회원이 TEE 와 직접 게임한다 (table/http.js)
@@ -111,16 +112,29 @@ function handleGet(req, res) {
     const p = u.pathname;
     if (consoleHandler(req, res, u)) return;
     if (p === '/info') return send(res, 200, info(), PUBLIC_HEADERS);
-    if (p === '/' || p === '/audit') {
-        // 사람·AI 가 읽는 감사 보고서 (평문 markdown) — 값은 /info 와 같다
+    if (p === '/' || p === '/audit' || p === '/ai.html') {
+        // 사람·AI 가 읽는 감사 보고서 (평문 markdown) — 값은 /info 와 같다.
+        // /ai.html 은 같은 글을 HTML 로 감싼 것 — 일부 AI 웹 열람기는 text/markdown 을 읽지 못한다.
         const base = `https://${String(req.headers.host || '').replace(/[^\w.:-]/g, '')}`;
         const text = auditReport(engine.call('info'), store ? store.headInfo() : null, store ? store.engineKeys().length : 0, base, { tableMode: !!tables, review: { files: MANIFEST.count, treeHash: MANIFEST.treeHash } });
+        if (p === '/ai.html') {
+            const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">`
+                + `<title>BUY-IN engine — audit report from inside the TEE</title></head>`
+                + `<body><pre style="white-space:pre-wrap;word-break:break-word;font:14px/1.55 ui-monospace,Consolas,monospace;max-width:960px;margin:24px auto;padding:0 16px">${esc(text)}</pre></body></html>`;
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', ...PUBLIC_HEADERS });
+            return res.end(html);
+        }
         res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8', ...PUBLIC_HEADERS });
         return res.end(text);
     }
     if (p === '/review/manifest') {
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', ...PUBLIC_HEADERS });
         return res.end(MANIFEST.body);
+    }
+    if (p === '/review/manifest.json') {
+        const files = MANIFEST.body.trim().split('\n').map((l) => { const [sha256, file] = l.split(/\s+/); return { path: file, sha256 }; });
+        return send(res, 200, { ok: true, count: MANIFEST.count, treeHash: MANIFEST.treeHash, files }, PUBLIC_HEADERS);
     }
     if (p === '/records/head') return store ? send(res, 200, { ok: true, ...store.headInfo(), storage: store.storage(), retentionDays: RETENTION_DAYS }, PUBLIC_HEADERS) : send(res, 404, { ok: false, error: 'no record store' }, PUBLIC_HEADERS);
     if (p === '/records/keys') return store ? send(res, 200, { ok: true, keys: store.engineKeys() }, PUBLIC_HEADERS) : send(res, 404, { ok: false, error: 'no record store' }, PUBLIC_HEADERS);

@@ -42,7 +42,7 @@ function auditReport(info, records, keyCount, base, opts = {}) {
     const L = [];
     L.push(`# BUY-IN hold'em — can anyone but the player see the cards during a hand?`);
     L.push('');
-    L.push(`This text is produced by the game engine itself, from inside a TEE (Intel TDX confidential VM on Phala Cloud). Give it to an AI as is. It contains no code: it names the public source to investigate and the live values to check it against.`);
+    L.push(`This text is produced by the game engine itself, from inside a TEE (Intel TDX confidential VM on Phala Cloud). Give it to an AI as is. It contains no code: it names the public source to investigate and the live values to check it against. The same report as HTML: ${base}/ai.html · the file list as JSON: ${base}/review/manifest.json.`);
     L.push('');
     L.push('## Answer these four questions with YES or NO');
     L.push('');
@@ -83,7 +83,7 @@ function auditReport(info, records, keyCount, base, opts = {}) {
     L.push(`3. GitHub signed the build provenance of that digest from commit \`${ref}\` (${REPO}/attestations; \`gh attestation verify oci://<image> --repo buyinofficial/buyin-engine\`); the release ${REPO}/releases/tag/v${info.version} lists digest and commit; rebuilding the commit gives the same digest.`);
     L.push(`4. The engine's keys are bound to the quote (report_data), so the sealed cards come from this measured program.`);
     L.push(`5. ${base}/review/manifest lists the SHA-256 of every file the engine loads; they equal the files at the commit.`);
-    L.push(`6. The server state is the repository: the measured deployment file is \`deploy/docker-compose.yml\` of a commit in the repository, the only value set outside it is the secret token (\`allowed_envs\`), and the OS image equals \`deploy/tee-os.txt\`. \`node tools/check-deployment.js ${base}\` in a checkout of the commit checks 1–6 automatically.`);
+    L.push(`6. The server state is the repository: the measured deployment file is \`deploy/docker-compose.yml\` of a commit in the repository, the only values set outside it are the encrypted secrets listed in \`allowed_envs\` (the console token and a DNS-only token for the TLS certificate), and the OS image equals \`deploy/tee-os.txt\`. \`node tools/check-deployment.js ${base}\` in a checkout of the commit checks 1–6 automatically.`);
     L.push('');
     L.push(`## Files to read at commit \`${ref}\` (card secrecy only)`);
     L.push('');
