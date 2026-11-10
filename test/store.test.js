@@ -150,4 +150,12 @@ test('테이블 공개 기록: 실제 판은 엔진 안 검증(src/verify.js)을
     assert.strictEqual(r2.hands[0].check.ok, false);
     assert.ok(r2.hands[0].check.errors.some((e) => /signature|deck/.test(e)));
     assert.strictEqual(r2.allOk, false);
+    // 팁 줄 — 그 테이블 것만, 회원 번호 대신 자리 번호
+    store.appendEvent('tip', { tableId, fromOdc: 'a', toOdc: 'b', toSeat: 1, n: 1, type: 'flower', amount: 0.2, sig: 'x' });
+    store.appendEvent('tip', { tableId: 'other', fromOdc: 'a', toOdc: 'b', toSeat: 1, n: 1, type: 'flower', amount: 0.2, sig: 'x' });
+    const r3 = tableReport(store, tableId);
+    assert.deepStrictEqual(r3.tips.map((t) => [t.fromSeat, t.toSeat, t.amount, t.signed]), [[0, 1, 0.2, true]]);
+    const h3 = tableRecordHtml(tableId, r3, { name: 'e', version: 't', commit: 'c' }, 'https://e');
+    assert.ok(h3.includes('seat 0 &rarr; seat 1: 0.200') && h3.includes('Tips: 1'));
+    assert.ok(!h3.includes('"a"') && !h3.includes('fromOdc'), 'no member numbers');
 });

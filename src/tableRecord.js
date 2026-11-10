@@ -17,7 +17,19 @@ function tableReport(store, tableId) {
         const v = line ? verifyRecord(line.record, line.sig, keyOf.get(h.engineSigFp)) : { ok: false, errors: ['record not found'] };
         return { ...h, check: { ok: v.ok, errors: v.errors } };
     });
-    return { hands, allOk: hands.length > 0 && hands.every((h) => h.check.ok) };
+    // 판과 판 사이의 팁 — 보낸 사람이 자기 키로 서명한 줄. 회원 번호 대신 그 직전 판의 자리 번호로 보여 준다
+    const seatOf = (odc, i) => {
+        let seat = null;
+        for (const h of hands) {
+            if (h.i > i) break;
+            const line = store.getHand(h.handId);
+            const s = line && (line.record.seats || []).find((x) => String(x.odcId) === String(odc));
+            if (s) seat = s.seat;
+        }
+        return seat;
+    };
+    const tips = store.tableTips(tableId).map((e) => ({ i: e.i, at: e.at, fromSeat: seatOf(e.fromOdc, e.i), toSeat: e.toSeat, amount: e.amount, type: e.type, signed: !!e.sig }));
+    return { hands, tips, allOk: hands.length > 0 && hands.every((h) => h.check.ok) };
 }
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -28,9 +40,12 @@ const link = (u) => `<a href="${esc(u)}">${esc(u)}</a>`;
 /** AI 웹 열람기가 읽는 HTML — 주소는 진짜 링크 */
 function tableRecordHtml(tableId, report, engine, base) {
     const { hands, allOk } = report;
-    const rows = hands.map((h) => `<tr><td>${h.handNo ?? ''}</td><td>${esc(h.handId)}</td><td>${new Date(h.endedAt).toISOString().replace('.000', '')}</td><td>#${h.i}</td><td>${esc(h.type || '')}</td><td>`
+    const tips = report.tips || [];
+    const handRow = (h) => `<tr><td>${h.handNo ?? ''}</td><td>${esc(h.handId)}</td><td>${new Date(h.endedAt).toISOString().replace('.000', '')}</td><td>#${h.i}</td><td>${esc(h.type || '')}</td><td>`
         + h.seats.map((s) => `seat ${s.seat}: ${n3(s.start)} &rarr; ${n3(s.end)} (${net(s)}), rake ${n3(s.rake)}`).join('<br>')
-        + `</td><td>${h.check.ok ? '<b>PASS</b>' : '<b>FAIL</b>: ' + esc(h.check.errors.join('; '))}</td><td>${link(`${base}/records/receipt/${h.handId}`)}</td></tr>`).join('\n');
+        + `</td><td>${h.check.ok ? '<b>PASS</b>' : '<b>FAIL</b>: ' + esc(h.check.errors.join('; '))}</td><td>${link(`${base}/records/receipt/${h.handId}`)}</td></tr>`;
+    const tipRow = (t) => `<tr><td>tip</td><td></td><td>${new Date(t.at).toISOString().replace('.000', '')}</td><td>#${t.i}</td><td>tip</td><td>seat ${t.fromSeat ?? '?'} &rarr; seat ${t.toSeat}: ${n3(t.amount)} (${esc(t.type || '')}), signed by the sender's own key: ${t.signed ? 'yes' : 'no'}</td><td>between hands</td><td></td></tr>`;
+    const rows = [...hands.map((h) => ({ i: h.i, h })), ...tips.map((t) => ({ i: t.i, t }))].sort((a, b) => a.i - b.i).map((x) => (x.t ? tipRow(x.t) : handRow(x.h))).join('\n');
     const seats = [...new Set(hands.flatMap((h) => h.seats.map((s) => s.seat)))].sort((a, b) => a - b).map((seat) => {
         const mine = hands.filter((h) => h.seats.some((s) => s.seat === seat));
         const f = mine[0].seats.find((s) => s.seat === seat), l = mine[mine.length - 1].seats.find((s) => s.seat === seat);
@@ -53,6 +68,7 @@ function tableRecordHtml(tableId, report, engine, base) {
         + `4. the card commitments (deckCommit) players received during the hand match that deck, so no card was swapped during the hand;<br>`
         + `5. replaying every action with the same rules (src/HandCore.js) gives the same hole cards, board, result and chips as the record.<br>`
         + `PASS means all five held. The cards, deck and seed themselves are not shown on this page; only the players of a hand can read them, signed with their own key, at ${link(base + '/table/verify.html')}.</p>`
+        + `<p>Tips: ${tips.length}. A tip moves chips from one seat to another between hands (the "tip" rows, in chain order), so a seat's chips at the start of a hand can differ from its chips at the end of the previous hand by exactly those tips. Each tip is signed by the sender's own key and is a line in the same chain.</p>`
         + `<p>Each hand is a line in this engine's hash chain; the receipt link gives its chain position and record hash. A finished hand line cannot be changed (src/store.js). Member numbers are not shown.</p>`
         + `<table><thead><tr><th>Hand no.</th><th>Hand ID</th><th>Ended (UTC)</th><th>Chain line</th><th>Result</th><th>Seat: start &rarr; end (net), rake</th><th>Deck and replay check</th><th>Receipt</th></tr></thead><tbody>\n${rows}\n</tbody></table>`
         + `<h2>Per seat</h2><ul>${seats || '<li>no finished hands</li>'}</ul></body></html>`;

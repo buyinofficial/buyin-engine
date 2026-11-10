@@ -105,6 +105,7 @@ class RecordStore {
             hands: q("SELECT i, line FROM chain WHERE kind = 'hand' AND i >= ? ORDER BY i LIMIT ?"),
             hand: q('SELECT line FROM chain WHERE hand_id = ?'),
             // [TABLE_RECORD_2026_11_10] 판 번호는 '<tableId>.<판 번호>' — '.' 다음 글자 '/' 앞까지가 그 테이블의 판이다
+            tips: q("SELECT i, line FROM chain WHERE kind = 'tip' ORDER BY i"),
             ofTable: q("SELECT i, line FROM chain WHERE kind = 'hand' AND hand_id >= ? AND hand_id < ? ORDER BY i LIMIT ?"),
             keys: q("SELECT line FROM chain WHERE kind = 'engine-key' ORDER BY i"),
             ofKey: q('SELECT hand_id FROM seat_keys WHERE sig_fp = ? ORDER BY i DESC LIMIT ?'),
@@ -246,6 +247,12 @@ class RecordStore {
             const r = resultOf(JSON.parse(row.line));
             return { ...r, handNo: Number(r.handId.slice(t.length + 1)) || null, seats: r.seats.map(({ odcId, ...s }) => s) };
         });
+    }
+
+    /** [TABLE_RECORD_2026_11_10] 한 테이블의 팁 줄(판과 판 사이에 옮긴 칩, 보낸 사람 서명) — 회원 번호는 그대로 두고 부르는 쪽이 자리로 바꾼다 */
+    tableTips(tableId) {
+        const t = String(tableId);
+        return this.sql.tips.all().map((r) => JSON.parse(r.line)).filter((e) => e.tableId === t);
     }
 
     /** 공개 영수증 — 카드 없이 사슬 위치와 해시만 */
