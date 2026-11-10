@@ -37,7 +37,7 @@
 - RPC 메서드는 `Engine.METHODS` 에 적힌 것뿐이다. 새 메서드를 넣을 때는 아래 3장 질문에 답을 적는다.
 - 엔진 코드에서는 다음을 쓰지 않는다.
   - `eval`, `new Function`, 동적 `require`
-  - 셸·파일 쓰기·외부 네트워크 (예외 둘: `attest.js` 가 같은 VM 의 dstack 게스트 에이전트 유닉스 소켓에 증명서를 묻는다 — 서버가 뜰 때 한 번. `store.js` 가 `TEE_RECORD_DIR` 에 판 기록을 덧붙인다 — 덧붙이기만, 매번 fsync. 엔진 계산 코드는 둘 다 모른다)
+  - 셸·파일 쓰기·외부 네트워크 (예외 둘: `attest.js` 가 같은 VM 의 dstack 게스트 에이전트 유닉스 소켓에 증명서를 묻는다 — 서버가 뜰 때 한 번. `store.js` 가 `TEE_RECORD_DIR` 에 판 기록을 덧붙인다 — 덧붙이기만, 매번 fsync. 엔진 계산 코드는 둘 다 모른다). 서버 쪽 외부 연결은 둘: `outbox.js` 가 끝난 판의 기록 줄을 `TEE_CONSOLE_URL` 로, `explorer.js` 가 뜰 때 자기 증명서(quote — 공개 정보, 그 밖에는 아무것도 없음)를 Phala TEE 증명 탐색기로 보낸다(0.9.17)
 
 ## 3. 새 기능·API 를 넣을 때 반드시 답할 질문
 

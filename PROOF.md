@@ -157,3 +157,8 @@ The operator issues tickets, so it can seat accounts like any player — its own
 3. Confirm `SHA-256(appCompose) = composeHash`, read the pinned image digest, and confirm it is the digest built from the release tag (rebuild, or compare with the release's Actions log).
 4. Compare `/review/manifest` with the files at that commit (`tools/check-deployment.js` does 2–4 automatically; for the Intel signature it uses the explorer).
 5. Read §2–§6 against the code. The claims are local: each is enforced in the named function.
+
+### Outbound connections of the engine
+
+1. `src/outbox.js` — lines of the record chain (finished hands only) to `TEE_CONSOLE_URL` in the measured compose.
+2. `src/explorer.js` — at start, its own TDX quote (public) to the Phala TEE Attestation Explorer (https://proof.t16z.com), so the audit report can link an independent verification of the running engine. Nothing else is sent.

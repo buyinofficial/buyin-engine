@@ -104,3 +104,8 @@ These files are in this repository (`src/public/table/`), are inside the atteste
 ## 6. Reporting
 
 Security issues: open a private security advisory on this repository. Fixes are released with a new tag, image digest and attestation.
+
+### Outbound connections of the engine
+
+1. `src/outbox.js` — lines of the record chain (finished hands only) to `TEE_CONSOLE_URL` in the measured compose.
+2. `src/explorer.js` — at start, its own TDX quote (public) to the Phala TEE Attestation Explorer (https://proof.t16z.com), so the audit report can link an independent verification of the running engine. Nothing else is sent.

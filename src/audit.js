@@ -21,7 +21,8 @@ const READ = [
     ['src/crypto.js', '`sealEnvelope`: ECDH(engine key, player key) → HKDF → AES-256-GCM'],
     ['src/table/TableServer.js', '`_startHand`: each sealed envelope goes only to its own seat; `snapshot`: no other player\'s cards; `_emote`, `_chat`, `_timeBank`: relayed to the same table only, never stored or sent to the console, no cards or chips; `_tip`: needs the sender\'s signature, moved after the hand, written to the chain'],
     ['src/server.js', 'there is no operator route: no game commands and no record export'],
-    ['src/outbox.js', 'the only outbound connection: lines of the record chain, sent to `TEE_CONSOLE_URL` (in the measured compose)'],
+    ['src/outbox.js', 'outbound connection 1: lines of the record chain, sent to `TEE_CONSOLE_URL` (in the measured compose)'],
+    ['src/explorer.js', 'outbound connection 2: this engine sends its own quote (public data, nothing else) to the Phala TEE Attestation Explorer and prints the report address below'],
     ['src/consoleApi.js', 'the console\'s check API (token): results and signed records of finished hands; it is given only the record store'],
     ['src/store.js', 'hands are appended to the record chain (SQLite, schema in the file) only when closed; triggers refuse updates'],
     ['src/table/http.js', 'the table page is served by this TEE (`connect-src \'self\'` plus fixed sound files of one resource folder, no framing); the seat token is never in a URL'],
@@ -66,7 +67,8 @@ function auditReport(info, records, keyCount, base, opts = {}) {
     L.push(`| Image, pinned by digest in the measured compose | ${image ? '`' + image + '`' : 'n/a'} |`);
     L.push(`| composeHash (measured into RTMR3) | ${a && a.composeHash ? '`' + a.composeHash + '`' : 'n/a'} |`);
     // [ATTEST_LINK_2026_11_10] Phala 탐색기의 독립 확인 — 주소 끝에 지금 composeHash 를 붙여 배포마다 주소가 달라진다(웹 도구의 옛 사본 방지)
-    if (opts.attestLinks && a && a.composeHash) L.push(`| Independent check of this quote (Phala TEE Attestation Explorer) | ${opts.attestLinks}${opts.attestLinks.includes('?') ? '&' : '?'}c=${a.composeHash} — the explorer report must say VERIFIED and its MRCONFIG must be 0x01 followed by the composeHash above |`);
+    if (opts.explorerReport && a && a.composeHash) L.push(`| Independent check of this quote (Phala TEE Attestation Explorer) — submitted by this engine itself | ${opts.explorerReport.page} — the report must say VERIFIED and its MRCONFIG must be 0x01 followed by the composeHash above |`);
+    else if (opts.attestLinks && a && a.composeHash) L.push(`| Independent check of this quote (Phala TEE Attestation Explorer) | ${opts.attestLinks}${opts.attestLinks.includes('?') ? '&' : '?'}c=${a.composeHash} — the explorer report must say VERIFIED and its MRCONFIG must be 0x01 followed by the composeHash above |`);
     L.push(`| SHA-256(appCompose), recomputed here | ${recomputed ? '`' + recomputed + '`' + (recomputed === a.composeHash ? ' — matches' : ' — DOES NOT MATCH') : 'n/a'} |`);
     L.push(`| Quote report_data = SHA-256(engine public keys) | ${a ? (binding.length ? 'FAILED: ' + binding.join('; ') : '`' + a.reportData + '` — matches: the engine keys were created inside this TEE') : 'no attestation (not in a TEE)'} |`);
     L.push(`| Table mode | ${tableMode ? 'on — every hand runs here; the operator has no route into the engine' : 'off'} |`);

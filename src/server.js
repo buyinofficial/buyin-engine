@@ -67,6 +67,7 @@ if (MODE === 'dstack' && !CONSOLE_KEY) throw new Error('TEE_CONSOLE_KEY is requi
 const store = RECORD_DIR ? new RecordStore(RECORD_DIR) : null;
 
 let attestation = null;
+let explorerReport = null;   // [ATTEST_EXPLORER_2026_11_10] Phala 탐색기 보고서 주소 — 엔진이 직접 올린다
 const engine = new Engine({
     allowUnsigned: process.env.TEE_ALLOW_UNSIGNED === '1',
     mode: MODE,
@@ -118,7 +119,7 @@ function handleGet(req, res) {
         // 사람·AI 가 읽는 감사 보고서 (평문 markdown) — 값은 /info 와 같다.
         // /ai.html 은 같은 글을 HTML 로 감싼 것 — 일부 AI 웹 열람기는 text/markdown 을 읽지 못한다.
         const base = `https://${String(req.headers.host || '').replace(/[^\w.:-]/g, '')}`;
-        const text = auditReport(engine.call('info'), store ? store.headInfo() : null, store ? store.engineKeys().length : 0, base, { tableMode: !!tables, review: { files: MANIFEST.count, treeHash: MANIFEST.treeHash }, attestLinks: ATTEST_LINKS });
+        const text = auditReport(engine.call('info'), store ? store.headInfo() : null, store ? store.engineKeys().length : 0, base, { tableMode: !!tables, review: { files: MANIFEST.count, treeHash: MANIFEST.treeHash }, attestLinks: ATTEST_LINKS, explorerReport });
         if (p === '/ai.html') {
             const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">`
@@ -202,6 +203,8 @@ async function start() {
     if (MODE === 'dstack') {
         // 증명서 없이 뜨지 않는다 — 증명서 없는 엔진 키는 믿을 근거가 없다
         attestation = await dstackAttestation(engine.call('info').keys);
+        // 증명서를 Phala 탐색기에 직접 올려 제3자 검증 보고서 주소를 받는다(공개 quote 만 보낸다)
+        require('./explorer').startExplorerUpload(() => attestation && attestation.quote, (r) => { explorerReport = r; });
     }
     // 이번에 뜬 엔진의 키를 사슬에 남긴다 — 이 키로 서명될 판 기록을 나중에도 검증할 수 있게
     if (store) store.appendEngineKey(engine.call('info'));
