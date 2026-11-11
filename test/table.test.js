@@ -422,3 +422,85 @@ test('테이블: 레이즈 중 — 내 차례에만 같은 방에 알린다(금�
     assert.deepStrictEqual(hev.dark, [other.seat], '판 시작 때 방에 알린다');
     assert.strictEqual(room.seats[other.seat].darkNext, false, '한 판짜리 — 다시 눌러야 한다');
 });
+
+/** 두 사람이 서로 올인해 한 사람이 칩 0 이 될 때까지 판을 돌린다 — 칩 0 이 된 사람을 돌려준다 */
+function bustOne(env) {
+    const { server, players, clock } = env;
+    for (let g = 0; g < 60; g++) {
+        clock.advance(8000);
+        const room = server.rooms.get('r1');
+        const out = players.find((p) => room.seats[p.seat] && room.seats[p.seat].stack <= 0);
+        if (out) return out;
+        if (!room.hand) continue;
+        for (let guard = 0; guard < 50 && room.hand; guard++) {
+            const h = room.hand;
+            if (h.toAct === null) { clock.advance(10); continue; }
+            const p = players.find((x) => x.seat === h.toAct);
+            const t = lastTurn(p);
+            const action = t.toCall > 0 ? 'CALL' : 'ALL_IN';
+            assert.ok(server.command(p.token, { type: 'act', q: t.q, action, amount: 0, sig: C.sign(p.sig.privateKey, C.msgAction(t.handId, t.q, action, 0)) }).ok);
+        }
+    }
+    assert.fail('nobody busted');
+}
+
+test('테이블: 올인으로 칩 0 — 자리는 남고(정산 안 함) 판에 안 든다, 신청 → 콘솔 영수증으로 칩 → 한 판 뒤 「바이인 완료」 내림, 거절·재사용·남의 좌석 거절, 재시작 정산에 추가 바이인 포함', () => {
+    const env = setup(2, { unit: 150 });
+    const { server, store, out, clock, players, consoleKeys } = env;
+    const loser = bustOne(env);
+    const winner = players.find((p) => p !== loser);
+    const room = server.rooms.get('r1');
+    const seat = room.seats[loser.seat];
+    assert.ok(seat, '칩 0 이어도 자리에 남는다');
+    assert.strictEqual(out.filter((o) => o.kind === 'settle').length, 0, '정산서 없음');
+    assert.strictEqual(server._publicSeat(room, seat).busted, true);
+    assert.strictEqual(server.snapshot(room, seat).me.unit, 150, '좌석표의 1바이인 금액이 화면에 간다');
+    clock.advance(10000);
+    assert.strictEqual(room.hand, null, '혼자 남으면 판이 열리지 않는다');
+
+    const topup = (o = {}) => signTicket({ v: 1, kind: 'topup', tid: 'top_' + crypto.randomBytes(4).toString('hex'), seatTid: seat.tid, exp: clock.now() + 60000,
+        roomId: 'r1', sessionId: seat.sessionId, odcId: seat.odcId, amount: 150, ...o }, o.key || consoleKeys.privateKey);
+    assert.throws(() => server.topUp(topup()), /not asked/, '신청하지 않은 좌석엔 넣지 않는다');
+    assert.throws(() => server.command(winner.token, { type: 'rebuy' }), /no chips/, '칩이 있는 좌석은 신청 못 한다');
+
+    assert.ok(server.command(loser.token, { type: 'rebuy' }).ok);
+    assert.strictEqual(seat.rebuy, 'asked');
+    assert.ok(winner.events.some(([ev, d]) => ev === 'seat' && d.seat.seat === loser.seat && d.seat.rebuy === 'asked'), '같은 방 모두에게 말풍선');
+    const asks = store.range(0, 1e9).filter((e) => e.kind === 'rebuy-ask');
+    assert.strictEqual(asks.length, 1); assert.strictEqual(asks[0].tid, seat.tid);
+    assert.ok(!('amount' in asks[0]) && !JSON.stringify(asks[0]).includes('hole'), '신청 줄에는 금액·카드 없음');
+
+    // 거절 → 표시만 지움, 다시 신청
+    server.rebuyReject('r1', seat.odcId);
+    assert.strictEqual(seat.rebuy, null);
+    assert.ok(loser.events.some(([ev]) => ev === 'rebuy-rejected'));
+    assert.ok(server.command(loser.token, { type: 'rebuy' }).ok);
+
+    assert.throws(() => server.topUp(topup({ key: C.generateKeyPair().privateKey })), /console/, '콘솔 서명이 아니면 거절');
+    assert.throws(() => server.topUp(topup({ seatTid: 'other_tid_123' })), /not at the table/, '다른 좌석표 번호');
+    assert.throws(() => server.topUp(topup({ sessionId: 'sess_nobody_1234' })), /not at the table/);
+    assert.throws(() => server.topUp(topup({ exp: clock.now() - 1 })), /expired/);
+    const tk = topup();
+    const r = server.topUp(tk);
+    assert.strictEqual(r.stack, 150);
+    assert.strictEqual(seat.rebuy, 'done');
+    assert.strictEqual(seat.buyIn, 350);
+    assert.throws(() => server.topUp(tk), /already used/, '같은 영수증 두 번 금지');
+    assert.ok(store.range(0, 1e9).some((e) => e.kind === 'topup' && e.amount === 150 && e.seatTid === seat.tid));
+
+    // 다음 판에 든다 → 끝나면 「바이인 완료」 표시를 내린다
+    clock.advance(4000);
+    assert.ok(room.hand && room.hand.seats.includes(loser.seat), '칩이 들어온 좌석이 다음 판에 든다');
+    playOne(env, () => 0);
+    assert.strictEqual(seat.rebuy, null);
+
+    // 엔진이 다시 떠도 정산서에 추가 바이인이 들어간다(바이인 합 = 200 + 150), 쓴 영수증은 다시 못 쓴다
+    const total = room.seats.reduce((a, s) => a + (s ? s.stack : 0), 0);
+    const out2 = [];
+    const server2 = new TableServer({ engine: env.engine, store, consoleKey: consoleKeys.publicKey, outbox: (kind, p) => out2.push({ kind, ...p }), clock });
+    const notes = store.range(0, 1e9).filter((e) => e.kind === 'settle').map((e) => e.note);
+    const mine = notes.find((n) => n.sessionId === seat.sessionId);
+    assert.strictEqual(mine.buyIn, 350);
+    assert.strictEqual(Math.round(notes.reduce((a, n) => a + n.cashOut, 0) * 1000) / 1000, Math.round(total * 1000) / 1000, '칩 합 = 정산 합');
+    assert.ok(server2.usedTickets.has(JSON.parse(Buffer.from(tk.split('.')[0], 'base64url')).tid));
+});

@@ -119,6 +119,7 @@ All rights reserved (see `LICENSE`). The code is published for inspection and ve
 ## Status
 
 - **Stage 1–2:** the engine runs as a separate process (`mode: "dev"`). The cryptographic guarantees above hold, but there is no hardware attestation.
+- **0.10.0:** a seat that loses all its chips stays at the table (shown as all-in out) instead of being settled. The player can ask for another buy-in (`rebuy` command, chain line `rebuy-ask`); the console passes it to the host and, if approved, sends a console-signed top-up receipt to `POST /table/topup` (console token). The engine accepts it only for a seat with 0 chips that asked, once per receipt, between hands (chain line `topup`, also listed on the public table record). The settlement note's `buyIn` is the sum of all buy-ins. Hand rules, deck and verification are unchanged.
 - **0.9.23:** a hand's full record (with every seat's hole cards) is given to the player who sat only after the table closes; while the table is open `/records/mine` lists the hand as `open` and the verify page shows "in progress" instead of check results
 - **0.9.22:** a table's record and its hands' receipts open only after the table closes; while it is open both answer exactly like an unknown id (404), so nobody outside can tell which games are in play. No game code changed.
 - **0.9.21:** the public table record also lists the table's tips in chain order (seat to seat, amount, signed by the sender), so chip changes between hands are explained on the same page. No game code changed.

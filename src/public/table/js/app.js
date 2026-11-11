@@ -231,6 +231,8 @@ function listen() {
     });
     on('tip-cancel', (d) => { if (d.from === mySeat()) toast(t('tipCancel')); });
     on('chat', onChat);
+    on('topup', () => { toast(t('rbToast')); play('minichip'); });   // [REBUY_2026_11_11]
+    on('rebuy-rejected', () => toast(t('rbRejected'), 4000));
     on('timebank', (d) => {
         if (d.seat === mySeat() && S.me) { S.me.timeBank = d.left; if (S.turn) S.tbUsed = S.turn.handId + ':' + S.turn.q; }
         floatTag(d.seat, '+' + Math.round(d.addedMs / 1000) + 's');
@@ -461,7 +463,25 @@ function render() {
     renderSeats();
     renderBets();
     renderActions();
+    renderRebuy();
     renderBadge();
+}
+
+/**
+ * [REBUY_2026_11_11] 칩을 다 잃은 내 자리 — 「바이인 신청」(방장 승인) / 기다리는 중이면 「신청 취소」.
+ * 금액은 방의 1바이인 금액(좌석표의 room.unit, 화면 표시용). 승인되면 TEE 가 칩을 넣고 이 줄은 사라진다.
+ */
+function renderRebuy() {
+    const bar = $('#rebuy-bar');
+    const me = S.seats && S.seats[mySeat()];
+    const out = !!(me && me.busted && !me.leaving && me.rebuy !== 'done');
+    bar.hidden = !out;
+    if (!out) return;
+    const asked = me.rebuy === 'asked';
+    bar.classList.toggle('asked', asked);
+    $('.rb-msg', bar).textContent = asked ? t('rbWait') : t('rbLost');
+    const unit = S.me && S.me.unit;
+    $('.rb-go', bar).textContent = asked ? t('rbCancel') : (unit ? `${t('rbBtn')} · ${dmCur(unit)}` : t('rbBtn'));
 }
 
 function renderBoard() {
@@ -553,7 +573,7 @@ function renderSeats() {
         const a = anchor(seat);
         const hero = seat === mySeat();
         const inHand = h && h.seats.find((x) => x.seat === seat);
-        const node = el('div', 'seat' + (hero ? ' hero' : '') + (inHand && inHand.folded ? ' folded' : '') + (s.sitout ? ' sitout' : '')
+        const node = el('div', 'seat' + (hero ? ' hero' : '') + (inHand && inHand.folded ? ' folded' : '') + (s.sitout ? ' sitout' : '') + (s.busted && s.rebuy !== 'done' ? ' busted' : '')
             + (S.winners && S.winners.seats[seat] ? ' winner-glow' : ''));
         node.dataset.seat = seat;
         node.style.left = a.x + 'px';
@@ -659,6 +679,9 @@ function nameboxEl(s, w, hgt, nmPx, stPx) {
     nb.style.width = w + 'px'; nb.style.height = hgt + 'px';
     nb.innerHTML = `<i class="flag"></i><i class="fade"></i><div class="info"><span class="nm" style="font-size:${nmPx}px;line-height:${Math.round(nmPx * 1.33)}px">${esc(s.nickname)}</span>`
         + `<span class="st" style="font-size:${stPx}px;line-height:${Math.round(stPx * 1.4)}px">${dm(s.stack)}</span></div>`;
+    // [REBUY_2026_11_11] 칩 0 = 「올인」 딱지, 추가 바이인 뒤 = 「바이인 완료」 딱지
+    const tag = s.rebuy === 'done' ? ['done', t('rbDone')] : s.busted ? ['out', t('rbAllin')] : null;
+    if (tag) { nb.classList.add('tagged'); const b = el('span', 'seat-tag ' + tag[0] + (w < 100 ? ' sm' : ''), esc(tag[1])); b.dataset.testid = 'seat-tag-' + s.seat; nb.appendChild(b); }
     return nb;
 }
 
@@ -848,7 +871,17 @@ function bubbleFor(parent, seat, cx, top, size = '') {
         return;
     }
     const b = S.bubbles[seat];
-    if (!b) return;
+    if (!b) {
+        // [REBUY_2026_11_11] 바이인 신청 말풍선 — 「바이인요~」 → 승인되면 「바이인 완료!」
+        const st = S.seats && S.seats[seat];
+        const rb = st && (st.rebuy === 'asked' ? 'ask' : st.rebuy === 'done' ? 'done' : null);
+        if (!rb) return;
+        const n = el('div', 'rebuy-bubble ' + rb + (size ? ' ' + size : ''), esc(rb === 'ask' ? t('rbAsk') : t('rbDoneBubble')));
+        n.dataset.testid = 'rebuy-bubble-' + seat;
+        n.style.left = cx + 'px'; n.style.top = top + 'px';
+        parent.appendChild(n);
+        return;
+    }
     const word = ACT_WORD[b.a] ?? '';
     const withAmt = b.amt > 0 && b.a !== 'FOLD' && b.a !== 'CHECK';
     const node = el('div', 'bubble' + (b.a === 'FOLD' ? ' fold' : '') + (b.a === 'ALL_IN' ? ' allin' : '') + (size ? ' ' + size : ''));
@@ -1028,6 +1061,12 @@ function wireButtons() {
     $('.a-raise').onclick = (e) => act(e.currentTarget.dataset.act, S.raiseVal);
     $('.gauge-input').oninput = (e) => { S.raiseVal = Number(e.target.value); paintRaise(); raisingOn(); };
     $('.gauge-input').addEventListener('pointerdown', raisingOn);
+    $('.rb-go').onclick = async () => {   // [REBUY_2026_11_11] 바이인 신청 / 신청 취소
+        if (!S.token) return;
+        const me = S.seats && S.seats[mySeat()];
+        const r = await cmd(me && me.rebuy === 'asked' ? 'rebuyCancel' : 'rebuy');
+        if (!r.ok && r.error) toast(r.error);
+    };
     $('#btn-leave').onclick = async () => {
         if (!S.token) return;
         const r = await cmd('leave');

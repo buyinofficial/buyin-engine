@@ -46,6 +46,7 @@ Fetch `GET <engine>/info`. Then:
 | Swap a card mid-hand | 52 card commitments are published at hand start; each revealed card comes with its salt and is checked in the browser. | `cards.js` |
 | Bet, call or raise for a player | Chip-moving actions need the player's ECDSA signature bound to this hand and turn. The operator can only fold/check (timeouts), and the record marks each one. | `HandCore._authorize` |
 | Move chips between players outside a hand | Only a tip does this: 1 big blind, signed by the sender (`msgTip`, a per-seat number so a signature works once), moved after the hand ends and written to the record chain with the signature and the sender's public key. | `TableServer._tip`, `_settleTips` |
+| Add chips to a seat | Only a re-buy does this (0.10.0): the seat must have 0 chips and its player must have pressed "ask for buy-in" (`rebuy` command over the player's own table session). The chips come with a receipt signed by the console key (the same key as seat tickets), each receipt number works once, it is applied between hands, and it is written to the record chain (`topup`) and listed on the public table record. A console token alone cannot add chips. | `TableServer.topUp`, `ticket.verifyTopup` |
 | Change results or rake | The engine computes pots, winners and rake from the published table rule; the signed record replays exactly. | `HandCore`, `verify.js` |
 | Delete or edit past hands | Records are signed and chained on the TEE disk; the chain head is public. | `store.js` |
 | Run a modified engine | A modified image has a different digest → different compose hash → a different attestation; it cannot produce a key bound to this measurement. | §2 steps 2–4 |
@@ -70,7 +71,8 @@ Since 0.5.x every hand runs in the TEE table server (`src/table/`, "table mode",
 | When | Operator (game server, admin console) can see | Operator cannot see |
 |---|---|---|
 | Sitting down | the buy-in it took and the seat ticket it signed | the player's keys or table session token |
-| During a hand | nothing from the engine — the engine has no operator route (`src/server.js`), and the running hand is not yet in the record chain | — |
+| During a hand | nothing from the engine — the only operator route into the table server is `/table/topup` (0.10.0: a console-signed re-buy for a 0-chip seat that asked, or clearing that request; it answers with that seat's new chip count only), and the running hand is not yet in the record chain | — |
+| Going bust | the seat's re-buy request (chain line `rebuy-ask`: seat ticket number, no amount, no cards) | — |
 | After the hand ends | the full signed record (every hole card, seed, deck, action), sent by the engine to the console (`src/outbox.js`); the console's check API (`src/consoleApi.js`, token) returns finished hands only | — |
 | Leaving | the engine-signed settlement note (amounts only) | — |
 

@@ -8,11 +8,17 @@
  *
  * 차례·타이머·딜러 버튼·블라인드 위치를 여기서 정하고, 덱·카드·베팅 규칙·팟·결과는 엔진(Engine/HandCore)이 정한다.
  * 판은 strictOrder 로 시작한다 — 차례가 아닌 좌석의 액션은 엔진이 거절하고, 판 기록·verify 에도 그 규칙이 남는다.
+ *
+ * [REBUY_2026_11_11] 칩을 다 잃어도(올인으로 0) 자리에서 빼지 않는다 — 「올인」 표시로 남아 판에는 들지 않는다.
+ *   회원이 「바이인 신청」을 누르면(rebuy 명령) 모두에게 말풍선이 보이고, 사슬에 'rebuy-ask' 를 남겨 콘솔이 방장에게 넘긴다.
+ *   방장이 승인하면 콘솔이 잔액을 잠그고 서명한 추가 바이인 영수증을 보낸다(topUp) → 판과 판 사이에 그 좌석에 칩이 들어가고
+ *   「바이인 완료」 표시가 다음 판이 끝날 때까지 남는다. 거절·취소는 표시만 지운다(rebuyReject / rebuyCancel).
+ *   일어나거나 연결이 끊겨 유예가 지나면 종전처럼 정산한다(남은 칩 0 이면 0).
  */
 
 const crypto = require('crypto');
 const C = require('../crypto');
-const { verifyTicket, TicketError } = require('./ticket');
+const { verifyTicket, verifyTopup, TicketError } = require('./ticket');
 
 const START_DELAY_MS = 3000;       // 판과 판 사이
 const RESULT_PAUSE_MS = 4000;      // 결과를 보여 주는 시간
@@ -75,12 +81,17 @@ class TableServer {
             if (e.kind === 'player-bind') continue;   // 0.5.5 의 회원 키 고정 기록 — 더 쓰지 않는다
             if (e.kind === 'seat-in') {
                 this.usedTickets.add(e.tid);
-                open.set(e.sessionId, { e, stack: e.buyIn, rake: 0, hands: 0 });
+                open.set(e.sessionId, { e, stack: e.buyIn, buyIn: e.buyIn, rake: 0, hands: 0 });
                 active.set(e.tableId + '|' + e.odcId, e.sessionId);
             } else if (e.kind === 'settle') {
                 const x = open.get(e.note.sessionId);
                 if (x) active.delete(x.e.tableId + '|' + x.e.odcId);
                 open.delete(e.note.sessionId);
+            } else if (e.kind === 'topup') {
+                // [REBUY_2026_11_11] 추가 바이인 — 그 좌석 칩과 바이인 합에 더한다
+                this.usedTickets.add(e.tid);
+                const x = open.get(e.sessionId);
+                if (x) { x.stack = round3(x.stack + e.amount); x.buyIn = round3(x.buyIn + e.amount); }
             } else if (e.kind === 'tip') {
                 const a = open.get(e.fromSession), b = open.get(e.toSession);
                 if (a && b) { a.stack = round3(a.stack - e.amount); b.stack = round3(b.stack + e.amount); }
@@ -98,7 +109,7 @@ class TableServer {
         // 정산서 없이 끝난 좌석 — 엔진이 다시 떴다. 마지막으로 끝난 판의 스택으로 정산한다(그때 진행 중이던 판은 기록이 없어 무효)
         for (const [sessionId, x] of open) {
             const e = x.e;
-            this._settle({ roomId: e.roomId, tid: e.tid, sessionId, odcId: e.odcId, buyIn: e.buyIn, currency: e.currency || '',
+            this._settle({ roomId: e.roomId, tid: e.tid, sessionId, odcId: e.odcId, buyIn: x.buyIn, currency: e.currency || '',
                 cashOut: x.stack, rakePaid: x.rake, hands: x.hands, reason: 'engine-restart' });
         }
     }
@@ -133,6 +144,7 @@ class TableServer {
             seat, token, tid: t.tid, sessionId: t.player.sessionId, odcId: t.player.odcId,
             nickname: t.player.nickname, avatar: t.player.avatar, buyIn: t.buyIn, currency: t.currency, display: t.display,
             stack: t.buyIn, rakePaid: 0, hands: 0, keys: false, sitout: false, timeouts: 0, leaving: false, boundFp: joinFp,
+            rebuy: null, unit: t.room.unit || 0,   // [REBUY_2026_11_11] null | 'asked' | 'done'
             timeBank: TIME_BANK_START, emoteAt: 0, chatRate: { last: 0, start: 0, n: 0 }, sigJwk: null, tipN: 0, tipAt: 0, tips: [], raisingAt: 0, darkNext: false,
             clients: new Set(), joinedAt: this.clock.now(),
         };
@@ -202,6 +214,8 @@ class TableServer {
             case 'tip': return this._tip(room, s, m);
             case 'raising': return this._raising(room, s, m);
             case 'dark': return this._dark(room, s, m);
+            case 'rebuy': return this._rebuyAsk(room, s);
+            case 'rebuyCancel': return this._rebuyCancel(room, s, 'member');
             default: throw new TableError('input', 'unknown command');
         }
     }
@@ -358,6 +372,66 @@ class TableServer {
                 this._broadcast(room, 'tip-done', { from: s.seat, to: x.toSeat, type: x.type, amount: x.amount, stacks: { [s.seat]: s.stack, [x.toSeat]: to.stack } });
             }
         }
+    }
+
+    // ------------------------------------------------------------ 추가 바이인 [REBUY_2026_11_11]
+
+    /** 칩이 0 인 좌석인가 — 판에 들 수 없다(「올인」 표시) */
+    _busted(s) {
+        return !(s.stack > 0);
+    }
+
+    /** 회원이 「바이인 신청」 — 칩 0 좌석만, 한 번에 하나. 사슬에 남겨 콘솔(방장)에게 간다 */
+    _rebuyAsk(room, s) {
+        if (!this._busted(s)) throw new TableError('rebuy', 'only a seat with no chips can ask for a buy-in');
+        if (s.leaving) throw new TableError('rebuy', 'seat is leaving');
+        if (s.rebuy === 'asked') return { ok: true, pending: true };
+        s.rebuy = 'asked';
+        if (this.store) this.store.appendEvent('rebuy-ask', { roomId: room.id, tableId: room.tableId, tid: s.tid, sessionId: s.sessionId, odcId: s.odcId });
+        this._broadcast(room, 'seat', { seat: this._publicSeat(room, s) });
+        return { ok: true };
+    }
+
+    /** 신청 취소(회원) · 방장 거절(콘솔) — 표시만 지운다. 칩은 움직이지 않는다 */
+    _rebuyCancel(room, s, by) {
+        if (s.rebuy !== 'asked') return { ok: true };
+        s.rebuy = null;
+        if (this.store) this.store.appendEvent('rebuy-cancel', { roomId: room.id, tableId: room.tableId, tid: s.tid, sessionId: s.sessionId, odcId: s.odcId, by });
+        this._broadcast(room, 'seat', { seat: this._publicSeat(room, s) });
+        if (by === 'host') this._send(s, 'rebuy-rejected', {});
+        return { ok: true };
+    }
+
+    /**
+     * 콘솔이 보낸 추가 바이인 영수증(서명) — 그 좌석이 아직 앉아 있고, 칩이 0 이고, 회원이 신청해 둔 경우에만 받는다.
+     * 판 도중(그 좌석은 판에 없다)에도 받는다 — 칩은 다음 판부터 쓴다. 사슬에 먼저 남긴다(재시작해도 정산된다).
+     */
+    topUp(ticketStr) {
+        const t = verifyTopup(ticketStr, this.consoleKey, this.clock.now());
+        if (this.usedTickets.has(t.tid)) throw new TableError('ticket', 'top-up already used');
+        const room = this.rooms.get(t.roomId);
+        const s = room && room.seats.find((x) => x && x.sessionId === t.sessionId);
+        if (!s || s.tid !== t.seatTid || s.odcId !== t.odcId) throw new TableError('seat', 'that seat is not at the table');
+        if (s.leaving) throw new TableError('seat', 'seat is leaving');
+        if (s.rebuy !== 'asked' || !this._busted(s)) throw new TableError('rebuy', 'the member has not asked for a buy-in');
+        if (this.store) this.store.appendEvent('topup', { tid: t.tid, seatTid: s.tid, roomId: room.id, tableId: room.tableId, sessionId: s.sessionId, odcId: s.odcId, amount: t.amount });
+        this.usedTickets.add(t.tid);
+        s.stack = round3(s.stack + t.amount);
+        s.buyIn = round3(s.buyIn + t.amount);
+        s.rebuy = 'done';
+        s.timeouts = 0;
+        this._broadcast(room, 'seat', { seat: this._publicSeat(room, s) });
+        this._send(s, 'topup', { amount: t.amount, stack: s.stack });
+        this._maybeStart(room);
+        return { ok: true, stack: s.stack };
+    }
+
+    /** 방장 거절·신청 만료 — 콘솔이 알린다. 표시만 지운다 */
+    rebuyReject(roomId, odcId) {
+        const room = this.rooms.get(String(roomId || ''));
+        const s = room && room.seats.find((x) => x && x.odcId === String(odcId || ''));
+        if (!s) return { ok: true, gone: true };
+        return this._rebuyCancel(room, s, 'host');
     }
 
     _leave(room, s, reason) {
@@ -536,7 +610,7 @@ class TableServer {
         // 판이 끝난 뒤에만 기록을 콘솔로 — 원본은 TEE 사슬(Engine.onRecord 가 이미 남겼다)
         this.outbox('hand-record', { roomId: room.id, record: rec, sig: f.sig });
         room.hand = null;
-        this._afterHand(room);
+        this._afterHand(room, h.seats);
     }
 
     _abort(room, reason) {
@@ -550,12 +624,14 @@ class TableServer {
         this._afterHand(room);
     }
 
-    _afterHand(room) {
+    _afterHand(room, played = []) {
         this._settleTips(room);
         for (const s of room.seats) {
             if (!s) continue;
-            if (s.leaving) this._unseat(room, s, s.leaveReason || 'left');
-            else if (s.stack <= 0) this._unseat(room, s, 'busted');
+            if (s.leaving) { this._unseat(room, s, s.leaveReason || 'left'); continue; }
+            // [REBUY_2026_11_11] 칩 0 이어도 자리는 그대로 — 「올인」 표시. 추가 바이인 뒤 한 판을 치면 「바이인 완료」 표시를 내린다
+            if (s.rebuy === 'done' && played.includes(s.seat)) { s.rebuy = null; this._broadcast(room, 'seat', { seat: this._publicSeat(room, s) }); }
+            else if (this._busted(s)) this._broadcast(room, 'seat', { seat: this._publicSeat(room, s) });
         }
         if (room.rules.endsAt && this.clock.now() >= room.rules.endsAt) return this._close(room, 'time');
         this.clock.setTimeout(() => this._maybeStart(room), RESULT_PAUSE_MS);
@@ -569,7 +645,7 @@ class TableServer {
         this.tokens.delete(s.token);
         this.liveSessions.delete(s.sessionId);
         this._settle({ roomId: room.id, tid: s.tid, sessionId: s.sessionId, odcId: s.odcId, buyIn: s.buyIn, currency: s.currency,
-            cashOut: s.stack, rakePaid: s.rakePaid, hands: s.hands, reason });
+            cashOut: s.stack, rakePaid: s.rakePaid, hands: s.hands, reason });   // buyIn = 앉을 때 + 추가 바이인 합 [REBUY_2026_11_11]
         this._send(s, 'settled', { cashOut: s.stack, reason });
         for (const c of s.clients) c.end();
         this._broadcast(room, 'seat', { seat: { seat: s.seat, empty: true } });
@@ -631,7 +707,8 @@ class TableServer {
     }
 
     _publicSeat(room, s) {
-        return { seat: s.seat, nickname: s.nickname, avatar: s.avatar, stack: s.stack, sitout: s.sitout, leaving: s.leaving, keys: s.keys, connected: s.clients.size > 0 };
+        return { seat: s.seat, nickname: s.nickname, avatar: s.avatar, stack: s.stack, sitout: s.sitout, leaving: s.leaving, keys: s.keys, connected: s.clients.size > 0,
+            busted: this._busted(s) && !(room.hand && room.hand.seats.includes(s.seat)), rebuy: s.rebuy };   // [REBUY_2026_11_11]
     }
 
     _publicHand(room) {
@@ -653,7 +730,7 @@ class TableServer {
         return {
             room: { id: room.id, name: room.rules.name, sb: room.rules.sb, bb: room.rules.bb, maxPlayers: room.rules.maxPlayers, rake: room.rules.rake, turnSec: room.rules.turnSec, endsAt: room.rules.endsAt },
             tableId: room.tableId, seedCommit: room.seedCommit, engine: this.engine.call('info').keys,
-            me: { seat: s.seat, odcId: s.odcId, nickname: s.nickname, stack: s.stack, buyIn: s.buyIn, currency: s.currency, display: s.display, keys: s.keys, sitout: s.sitout, timeBank: s.timeBank, tipN: s.tipN, darkNext: s.darkNext },
+            me: { seat: s.seat, odcId: s.odcId, nickname: s.nickname, stack: s.stack, buyIn: s.buyIn, unit: s.unit, rebuy: s.rebuy, currency: s.currency, display: s.display, keys: s.keys, sitout: s.sitout, timeBank: s.timeBank, tipN: s.tipN, darkNext: s.darkNext },
             seats: room.seats.map((x) => (x ? this._publicSeat(room, x) : null)),
             hand: this._publicHand(room),
             hole: h && h.seats.includes(s.seat) ? { handId: h.handId, envelope: h.envelopes[s.seat] || null } : null,

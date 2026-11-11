@@ -6,7 +6,8 @@
  *
  * 본문 {
  *   v: 1, tid: 좌석표 번호(한 번만 쓴다), exp: 만료(ms),
- *   room: { id, name, sb, bb, maxPlayers, rake: { percent, minPot }, turnSec, endsAt },
+ *   room: { id, name, sb, bb, maxPlayers, rake: { percent, minPot }, turnSec, endsAt, unit? },
+ *         unit  (선택) 1바이인 금액 — 화면에 「바이인 신청」 금액으로 보여 줄 뿐, 엔진 계산에는 쓰지 않는다
  *   display: { currency, rate }   (선택) 화면 표시 환산 — 금액 × rate 를 currency 로 보여 준다
  *   player: { sessionId, odcId, nickname, avatar },
  *   buyIn: 칩(=잠근 금액), currency
@@ -57,6 +58,7 @@ function verifyTicket(ticket, consoleKey, now = Date.now()) {
         sb: Number(r.sb), bb: Number(r.bb), maxPlayers: Number(r.maxPlayers),
         rake: { percent: Number(r.rake && r.rake.percent) || 0, minPot: Number(r.rake && r.rake.minPot) || 0 },
         turnSec: Number(r.turnSec) || 20, endsAt: Number(r.endsAt) || 0,
+        unit: money(Number(r.unit)) ? Number(r.unit) : 0,
     };
     if (!/^[A-Za-z0-9_-]{1,32}$/.test(room.id)) throw new TicketError('bad room id');
     if (!money(room.sb) || !money(room.bb) || room.sb >= room.bb) throw new TicketError('bad blinds');
@@ -77,10 +79,40 @@ function verifyTicket(ticket, consoleKey, now = Date.now()) {
     return { tid: String(p.tid), exp: Number(p.exp), room, player, buyIn, currency: String(p.currency || '').slice(0, 8), display };
 }
 
+/**
+ * [REBUY_2026_11_11] 추가 바이인 영수증 — 칩을 다 잃은(올인으로 0) 좌석이 신청했고, 콘솔이 잔액을 잠근 뒤 서명한다.
+ *
+ *   본문 { v: 1, kind: 'topup', tid: 이 영수증 번호(한 번만), seatTid: 앉을 때 쓴 좌석표 번호, exp,
+ *          roomId, sessionId, odcId, amount }
+ *
+ * 좌석표와 같은 콘솔 키로 서명한다. 콘솔이 정하는 것은 "그 좌석에 얼마가 더 들어가나"뿐이고,
+ * 테이블 서버는 그 좌석이 칩 0 이고 회원이 직접 신청해 둔 경우에만, 판과 판 사이에만 받는다(TableServer.topUp).
+ */
+function verifyTopup(ticket, consoleKey, now = Date.now()) {
+    const t = String(ticket || '');
+    if (!t || t.length > MAX_TICKET) throw new TicketError('bad top-up');
+    const dot = t.indexOf('.');
+    if (dot <= 0) throw new TicketError('bad top-up');
+    const body = t.slice(0, dot), sig = t.slice(dot + 1);
+    if (!C.verify(consoleKey, body, sig)) throw new TicketError('top-up signature is not the console\'s');
+    let p;
+    try { p = b64uJson(body); } catch (_e) { throw new TicketError('bad top-up body'); }
+    if (p.v !== 1 || p.kind !== 'topup') throw new TicketError('not a top-up');
+    const id = /^[A-Za-z0-9_-]{8,64}$/;
+    if (!id.test(String(p.tid || '')) || !id.test(String(p.seatTid || ''))) throw new TicketError('bad top-up id');
+    if (!(Number(p.exp) > now)) throw new TicketError('top-up expired');
+    if (!/^[A-Za-z0-9_-]{1,32}$/.test(String(p.roomId || ''))) throw new TicketError('bad room id');
+    if (!id.test(String(p.sessionId || ''))) throw new TicketError('bad session id');
+    if (!p.odcId || String(p.odcId).length > 64) throw new TicketError('bad player id');
+    const amount = Number(p.amount);
+    if (!money(amount)) throw new TicketError('bad amount');
+    return { tid: String(p.tid), seatTid: String(p.seatTid), exp: Number(p.exp), roomId: String(p.roomId), sessionId: String(p.sessionId), odcId: String(p.odcId), amount };
+}
+
 /** 시험·콘솔 구현 참고용 — 콘솔 개인키로 좌석표를 만든다 */
 function signTicket(payload, consolePrivateKey) {
     const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
     return body + '.' + C.sign(consolePrivateKey, body);
 }
 
-module.exports = { verifyTicket, signTicket, TicketError };
+module.exports = { verifyTicket, verifyTopup, signTicket, TicketError };
