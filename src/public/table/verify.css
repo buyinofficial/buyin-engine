@@ -28,6 +28,8 @@ h2 { margin: 0 0 10px; font-size: 16px; color: var(--gold-hi); }
 .hand .when { color: var(--muted); font-size: 13px; white-space: nowrap; }
 .hand .id { font-size: 12px; color: var(--gold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hand .tbl { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.hand.open .tbl { color: var(--warn); }   /* [MINE_OPEN_0_9_23] 끝나지 않은 게임 */
+.actions[hidden] { display: none; }
 .hid { font-size: 12px; color: var(--muted); }
 .checks { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
 .check { position: relative; padding: 10px 12px 10px 40px; border-radius: 10px; background: #12151d; border: 1px solid rgba(255, 255, 255, .06); }

@@ -28,6 +28,7 @@
  */
 
 const http = require('http');
+const { mineResponse } = require('./mine');   // [MINE_OPEN_0_9_23]
 const crypto = require('crypto');
 const Engine = require('./Engine');
 const { dstackAttestation } = require('./attest');
@@ -178,7 +179,7 @@ function handleGet(req, res) {
 /**
  * 내 판 기록 — 운영 토큰 없이, 그 판에 앉았던 회원 키의 서명으로만 준다.
  *   { sig: 회원 서명 공개키 JWK, ts, proof = sign(msgMine(지문, ts, handId)), handId? }
- *   handId 가 없으면 이 키로 앉았던 판 목록(최근 50), 있으면 그 판의 사슬 줄 전체(카드 포함 — 판이 끝난 뒤의 기록뿐이다)
+ *   handId 가 없으면 이 키로 앉았던 판 목록(최근 50, 열린 테이블 판은 open 표시), 있으면 그 판의 사슬 줄 전체(카드 포함 — 테이블이 닫힌 뒤에만, 0.9.23)
  */
 const MINE_WINDOW_MS = 5 * 60 * 1000;
 function handleMine(req, res) {
@@ -197,13 +198,9 @@ function handleMine(req, res) {
             if (!(Math.abs(Date.now() - Number(m.ts)) < MINE_WINDOW_MS)) return send(res, 400, { ok: false, error: 'stale request' });
             if (!C.verify(key, C.msgMine(fp, m.ts, m.handId), m.proof)) return send(res, 401, { ok: false, error: 'bad proof' });
         } catch (_e) { return send(res, 400, { ok: false, error: 'bad key' }); }
-        const mine = store.handsOfKey(fp);
-        if (!m.handId) {
-            const hands = mine.map((id) => store.receipt(id)).filter(Boolean);
-            return send(res, 200, { ok: true, sigFp: fp, hands });
-        }
-        if (!mine.includes(String(m.handId))) return send(res, 404, { ok: false, error: 'not your hand' });
-        return send(res, 200, { ok: true, entry: store.getHand(m.handId) });
+        // [MINE_OPEN_0_9_23] 열린 테이블의 판 기록(전원 홀카드)은 테이블이 닫힌 뒤에만 — src/mine.js
+        const [code, body] = mineResponse(store, (tid) => !!(tables && tables.isOpen(tid)), fp, m.handId);
+        return send(res, code, body);
     });
 }
 

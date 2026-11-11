@@ -7,6 +7,7 @@
  *     ② 엔진 키 — 사슬의 엔진 키 줄과 TDX 증명서 report_data 가 맞나(지금 키는 증명서 원본까지)
  *     ③ 다시 돌리기 — 엔진 verify.js(지금 도는 그 파일)로 씨앗·섞기·카드 약속·액션·결과·서명 전부
  *     ④ 내 카드 — 판 도중 내 브라우저가 봉투를 열어 받은 카드와 기록이 같나
+ *  [MINE_OPEN_0_9_23] 테이블이 아직 열려 있으면(게임이 끝나지 않음) 검증 결과를 내지 않는다 — TEE 가 그 판 기록을 주지 않고, 이 화면은 「진행 중」 만 보인다.
  */
 import * as V from './vault.js';
 
@@ -25,6 +26,7 @@ const L = {
         seat: '자리', at: '끝난 시각', table: '테이블', version: '버전', mode: '모드', sigFp: '서명 키', att: '하드웨어 증명',
         attOk: 'Intel TDX 증명서와 키가 묶여 있음', attNone: '없음(개발 모드)', attBad: '증명서와 키가 다름', records: '보관된 판',
         chainLen: '기록 사슬 줄 수', rollback: '이 브라우저가 전에 본 것보다 적습니다(되돌리기 의심)',
+        open: '진행 중', openT: '아직 끝나지 않은 게임입니다', openD: '이 테이블이 끝나면 검증 결과가 나옵니다. 게임 중에는 판 기록과 검증 결과를 보여 주지 않습니다.',
     },
     en: {
         title: 'Verify my hands', lead: 'After a hand ends, this page fetches your hand record straight from the TEE and recomputes it in your browser. The operator is not involved.',
@@ -40,6 +42,7 @@ const L = {
         seat: 'Seat', at: 'Ended', table: 'Table', version: 'Version', mode: 'Mode', sigFp: 'Signing key', att: 'Hardware attestation',
         attOk: 'key bound to the Intel TDX quote', attNone: 'none (development)', attBad: 'key differs from the quote', records: 'Hands stored',
         chainLen: 'Record chain lines', rollback: 'fewer than this browser saw before (possible rollback)',
+        open: 'In progress', openT: 'This game has not ended yet', openD: 'The check results appear after this table closes. Hand records and checks are not shown during the game.',
     },
 };
 const lang = (navigator.language || 'en').startsWith('ko') ? 'ko' : 'en';
@@ -84,10 +87,10 @@ async function boot() {
     if (!rows.length) { list.append(el('li', 'empty', t('none'))); return; }
     for (const { k, h } of rows) {
         const li = el('li');
-        const b = el('button', 'hand');
+        const b = el('button', 'hand' + (h.open ? ' open' : ''));
         b.type = 'button';
         b.dataset.hand = h.handId;
-        b.append(el('span', 'when', new Date(h.endedAt || h.at).toLocaleString()), el('code', 'id', h.handId), el('span', 'tbl', `${t('table')} ${String(h.tableId).slice(0, 10)}`));
+        b.append(el('span', 'when', new Date(h.endedAt || h.at).toLocaleString()), el('code', 'id', h.handId), el('span', 'tbl', h.open ? t('open') : `${t('table')} ${String(h.tableId).slice(0, 10)}`));
         b.onclick = () => openHand(k, h.handId);
         li.append(b);
         list.append(li);
@@ -123,10 +126,19 @@ async function openHand(k, handId) {
     const ol = $('.checks', box);
     ol.innerHTML = '';
     $('.cards-row', box).innerHTML = '';
+    $('.actions', box).hidden = false;
     const row = (title) => { const li = el('li', 'check run'); li.append(el('b', '', title), el('span', 'd', t('loading'))); ol.append(li); return (ok, d) => { li.className = 'check ' + (ok === true ? 'ok' : ok === false ? 'bad' : 'warn'); $('.d', li).textContent = d; }; };
     for (const b of document.querySelectorAll('.hand')) b.classList.toggle('on', b.dataset.hand === handId);
 
     const r = await mine(k, handId);
+    // [MINE_OPEN_0_9_23] 끝나지 않은 게임 — 검증 결과 대신 안내만(TEE 가 기록을 주지 않는다)
+    if (r.open) {
+        const li = el('li', 'check warn'); li.dataset.testid = 'open';
+        li.append(el('b', '', t('openT')), el('span', 'd', t('openD')));
+        ol.append(li);
+        $('.actions', box).hidden = true;
+        return;
+    }
     const entry = r.entry;
     const setChain = row(t('chain')), setKey = row(t('key')), setReplay = row(t('replay')), setMine = row(t('mine'));
     if (!entry) { setChain(false, r.error || 'not found'); return; }

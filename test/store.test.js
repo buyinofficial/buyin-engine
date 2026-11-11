@@ -168,3 +168,25 @@ test('열린 테이블은 밖에서 알 수 없다 — isOpen 은 지금 열린 
     assert.strictEqual(ts.isOpen('tOpen'), true);
     assert.strictEqual(ts.isOpen('tClosed'), false);
 });
+
+test('끝나지 않은 게임은 내 판 검증에서도 기록을 주지 않는다 — 테이블이 닫힌 뒤에만 [MINE_OPEN_0_9_23]', () => {
+    const { mineResponse } = require('../src/mine');
+    const fake = {
+        hands: { 'tA.1': { tableId: 'tA' }, 'tA.2': { tableId: 'tA' }, 'tB.1': { tableId: 'tB' } },
+        handsOfKey(fp) { return fp === 'me' ? ['tA.1', 'tA.2', 'tB.1'] : []; },
+        receipt(id) { const h = this.hands[id]; return h ? { handId: id, tableId: h.tableId, i: 1, hash: 'h' } : null; },
+        getHand(id) { return { handId: id, record: { holes: { 0: ['As', 'Kd'], 1: ['2c', '7h'] } } }; },
+    };
+    const isOpen = (tid) => tid === 'tA';
+    const [c1, list] = mineResponse(fake, isOpen, 'me');
+    assert.strictEqual(c1, 200);
+    assert.deepStrictEqual(list.hands.map((h) => [h.handId, !!h.open]), [['tA.1', true], ['tA.2', true], ['tB.1', false]]);
+    const [c2, b2] = mineResponse(fake, isOpen, 'me', 'tA.1');
+    assert.strictEqual(c2, 409);
+    assert.ok(b2.open && !b2.entry && !JSON.stringify(b2).includes('holes'), 'open table: no record, no hole cards');
+    const [c3, b3] = mineResponse(fake, isOpen, 'me', 'tB.1');
+    assert.strictEqual(c3, 200);
+    assert.ok(b3.entry && b3.entry.record.holes, 'closed table: full record for the player who sat');
+    const [c4] = mineResponse(fake, isOpen, 'someone', 'tB.1');
+    assert.strictEqual(c4, 404, 'not your hand');
+});
