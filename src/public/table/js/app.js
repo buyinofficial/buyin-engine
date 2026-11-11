@@ -870,17 +870,18 @@ function bubbleFor(parent, seat, cx, top, size = '') {
         return;
     }
     const b = S.bubbles[seat];
-    if (!b) {
-        // [REBUY_2026_11_11] 바이인 신청 말풍선 — 「바이인요~」 → 승인되면 「바이인 완료!」
-        const st = S.seats && S.seats[seat];
-        const rb = st && (st.rebuy === 'asked' ? 'ask' : st.rebuy === 'done' ? 'done' : null);
-        if (!rb) return;
+    // [REBUY_2026_11_11] 바이인 신청 말풍선 — 「바이인요~」 → 승인되면 「바이인 완료!」
+    //   [REBUY_0_10_3] 「바이인요~」는 직전 판 액션 말풍선(올인 등)이 남아 있어도 먼저 보인다(그 자리는 판에 들지 않는다)
+    const st = S.seats && S.seats[seat];
+    const rb = st && (st.rebuy === 'asked' ? 'ask' : st.rebuy === 'done' ? 'done' : null);
+    if (rb === 'ask' || (!b && rb)) {
         const n = el('div', 'rebuy-bubble ' + rb + (size ? ' ' + size : ''), esc(rb === 'ask' ? t('rbAsk') : t('rbDoneBubble')));
         n.dataset.testid = 'rebuy-bubble-' + seat;
         n.style.left = cx + 'px'; n.style.top = top + 'px';
         parent.appendChild(n);
         return;
     }
+    if (!b) return;
     const word = ACT_WORD[b.a] ?? '';
     const withAmt = b.amt > 0 && b.a !== 'FOLD' && b.a !== 'CHECK';
     const node = el('div', 'bubble' + (b.a === 'FOLD' ? ' fold' : '') + (b.a === 'ALL_IN' ? ' allin' : '') + (size ? ' ' + size : ''));
