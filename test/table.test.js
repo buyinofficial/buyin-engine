@@ -202,7 +202,7 @@ test('테이블: 엔진이 다시 떠도 좌석의 돈은 마지막으로 끝난
     clock.advance(5000); playOne(env, rnd);
     clock.advance(8000);                       // 둘째 판 시작 → 진행 중에 "재시작"
     const room = server.rooms.get('r1');
-    const stacksAfterFirst = room.seats.filter(Boolean).map((s) => s.stack);
+    const stacksAfterFirst = room.seats.filter((s) => s && !s.held).map((s) => s.stack);   // [REBUY_0_10_1] 칩 0 으로 잡아 둔 자리는 이미 정산했다
     const usedTid = [...server.usedTickets][0];
     // 새 엔진·새 테이블 서버가 같은 사슬을 연다
     const out2 = [];

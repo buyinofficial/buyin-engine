@@ -113,6 +113,8 @@ async function boot() {
     wireButtons();
     checkEngine();
 
+    // [REBUY_0_10_2] 주소에 새 좌석표가 있으면 그것으로 앉는다 — 이 탭에 남은 예전 자리 토큰(재바이인 전 정산된 자리)은 버린다
+    if (qs.get('t')) sessionStorage.removeItem('buyin.token');
     const saved = sessionStorage.getItem('buyin.token');
     if (saved) { S.token = saved; return listen(); }
     if (!S.ticket) return gate(t('noTicket'), true);
@@ -1061,6 +1063,7 @@ function wireButtons() {
     $('.rb-go').onclick = async () => {   // [REBUY_0_10_1] 말풍선 → 로비의 바이인 신청(처음 앉을 때와 같은 신청·승인·좌석표)
         if (!S.token || !S.room) return;
         try { await cmd('rebuy'); } catch (_e) { /* 말풍선은 덤 */ }
+        sessionStorage.removeItem('buyin.token');   // 정산된 자리 — 돌아올 때는 새 좌석표로 앉는다
         location.href = `${LOBBY_URL}/game/?room_id=${encodeURIComponent(S.room.id)}`;
     };
     $('#btn-leave').onclick = async () => {
