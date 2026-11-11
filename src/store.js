@@ -14,9 +14,6 @@
  *   kind  = "engine-key"  엔진이 뜰 때 공개키·증명서 report_data — 옛 기록을 옛 키로 검증할 수 있게
  *           "seat-in"     좌석표로 앉음(좌석표 번호·세션·바이인) — 같은 좌석표 재사용 금지, 재시작 정산
  *           "settle"      정산서(엔진 서명) — 금액만
- *           "rebuy-ask"   칩 0 좌석의 추가 바이인 신청(회원이 눌렀다) — 콘솔이 방장에게 넘긴다. 금액·카드 없음
- *           "rebuy-cancel" 그 신청 취소(회원) 또는 방장 거절 반영
- *           "topup"       추가 바이인 영수증으로 칩이 들어감(영수증 번호·금액) — 같은 영수증 재사용 금지, 재시작 정산
  *           "hand"        { record, sig } — 엔진이 서명한 판 기록 (판이 끝난 뒤에만)
  *
  * 덧붙이기만 한다: 줄을 고치는 UPDATE 는 트리거가 막는다. 지우기는 보관 기간 정리(prune)뿐이고, 콘솔로 아직 안 보낸 줄은
@@ -39,7 +36,7 @@ CREATE TABLE IF NOT EXISTS chain (
     i       INTEGER PRIMARY KEY,   -- 줄 번호(0 부터, 빈틈 없이)
     prev    TEXT    NOT NULL,      -- 앞 줄의 hash
     hash    TEXT    NOT NULL,      -- 이 줄의 hash
-    kind    TEXT    NOT NULL,      -- engine-key | seat-in | settle | hand | tip | rebuy-ask | rebuy-cancel | topup
+    kind    TEXT    NOT NULL,      -- engine-key | seat-in | settle | hand | tip
     at      INTEGER NOT NULL,      -- 쓴 시각(ms)
     hand_id TEXT,                  -- kind = hand 일 때 판 번호
     line    TEXT    NOT NULL       -- 줄 전체(JSON). hash 는 이 줄의 본문으로 계산된다
@@ -109,7 +106,6 @@ class RecordStore {
             hand: q('SELECT line FROM chain WHERE hand_id = ?'),
             // [TABLE_RECORD_2026_11_10] 판 번호는 '<tableId>.<판 번호>' — '.' 다음 글자 '/' 앞까지가 그 테이블의 판이다
             tips: q("SELECT i, line FROM chain WHERE kind = 'tip' ORDER BY i"),
-            topups: q("SELECT i, line FROM chain WHERE kind = 'topup' ORDER BY i"),   // [REBUY_2026_11_11]
             ofTable: q("SELECT i, line FROM chain WHERE kind = 'hand' AND hand_id >= ? AND hand_id < ? ORDER BY i LIMIT ?"),
             keys: q("SELECT line FROM chain WHERE kind = 'engine-key' ORDER BY i"),
             ofKey: q('SELECT hand_id FROM seat_keys WHERE sig_fp = ? ORDER BY i DESC LIMIT ?'),
@@ -221,7 +217,7 @@ class RecordStore {
     /** 테이블 서버 사건 — 'seat-in'(좌석표로 앉음), 'settle'(정산서), 'tip'(보낸 사람 서명이 붙은 팁, 판과 판 사이에 옮김).
      *  판 기록과 같은 사슬에 남아 재시작 뒤에도 돈이 정산된다 */
     appendEvent(kind, body) {
-        if (!['seat-in', 'settle', 'tip', 'rebuy-ask', 'rebuy-cancel', 'topup'].includes(kind)) throw new Error('unknown event kind');   // [REBUY_2026_11_11]
+        if (!['seat-in', 'settle', 'tip'].includes(kind)) throw new Error('unknown event kind');
         return this._append({ kind, at: Date.now(), ...body });
     }
 
@@ -254,12 +250,6 @@ class RecordStore {
     }
 
     /** [TABLE_RECORD_2026_11_10] 한 테이블의 팁 줄(판과 판 사이에 옮긴 칩, 보낸 사람 서명) — 회원 번호는 그대로 두고 부르는 쪽이 자리로 바꾼다 */
-    /** [REBUY_2026_11_11] 이 테이블의 추가 바이인 줄(판과 판 사이 칩이 들어온 곳) */
-    tableTopups(tableId) {
-        const t = String(tableId);
-        return this.sql.topups.all().map((r) => JSON.parse(r.line)).filter((e) => e.tableId === t);
-    }
-
     tableTips(tableId) {
         const t = String(tableId);
         return this.sql.tips.all().map((r) => JSON.parse(r.line)).filter((e) => e.tableId === t);

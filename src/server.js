@@ -249,7 +249,7 @@ async function start() {
         setInterval(prune, 60 * 60 * 1000).unref();
     }
     // 테이블 화면·검증 화면은 언제나 TEE 가 내보낸다(테이블 서버가 꺼져 있으면 앉기·명령만 닫힌다)
-    tableHandler = tableRoutes(tables, { token: TOKEN });   // [REBUY_2026_11_11] 추가 바이인(/table/topup)은 콘솔 토큰
+    tableHandler = tableRoutes(tables);
     server.listen(PORT, HOST, () => {
         const i = info();
         console.log(`[tee-engine] ${i.name} ${i.version} mode=${i.mode} listening ${HOST}:${PORT} sigFp=${i.keys.sigFp}`

@@ -444,63 +444,84 @@ function bustOne(env) {
     assert.fail('nobody busted');
 }
 
-test('테이블: 올인으로 칩 0 — 자리는 남고(정산 안 함) 판에 안 든다, 신청 → 콘솔 영수증으로 칩 → 한 판 뒤 「바이인 완료」 내림, 거절·재사용·남의 좌석 거절, 재시작 정산에 추가 바이인 포함', () => {
+test('테이블: 올인으로 칩 0 — 바로 정산(0), 자리는 그 회원 몫으로 잡아 둠, 칩을 넣는 다른 길 없음, 새 좌석표로 그 자리에 돌아옴, 잡아 둔 시간·나가기, 재시작 [REBUY_0_10_1]', () => {
     const env = setup(2, { unit: 150 });
-    const { server, store, out, clock, players, consoleKeys } = env;
+    const { server, store, out, clock, players, ticket, consoleKeys } = env;
     const loser = bustOne(env);
+    const k = players.indexOf(loser);
     const winner = players.find((p) => p !== loser);
     const room = server.rooms.get('r1');
-    const seat = room.seats[loser.seat];
-    assert.ok(seat, '칩 0 이어도 자리에 남는다');
-    assert.strictEqual(out.filter((o) => o.kind === 'settle').length, 0, '정산서 없음');
-    assert.strictEqual(server._publicSeat(room, seat).busted, true);
-    assert.strictEqual(server.snapshot(room, seat).me.unit, 150, '좌석표의 1바이인 금액이 화면에 간다');
-    clock.advance(10000);
-    assert.strictEqual(room.hand, null, '혼자 남으면 판이 열리지 않는다');
+    const held = room.seats[loser.seat];
+    assert.ok(held && held.held, '칩 0 이어도 자리는 남는다(잡아 둠)');
+    const settles = () => out.filter((o) => o.kind === 'settle' && o.note.odcId === held.odcId);
+    assert.strictEqual(settles().length, 1, '바로 정산한다');
+    assert.strictEqual(settles()[0].note.cashOut, 0);
+    assert.strictEqual(settles()[0].note.reason, 'busted');
+    assert.ok(loser.events.some(([ev]) => ev === 'busted'));
+    assert.strictEqual(server._publicSeat(room, held).busted, true);
+    assert.strictEqual(server.snapshot(room, held).me.unit, 150, '좌석표의 1바이인 금액이 화면에 간다');
+    assert.ok(!('topUp' in server) && typeof server.topUp !== 'function', '칩을 넣는 경로가 없다');
+    const kinds = new Set(store.range(0, 1e9).map((e) => e.kind));
+    for (const kd of kinds) assert.ok(['engine-key', 'seat-in', 'settle', 'hand', 'tip'].includes(kd), '사슬 종류는 그대로: ' + kd);
 
-    const topup = (o = {}) => signTicket({ v: 1, kind: 'topup', tid: 'top_' + crypto.randomBytes(4).toString('hex'), seatTid: seat.tid, exp: clock.now() + 60000,
-        roomId: 'r1', sessionId: seat.sessionId, odcId: seat.odcId, amount: 150, ...o }, o.key || consoleKeys.privateKey);
-    assert.throws(() => server.topUp(topup()), /not asked/, '신청하지 않은 좌석엔 넣지 않는다');
-    assert.throws(() => server.command(winner.token, { type: 'rebuy' }), /no chips/, '칩이 있는 좌석은 신청 못 한다');
+    // 연결이 끊겨도 잡아 둔 자리는 그대로(회원은 로비에서 바이인 신청 중)
+    for (const f of loser.closeFns) f();
+    server.subscribe(held.token, { send: () => {}, end: () => {}, onClose: () => {} });
+    clock.advance(5 * 60 * 1000);
+    assert.strictEqual(room.seats[loser.seat], held, '끊김 유예가 지나도 잡아 둔다');
 
-    assert.ok(server.command(loser.token, { type: 'rebuy' }).ok);
-    assert.strictEqual(seat.rebuy, 'asked');
+    // 「바이인 신청」 — 말풍선만(사슬·콘솔로 가는 것 없음). 칩이 있는 좌석은 못 한다
+    const lines = store.range(0, 1e9).length;
+    assert.ok(server.command(held.token, { type: 'rebuy' }).ok);
+    assert.strictEqual(held.rebuy, 'asked');
     assert.ok(winner.events.some(([ev, d]) => ev === 'seat' && d.seat.seat === loser.seat && d.seat.rebuy === 'asked'), '같은 방 모두에게 말풍선');
-    const asks = store.range(0, 1e9).filter((e) => e.kind === 'rebuy-ask');
-    assert.strictEqual(asks.length, 1); assert.strictEqual(asks[0].tid, seat.tid);
-    assert.ok(!('amount' in asks[0]) && !JSON.stringify(asks[0]).includes('hole'), '신청 줄에는 금액·카드 없음');
+    assert.strictEqual(store.range(0, 1e9).length, lines, '신청은 사슬에 줄을 남기지 않는다');
+    assert.throws(() => server.command(winner.token, { type: 'rebuy' }), /no chips/);
 
-    // 거절 → 표시만 지움, 다시 신청
-    server.rebuyReject('r1', seat.odcId);
-    assert.strictEqual(seat.rebuy, null);
-    assert.ok(loser.events.some(([ev]) => ev === 'rebuy-rejected'));
-    assert.ok(server.command(loser.token, { type: 'rebuy' }).ok);
-
-    assert.throws(() => server.topUp(topup({ key: C.generateKeyPair().privateKey })), /console/, '콘솔 서명이 아니면 거절');
-    assert.throws(() => server.topUp(topup({ seatTid: 'other_tid_123' })), /not at the table/, '다른 좌석표 번호');
-    assert.throws(() => server.topUp(topup({ sessionId: 'sess_nobody_1234' })), /not at the table/);
-    assert.throws(() => server.topUp(topup({ exp: clock.now() - 1 })), /expired/);
-    const tk = topup();
-    const r = server.topUp(tk);
-    assert.strictEqual(r.stack, 150);
-    assert.strictEqual(seat.rebuy, 'done');
-    assert.strictEqual(seat.buyIn, 350);
-    assert.throws(() => server.topUp(tk), /already used/, '같은 영수증 두 번 금지');
-    assert.ok(store.range(0, 1e9).some((e) => e.kind === 'topup' && e.amount === 150 && e.seatTid === seat.tid));
-
-    // 다음 판에 든다 → 끝나면 「바이인 완료」 표시를 내린다
+    // 다른 회원은 그 자리에 못 앉고, 판이 돌면 그 자리로 팁도 못 보낸다
+    const other = client(server, ticket(7));
+    assert.notStrictEqual(other.seat, loser.seat, '잡아 둔 자리는 다른 회원이 못 쓴다');
     clock.advance(4000);
-    assert.ok(room.hand && room.hand.seats.includes(loser.seat), '칩이 들어온 좌석이 다음 판에 든다');
-    playOne(env, () => 0);
-    assert.strictEqual(seat.rebuy, null);
+    assert.ok(room.hand && !room.hand.seats.includes(loser.seat), '잡아 둔 자리는 판에 들지 않는다');
+    assert.throws(() => server.command(winner.token, { type: 'tip', to: loser.seat, gift: 'flower', n: 1, sig: 'x' }), /bad tip target/);
+    env.players = [winner, other];
+    playOne(env, () => 1);
 
-    // 엔진이 다시 떠도 정산서에 추가 바이인이 들어간다(바이인 합 = 200 + 150), 쓴 영수증은 다시 못 쓴다
-    const total = room.seats.reduce((a, s) => a + (s ? s.stack : 0), 0);
+    // 처음 앉을 때와 같은 좌석표(새 바이인, 같은 회원) → 잡아 둔 그 자리에 「바이인 완료」로 앉는다
+    const oldToken = held.token;
+    const back = client(server, ticket(k, 150));
+    assert.strictEqual(back.seat, loser.seat, '그 자리로 돌아온다');
+    const seat = room.seats[back.seat];
+    assert.strictEqual(seat.rebuy, 'done');
+    assert.strictEqual(seat.stack, 150);
+    assert.strictEqual(seat.held, false);
+    assert.throws(() => server.command(oldToken, { type: 'rebuy' }), /unknown token|seat is gone/, '예전 자리 토큰은 끝났다');
+    assert.strictEqual(settles().length, 1, '돌아올 때 정산서를 다시 내지 않는다');
+    env.players = [winner, other, back];
+    for (let g = 0; g < 10 && seat.rebuy === 'done'; g++) { clock.advance(8000); playOne(env, () => 1); }
+    assert.notStrictEqual(seat.rebuy, 'done', '한 판을 치면 「바이인 완료」를 내린다');
+
+    // 잡아 둔 시간이 지나면 자리를 비운다(정산서 다시 없음) / 나가기도 같다
+    const env2 = setup(2);
+    const l2 = bustOne(env2);
+    const r2 = env2.server.rooms.get('r1');
+    const n2 = env2.out.filter((o) => o.kind === 'settle').length;
+    env2.clock.advance(10 * 60 * 1000 + 10);
+    assert.strictEqual(r2.seats[l2.seat], null, '잡아 둔 시간이 지나면 비운다');
+    assert.strictEqual(env2.out.filter((o) => o.kind === 'settle').length, n2, '정산서를 다시 내지 않는다');
+    assert.ok(l2.events.some(([ev, d]) => ev === 'settled' && d.cashOut === 0));
+    const env3 = setup(2);
+    const l3 = bustOne(env3);
+    const n3 = env3.out.filter((o) => o.kind === 'settle').length;
+    assert.ok(env3.server.command(l3.token, { type: 'leave' }).ok);
+    assert.strictEqual(env3.server.rooms.get('r1').seats[l3.seat], null);
+    assert.strictEqual(env3.out.filter((o) => o.kind === 'settle').length, n3);
+
+    // 엔진이 다시 떠도 칩 0 으로 끝난 세션은 다시 정산하지 않는다 — 앉아 있는 세션만(칩 합 = 정산 합)
+    const total = room.seats.reduce((a, x) => a + (x ? x.stack : 0), 0);
     const out2 = [];
-    const server2 = new TableServer({ engine: env.engine, store, consoleKey: consoleKeys.publicKey, outbox: (kind, p) => out2.push({ kind, ...p }), clock });
-    const notes = store.range(0, 1e9).filter((e) => e.kind === 'settle').map((e) => e.note);
-    const mine = notes.find((n) => n.sessionId === seat.sessionId);
-    assert.strictEqual(mine.buyIn, 350);
-    assert.strictEqual(Math.round(notes.reduce((a, n) => a + n.cashOut, 0) * 1000) / 1000, Math.round(total * 1000) / 1000, '칩 합 = 정산 합');
-    assert.ok(server2.usedTickets.has(JSON.parse(Buffer.from(tk.split('.')[0], 'base64url')).tid));
+    new TableServer({ engine: env.engine, store, consoleKey: consoleKeys.publicKey, outbox: (kind, q) => out2.push({ kind, ...q }), clock });
+    const again = out2.filter((o) => o.kind === 'settle').map((o) => o.note);
+    assert.ok(!again.some((n) => n.sessionId === held.sessionId), '정산한 세션은 다시 정산하지 않는다');
+    assert.strictEqual(Math.round(again.reduce((a, n) => a + n.cashOut, 0) * 1000) / 1000, Math.round(total * 1000) / 1000, '칩 합 = 정산 합');
 });

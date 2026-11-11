@@ -5,10 +5,7 @@
  *   GET  /table/<파일>            화면 파일(js·css·그림·글꼴)
  *   POST /table/join              { ticket, auth?: { sig, proof } } → { token, seat, tableId, seedCommit }
  *   GET  /table/events            이벤트 흐름(SSE, Authorization: Bearer <좌석 토큰>) — 접속하자마자 snapshot, 이후 판 진행
- *   POST /table/cmd               { token, type, ... } — 키 등록·무작위 값·액션·자리 비움·일어나기·추가 바이인 신청
- *   POST /table/topup             콘솔만(Authorization: Bearer <TEE_RPC_TOKEN>) [REBUY_2026_11_11]
- *                                 { ticket } 추가 바이인 영수증(콘솔 서명) → 칩 0 이고 신청해 둔 좌석에 칩
- *                                 { reject: { roomId, odcId } } 방장 거절·만료 → 신청 표시만 지운다
+ *   POST /table/cmd               { token, type, ... } — 키 등록·무작위 값·액션·자리 비움·일어나기
  *   GET  /table/verify.html       내 판 기록 검증하기 (공개 화면)
  *   GET  /table/engine/<파일>     검증 화면이 그대로 돌리는 엔진 소스(지금 도는 그 파일)
  *
@@ -17,7 +14,6 @@
  */
 
 const fs = require('fs');
-const crypto = require('crypto');
 const path = require('path');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public', 'table');
@@ -68,21 +64,8 @@ function serveFile(res, rel) {
     return true;
 }
 
-/** 콘솔 토큰 확인 — 길이 차이로 새지 않게 해시로 비교한다 */
-function tokenCheck(token) {
-    const want = token ? crypto.createHash('sha256').update(String(token)).digest() : null;
-    return (req) => {
-        if (!want) return false;
-        const h = String(req.headers.authorization || '');
-        const given = h.startsWith('Bearer ') ? h.slice(7) : '';
-        return !!given && crypto.timingSafeEqual(crypto.createHash('sha256').update(given).digest(), want);
-    };
-}
-
-/** @returns {(req, res, url) => boolean} 테이블 경로를 처리했으면 true
- *  @param {object} [opts]  { token } 콘솔 토큰(TEE_RPC_TOKEN) — 추가 바이인 경로(/table/topup)만 쓴다. 없으면 그 경로는 닫힌다 */
-function tableRoutes(tables, opts = {}) {
-    const consoleOk = tokenCheck(opts.token);
+/** @returns {(req, res, url) => boolean} 테이블 경로를 처리했으면 true */
+function tableRoutes(tables) {
     return function handle(req, res, url) {
         const p = url.pathname;
         if (!p.startsWith('/table')) return false;
@@ -90,19 +73,6 @@ function tableRoutes(tables, opts = {}) {
 
         if (!tables && (p === '/table/join' || p === '/table/cmd' || p === '/table/events')) {
             json(res, 503, { ok: false, code: 'off', error: 'table server is not enabled on this engine' });
-            return true;
-        }
-        if (req.method === 'POST' && p === '/table/topup') {
-            if (!tables) { json(res, 503, { ok: false, code: 'off', error: 'table server is not enabled on this engine' }); return true; }
-            if (!consoleOk(req)) { json(res, 401, { ok: false, code: 'auth', error: 'console only' }); return true; }
-            readJson(req).then((m) => {
-                try {
-                    if (m && m.reject) return json(res, 200, tables.rebuyReject(m.reject.roomId, m.reject.odcId));
-                    return json(res, 200, tables.topUp(m && m.ticket));
-                } catch (e) {
-                    return json(res, 400, { ok: false, code: e.code || 'error', error: e.message });
-                }
-            }, () => json(res, 400, { ok: false, error: 'bad json' }));
             return true;
         }
         if (req.method === 'POST' && (p === '/table/join' || p === '/table/cmd')) {

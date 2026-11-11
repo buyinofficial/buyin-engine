@@ -231,8 +231,6 @@ function listen() {
     });
     on('tip-cancel', (d) => { if (d.from === mySeat()) toast(t('tipCancel')); });
     on('chat', onChat);
-    on('topup', () => { toast(t('rbToast')); play('minichip'); });   // [REBUY_2026_11_11]
-    on('rebuy-rejected', () => toast(t('rbRejected'), 4000));
     on('timebank', (d) => {
         if (d.seat === mySeat() && S.me) { S.me.timeBank = d.left; if (S.turn) S.tbUsed = S.turn.handId + ':' + S.turn.q; }
         floatTag(d.seat, '+' + Math.round(d.addedMs / 1000) + 's');
@@ -468,8 +466,9 @@ function render() {
 }
 
 /**
- * [REBUY_2026_11_11] 칩을 다 잃은 내 자리 — 「바이인 신청」(방장 승인) / 기다리는 중이면 「신청 취소」.
- * 금액은 방의 1바이인 금액(좌석표의 room.unit, 화면 표시용). 승인되면 TEE 가 칩을 넣고 이 줄은 사라진다.
+ * [REBUY_0_10_1] 칩을 다 잃은 내 자리(정산 0, 자리는 잡아 둠) — 「바이인 신청」을 누르면 말풍선을 띄우고
+ * 로비의 바이인 신청(방장 승인 → 좌석표)으로 간다. 좌석표로 돌아오면 TEE 가 이 자리에 다시 앉힌다.
+ * 금액은 방의 1바이인 금액(좌석표의 room.unit, 화면 표시용).
  */
 function renderRebuy() {
     const bar = $('#rebuy-bar');
@@ -477,11 +476,9 @@ function renderRebuy() {
     const out = !!(me && me.busted && !me.leaving && me.rebuy !== 'done');
     bar.hidden = !out;
     if (!out) return;
-    const asked = me.rebuy === 'asked';
-    bar.classList.toggle('asked', asked);
-    $('.rb-msg', bar).textContent = asked ? t('rbWait') : t('rbLost');
+    $('.rb-msg', bar).textContent = t('rbLost');
     const unit = S.me && S.me.unit;
-    $('.rb-go', bar).textContent = asked ? t('rbCancel') : (unit ? `${t('rbBtn')} · ${dmCur(unit)}` : t('rbBtn'));
+    $('.rb-go', bar).textContent = unit ? `${t('rbBtn')} · ${dmCur(unit)}` : t('rbBtn');
 }
 
 function renderBoard() {
@@ -1061,11 +1058,10 @@ function wireButtons() {
     $('.a-raise').onclick = (e) => act(e.currentTarget.dataset.act, S.raiseVal);
     $('.gauge-input').oninput = (e) => { S.raiseVal = Number(e.target.value); paintRaise(); raisingOn(); };
     $('.gauge-input').addEventListener('pointerdown', raisingOn);
-    $('.rb-go').onclick = async () => {   // [REBUY_2026_11_11] 바이인 신청 / 신청 취소
-        if (!S.token) return;
-        const me = S.seats && S.seats[mySeat()];
-        const r = await cmd(me && me.rebuy === 'asked' ? 'rebuyCancel' : 'rebuy');
-        if (!r.ok && r.error) toast(r.error);
+    $('.rb-go').onclick = async () => {   // [REBUY_0_10_1] 말풍선 → 로비의 바이인 신청(처음 앉을 때와 같은 신청·승인·좌석표)
+        if (!S.token || !S.room) return;
+        try { await cmd('rebuy'); } catch (_e) { /* 말풍선은 덤 */ }
+        location.href = `${LOBBY_URL}/game/?room_id=${encodeURIComponent(S.room.id)}`;
     };
     $('#btn-leave').onclick = async () => {
         if (!S.token) return;
@@ -1283,6 +1279,7 @@ function floatTag(seat, text) {
 
 /** 번역은 게임서버의 번역 주소에 받은 글 한 줄만 보낸다(카드·게임 정보 없음). 결과가 원문과 같으면 원문만 */
 const TRANSLATE_URL = 'https://buyinholdem.com/chat-translate';
+const LOBBY_URL = 'https://buyinholdem.com';   // [REBUY_0_10_1] 재바이인 — 로비의 바이인 신청 화면
 async function translateLine(m) {
     if (m.seat === mySeat() || m.trTried) return;
     m.trTried = true;
