@@ -97,6 +97,18 @@ function playOne(env, rnd) {
     assert.fail('hand did not end');
 }
 
+/**
+ * 다음 판이 시작될 때까지 시계를 민다 — 결과 4초 + 쇼다운 연출(최대 약 9초, [SHOWDOWN_SEQ_0_10_4]) + 다음 판 3초.
+ * 종전엔 8초 고정이었다. 0.5초씩 밀어 판이 열리면 멈춘다(최대 20초 — 차례 시간 20초를 넘기지 않게)
+ */
+function waitHand(clock, getRoom) {
+    for (let i = 0; i < 40; i++) {
+        clock.advance(500);
+        const room = getRoom();
+        if (room && room.hand && !room.hand.__seen) { room.hand.__seen = true; return; }
+    }
+}
+
 test('테이블: 좌석표로 앉아 판이 TEE 안에서만 돈다 — 카드는 본인 봉투로만, 칩·레이크 보존, 정산서 서명', () => {
     const rnd = (n) => crypto.randomInt(n);
     const env = setup(4);
@@ -105,7 +117,7 @@ test('테이블: 좌석표로 앉아 판이 TEE 안에서만 돈다 — 카드�
     const corePub = engineKey && C.importPublicJwk(engine.call('info').keys.ecdh);
     let handsDone = 0;
     for (let g = 0; g < 40; g++) {
-        clock.advance(8000);   // 결과 4초 + 다음 판 3초
+        waitHand(clock, () => server.rooms.get('r1'));   // 결과 4초 + 다음 판 3초
         const room = server.rooms.get('r1');
         if (!room || !room.hand) break;
         const hid = room.hand.handId;
@@ -200,7 +212,7 @@ test('테이블: 엔진이 다시 떠도 좌석의 돈은 마지막으로 끝난
     const env = setup(2);
     const { server, clock, store, ticket } = env;
     clock.advance(5000); playOne(env, rnd);
-    clock.advance(8000);                       // 둘째 판 시작 → 진행 중에 "재시작"
+    waitHand(clock, () => server.rooms.get('r1'));                       // 둘째 판 시작 → 진행 중에 "재시작"
     const room = server.rooms.get('r1');
     const stacksAfterFirst = room.seats.filter((s) => s && !s.held).map((s) => s.stack);   // [REBUY_0_10_1] 칩 0 으로 잡아 둔 자리는 이미 정산했다
     const usedTid = [...server.usedTickets][0];
@@ -221,11 +233,11 @@ test('테이블: 이번 씨앗 약속에 무작위 값을 낸 좌석만 판에 �
     const env = setup(3);
     const { server, clock, players } = env;
     players[2].noEntropy = true;   // 셋째는 다음 판부터 값을 내지 않는다
-    clock.advance(8000);
+    waitHand(clock, () => server.rooms.get('r1'));
     const r1 = server.rooms.get('r1').hand;
     assert.ok(r1 && r1.seats.length === 3, 'first hand: all three gave entropy');
     playOne(env, rnd);
-    clock.advance(8000);
+    waitHand(clock, () => server.rooms.get('r1'));
     const r2 = server.rooms.get('r1').hand;
     assert.ok(r2, 'second hand started');
     assert.ok(!r2.seats.includes(players[2].seat), 'seat without entropy sits the hand out');
@@ -235,7 +247,7 @@ test('테이블: 이번 씨앗 약속에 무작위 값을 낸 좌석만 판에 �
     assert.deepStrictEqual(rec.entropy.map((e) => e.odcId).sort(), rec.seats.map((s) => s.odcId).sort());
     // 다시 값을 내면 다음 판에 든다
     players[2].entropy(server.rooms.get('r1').seedCommit);
-    clock.advance(8000);
+    waitHand(clock, () => server.rooms.get('r1'));
     assert.ok(server.rooms.get('r1').hand.seats.includes(players[2].seat), 'back in after giving entropy');
 });
 
@@ -276,7 +288,7 @@ test('테이블: 한 명이 나가거나 끊겨도 판은 이어진다 — 끊�
     assert.ok(env.out.some((x) => x.kind === 'hand-record' && x.record.handId === h1), '나머지끼리 판을 끝냈다');
     assert.ok(env.out.some((x) => x.kind === 'settle' && x.note.odcId === quitter.odcId));
     // 다음 판이 남은 두 명으로 시작된다
-    clock.advance(8000);
+    waitHand(clock, () => server.rooms.get('r1'));
     assert.ok(room.hand && room.hand.seats.length === 2, 'next hand with the remaining two');
     // 한 명이 끊긴다(화면 연결 닫힘) → 60초 안에 안 돌아오면 탈락, 판은 계속
     const left = players.filter((p) => room.seats[p.seat]);
@@ -372,7 +384,7 @@ test('테이블: 팁 — 본인 서명·번호 필수, 프리플랍에서만, BB
     const after = room.seats.filter(Boolean).reduce((x, s) => x + s.stack, 0);
     assert.ok(Math.abs(before - rake - after) < 1e-6, '방 전체 돈 = 이전 − 레이크');
     // 프리플랍이 아니면 거절
-    clock.advance(8000);
+    waitHand(clock, () => server.rooms.get('r1'));
     if (room.hand) { room.hand.stage = 'flop'; clock.advance(3100); assert.throws(() => server.command(a.token, { type: 'tip', to: b.seat, gift: 'kiss', n: 2, sig: sign(a, 2, b, 'kiss', 2) }), /pre-flop/); }
 });
 
@@ -427,7 +439,7 @@ test('테이블: 레이즈 중 — 내 차례에만 같은 방에 알린다(금�
 function bustOne(env) {
     const { server, players, clock } = env;
     for (let g = 0; g < 60; g++) {
-        clock.advance(8000);
+        waitHand(clock, () => server.rooms.get('r1'));
         const room = server.rooms.get('r1');
         const out = players.find((p) => room.seats[p.seat] && room.seats[p.seat].stack <= 0);
         if (out) return out;
@@ -460,6 +472,8 @@ test('테이블: 올인으로 칩 0 — 바로 정산(0), 자리는 그 회원 �
     assert.ok(loser.events.some(([ev]) => ev === 'busted'));
     assert.strictEqual(server._publicSeat(room, held).busted, true);
     assert.strictEqual(server.snapshot(room, held).me.unit, 150, '좌석표의 1바이인 금액이 화면에 간다');
+    const heldBi = held.bi;
+    assert.ok(heldBi >= 1, '처음 앉은 바이인 개수');
     assert.ok(!('topUp' in server) && typeof server.topUp !== 'function', '칩을 넣는 경로가 없다');
     const kinds = new Set(store.range(0, 1e9).map((e) => e.kind));
     for (const kd of kinds) assert.ok(['engine-key', 'seat-in', 'settle', 'hand', 'tip'].includes(kd), '사슬 종류는 그대로: ' + kd);
@@ -494,11 +508,14 @@ test('테이블: 올인으로 칩 0 — 바로 정산(0), 자리는 그 회원 �
     const seat = room.seats[back.seat];
     assert.strictEqual(seat.rebuy, 'done');
     assert.strictEqual(seat.stack, 150);
+    // [BUYIN_UNITS_0_10_4] 표시용 바이인 개수 — 이번 1개, 이 자리 합계는 처음 것 + 1
+    assert.strictEqual(server._publicSeat(room, seat).biNew, 1);
+    assert.strictEqual(server._publicSeat(room, seat).bi, heldBi + 1, '재바이인하면 합계에 더한다');
     assert.strictEqual(seat.held, false);
     assert.throws(() => server.command(oldToken, { type: 'rebuy' }), /unknown token|seat is gone/, '예전 자리 토큰은 끝났다');
     assert.strictEqual(settles().length, 1, '돌아올 때 정산서를 다시 내지 않는다');
     env.players = [winner, other, back];
-    for (let g = 0; g < 10 && seat.rebuy === 'done'; g++) { clock.advance(8000); playOne(env, () => 1); }
+    for (let g = 0; g < 10 && seat.rebuy === 'done'; g++) { waitHand(clock, () => server.rooms.get('r1')); playOne(env, () => 1); }
     assert.notStrictEqual(seat.rebuy, 'done', '한 판을 치면 「바이인 완료」를 내린다');
 
     // 잡아 둔 시간이 지나면 자리를 비운다(정산서 다시 없음) / 나가기도 같다
@@ -524,4 +541,18 @@ test('테이블: 올인으로 칩 0 — 바로 정산(0), 자리는 그 회원 �
     const again = out2.filter((o) => o.kind === 'settle').map((o) => o.note);
     assert.ok(!again.some((n) => n.sessionId === held.sessionId), '정산한 세션은 다시 정산하지 않는다');
     assert.strictEqual(Math.round(again.reduce((a, n) => a + n.cashOut, 0) * 1000) / 1000, Math.round(total * 1000) / 1000, '칩 합 = 정산 합');
+});
+
+test('테이블: 바이인 개수(표시용) — 좌석표 금액 ÷ 1바이인, 1바이인이 없는 방은 0 [BUYIN_UNITS_0_10_4]', () => {
+    const env = setup(2, { unit: 100 });
+    const room = env.server.rooms.get('r1');
+    const three = client(env.server, env.ticket(5, 300));
+    const s3 = room.seats[three.seat];
+    assert.strictEqual(env.server._publicSeat(room, s3).bi, 3);
+    assert.strictEqual(env.server._publicSeat(room, s3).biNew, 0, '처음 앉을 때는 「바이인 완료」가 아니다');
+    assert.strictEqual(env.server.snapshot(room, s3).me.bi, 3);
+    assert.strictEqual(s3.stack, 300, '칩은 좌석표 금액 그대로');
+    const env2 = setup(2);
+    const r2 = env2.server.rooms.get('r1');
+    assert.strictEqual(env2.server._publicSeat(r2, r2.seats[env2.players[0].seat]).bi, 0);
 });

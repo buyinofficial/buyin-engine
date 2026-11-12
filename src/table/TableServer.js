@@ -22,6 +22,18 @@ const { verifyTicket, TicketError } = require('./ticket');
 
 const START_DELAY_MS = 3000;       // 판과 판 사이
 const RESULT_PAUSE_MS = 4000;      // 결과를 보여 주는 시간
+
+/**
+ * [SHOWDOWN_SEQ_0_10_4] 쇼다운 연출 시간 — 화면(app.js showdownPlan)이 카드를 한 자리씩 여는 데 쓰는 시간만큼 다음 판을 늦춘다.
+ *   보통 쇼다운: 0.5초 뒤 0.4초 간격으로 한 자리씩(마지막 승자는 0.8초 더) → 뒤집기 0.6초 → 0.7초 뒤 승자·칩
+ *   올인 런아웃: SHOWDOWN 1.6초 → 홀카드 0.4초 간격 → 뒤집기 0.6초 → 보드 한 단계씩 1초 간격(마지막 0.9초) → 0.7초 뒤 승자·칩
+ *   연출일 뿐 — 카드·칩·결과와 무관하다(결과는 이미 정해져 보낸 뒤다).
+ */
+function showdownMs(n, runoutStages) {
+    if (!(n > 0)) return 0;
+    if (runoutStages !== null) return 1600 + (n - 1) * 400 + 600 + (runoutStages > 0 ? (runoutStages - 1) * 1000 + 900 : 0) + 700;
+    return 500 + (n - 1) * 400 + (n > 1 ? 800 : 0) + 600 + 700;
+}
 const EMPTY_ROOM_MS = 10 * 60 * 1000;
 const DISCONNECT_GRACE_MS = 60 * 1000;
 const HOLD_MS = 10 * 60 * 1000;         // [REBUY_0_10_1] 칩 0 좌석을 그 회원 몫으로 잡아 두는 시간(그 사이 바이인 신청·방장 승인)
@@ -123,8 +135,8 @@ class TableServer {
         // 같은 회원이 이미 앉아 있다 — 본인 키로 서명한 새 세션이면 기존 자리를 탈락시킨다(정산 뒤 다시 앉는다). 다른 키면 기존 자리에 아무 일도 없다
         const existing = room.seats.find((x) => x && x.odcId === t.player.odcId);
         // [REBUY_0_10_1] 칩 0 으로 정산하고 잡아 둔 자기 자리 — 새 좌석표(새 바이인)로 그 자리에 다시 앉는다
-        let back = -1;
-        if (existing && existing.held) { back = existing.seat; this._release(room, existing, 'rebuy'); }
+        let back = -1, prevBi = 0;
+        if (existing && existing.held) { back = existing.seat; prevBi = existing.bi || 0; this._release(room, existing, 'rebuy'); }
         else if (existing) {
             if (this._signedBy(t, auth, existing.boundFp)) {
                 this._leave(room, existing, 'replaced');
@@ -138,12 +150,16 @@ class TableServer {
         let joinFp = null;
         try { const a = auth || {}; const fp = C.fingerprint(a.sig); if (C.verify(C.importPublicJwk(a.sig), C.msgJoin(t.tid, fp), a.proof)) joinFp = fp; } catch (_e) { /* 서명 없이 앉아도 된다 */ }
 
+        // [BUYIN_UNITS_0_10_4] 화면 표시용 바이인 개수 — 이 좌석표가 1바이인(room.unit)의 몇 배인가, 이 자리에서 지금까지 합계(재바이인이면 더한다).
+        //   좌석표에 이미 공개된 금액을 나눈 값일 뿐 — 칩·정산·판에는 쓰지 않는다. 1바이인이 없는 방은 0
+        const unit = t.room.unit || 0;
+        const biNew = unit > 0 ? Math.max(1, Math.round(t.buyIn / unit)) : 0;
         const token = crypto.randomBytes(24).toString('base64url');
         const s = {
             seat, token, tid: t.tid, sessionId: t.player.sessionId, odcId: t.player.odcId,
             nickname: t.player.nickname, avatar: t.player.avatar, buyIn: t.buyIn, currency: t.currency, display: t.display,
             stack: t.buyIn, rakePaid: 0, hands: 0, keys: false, sitout: false, timeouts: 0, leaving: false, boundFp: joinFp,
-            rebuy: back >= 0 ? 'done' : null, held: false, unit: t.room.unit || 0,   // [REBUY_0_10_1] rebuy: null | 'asked'(말풍선) | 'done'(돌아옴, 한 판)
+            rebuy: back >= 0 ? 'done' : null, held: false, unit, bi: prevBi + biNew, biNew,   // [REBUY_0_10_1] rebuy: null | 'asked'(말풍선) | 'done'(돌아옴, 한 판)
             timeBank: TIME_BANK_START, emoteAt: 0, chatRate: { last: 0, start: 0, n: 0 }, sigJwk: null, tipN: 0, tipAt: 0, tips: [], raisingAt: 0, darkNext: false,
             clients: new Set(), joinedAt: this.clock.now(),
         };
@@ -523,6 +539,7 @@ class TableServer {
                 if (!r.ok) return this._abort(room, r.error);
                 Object.assign(h.reveal, r.holes || {});
                 for (const x of r.stages || []) h.board.push(...x.cards);
+                h.runout = { n: Object.keys(r.holes || {}).length, stages: (r.stages || []).length };   // [SHOWDOWN_SEQ_0_10_4] 연출 시간 계산용
                 this._broadcast(room, 'runout', { handId: h.handId, holes: r.holes, stages: r.stages });
                 continue;
             }
@@ -592,7 +609,10 @@ class TableServer {
         // 판이 끝난 뒤에만 기록을 콘솔로 — 원본은 TEE 사슬(Engine.onRecord 가 이미 남겼다)
         this.outbox('hand-record', { roomId: room.id, record: rec, sig: f.sig });
         room.hand = null;
-        this._afterHand(room, h.seats);
+        // [SHOWDOWN_SEQ_0_10_4] 카드를 순서대로 여는 동안은 다음 판을 시작하지 않는다
+        const sdMs = f.type === 'showdown'
+            ? (h.runout ? showdownMs(h.runout.n, h.runout.stages) : showdownMs(Object.keys(f.holes || {}).length, null)) : 0;
+        this._afterHand(room, h.seats, sdMs);
     }
 
     _abort(room, reason) {
@@ -606,7 +626,7 @@ class TableServer {
         this._afterHand(room);
     }
 
-    _afterHand(room, played = []) {
+    _afterHand(room, played = [], extraMs = 0) {
         this._settleTips(room);
         for (const s of room.seats) {
             if (!s) continue;
@@ -619,7 +639,7 @@ class TableServer {
             else if (shown) this._broadcast(room, 'seat', { seat: this._publicSeat(room, s) });
         }
         if (room.rules.endsAt && this.clock.now() >= room.rules.endsAt) return this._close(room, 'time');
-        this.clock.setTimeout(() => this._maybeStart(room), RESULT_PAUSE_MS);
+        this.clock.setTimeout(() => this._maybeStart(room), RESULT_PAUSE_MS + extraMs);
     }
 
     // ------------------------------------------------------------ 일어나기 · 정산 · 닫기
@@ -693,7 +713,8 @@ class TableServer {
 
     _publicSeat(room, s) {
         return { seat: s.seat, nickname: s.nickname, avatar: s.avatar, stack: s.stack, sitout: s.sitout, leaving: s.leaving, keys: s.keys, connected: s.clients.size > 0,
-            busted: !!s.held || (this._busted(s) && !(room.hand && room.hand.seats.includes(s.seat))), rebuy: s.rebuy };   // [REBUY_0_10_1]
+            busted: !!s.held || (this._busted(s) && !(room.hand && room.hand.seats.includes(s.seat))), rebuy: s.rebuy,
+            bi: s.bi || 0, biNew: s.rebuy === 'done' ? (s.biNew || 0) : 0 };   // [BUYIN_UNITS_0_10_4] 표시용 — 합계·방금 받은 개수   // [REBUY_0_10_1]
     }
 
     _publicHand(room) {
@@ -715,7 +736,7 @@ class TableServer {
         return {
             room: { id: room.id, name: room.rules.name, sb: room.rules.sb, bb: room.rules.bb, maxPlayers: room.rules.maxPlayers, rake: room.rules.rake, turnSec: room.rules.turnSec, endsAt: room.rules.endsAt },
             tableId: room.tableId, seedCommit: room.seedCommit, engine: this.engine.call('info').keys,
-            me: { seat: s.seat, odcId: s.odcId, nickname: s.nickname, stack: s.stack, buyIn: s.buyIn, unit: s.unit, rebuy: s.rebuy, currency: s.currency, display: s.display, keys: s.keys, sitout: s.sitout, timeBank: s.timeBank, tipN: s.tipN, darkNext: s.darkNext },
+            me: { seat: s.seat, odcId: s.odcId, nickname: s.nickname, stack: s.stack, buyIn: s.buyIn, unit: s.unit, bi: s.bi || 0, rebuy: s.rebuy, currency: s.currency, display: s.display, keys: s.keys, sitout: s.sitout, timeBank: s.timeBank, tipN: s.tipN, darkNext: s.darkNext },
             seats: room.seats.map((x) => (x ? this._publicSeat(room, x) : null)),
             hand: this._publicHand(room),
             hole: h && h.seats.includes(s.seat) ? { handId: h.handId, envelope: h.envelopes[s.seat] || null } : null,

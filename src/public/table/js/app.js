@@ -8,7 +8,7 @@
  * 화면 배치는 운영 게임 테이블에서 잰 값(좌석 위치·역할별 보정·칩 자리)을 그대로 쓴다.
  */
 import * as V from './vault.js';
-import { t, setLang, applyStatic, getLang } from './i18n.js';
+import { t, tn, setLang, applyStatic, getLang } from './i18n.js';
 import { liveHandName, prettyRank, bigHandName } from './hand.js';
 
 /** 디자인 리소스(배경·칩·아바타·딜러·카드 뒷면·글꼴)는 콘솔 리소스 서버에서 받는다 — 그림만 받고 아무것도 보내지 않는다.
@@ -62,6 +62,10 @@ const S = {
     // [TABLE_PARITY_2026_11_09] 예전 화면과 맞춘 것
     anim: {}, raising: null, raisingSent: '', preAct: '', emoteHand: '', tipGift: '', darkNext: false, darkHand: '',
     rabbit: null, banner: '', vol: 1, live: false, fire: new Map(), seen: {},
+    // [SHOWDOWN_SEQ_0_10_4] 쇼다운 순차 공개 — sd: { handId, at:{좌석:여는 시각}, winAt, ranks } / 그동안 온 좌석 갱신은 sdQ 에 모았다가 승자 때
+    sd: null, sdQ: [],
+    // [BUYIN_UNITS_0_10_4] 「바이인 완료」를 처음 본 시각 — 자리·이름·합계마다 한 번만 띄운다
+    rbSeen: {},
 };
 try { const v = Number(localStorage.getItem('buyin.vol')); if (v >= 0 && v <= 1 && localStorage.getItem('buyin.vol') !== null) S.vol = v; } catch (_e) { /* */ }
 /** 다시 그려도 연출이 처음부터 다시 돌지 않게 — 시작 시각을 기억해 두고 남은 만큼만 돈다(음수 animation-delay) */
@@ -196,7 +200,11 @@ function listen() {
     const es = S.es = sseStream(S.token);
     const on = (ev, f) => es.addEventListener(ev, (e) => { try { f(JSON.parse(e.data)); } catch (err) { console.error(ev, err); } });
     on('snapshot', onSnapshot);
-    on('seat', (d) => { const x = d.seat; S.seats[x.seat] = x.empty ? null : x; if (S.me && x.seat === S.me.seat && !x.empty) Object.assign(S.me, x); render(); });
+    on('seat', (d) => {
+        // [SHOWDOWN_SEQ_0_10_4] 카드를 여는 동안 온 좌석 갱신(칩·올인 딱지)은 승자 표시 때 — 결과를 먼저 알려 주지 않는다
+        if (sdBusy()) { S.sdQ.push(d); return; }
+        applySeat(d); render();
+    });
     on('hand', onHand);
     on('hole', (d) => openHole(d));
     on('turn', (d) => {
@@ -238,17 +246,9 @@ function listen() {
         floatTag(d.seat, '+' + Math.round(d.addedMs / 1000) + 's');
         render();
     });
-    on('runout', (d) => {
-        if (!S.hand) return;
-        checkPublic(d.handId, [...Object.values(d.holes || {}).flat(), ...(d.stages || []).flatMap((x) => x.cards)]);
-        const n = (d.stages || []).reduce((a, x) => a + x.cards.length, 0);
-        if (n) markBoard(d.handId, S.hand.board.length, n, true);
-        Object.assign(S.reveal, d.holes || {}); for (const x of d.stages || []) S.hand.board.push(...x.cards); clearBets();
-        showBanner('SHOWDOWN', 4000, true); play('showdown');   // 올인으로 베팅이 끝났다 — 예전 화면의 SHOWDOWN
-        render();
-    });
+    on('runout', onRunout);
     on('result', onResult);
-    on('aborted', () => { S.hand = null; S.turn = null; render(); });
+    on('aborted', () => { S.hand = null; S.turn = null; S.sd = null; flushSeats(); render(); });
     on('settled', (d) => { sessionStorage.removeItem('buyin.token'); es.close(); gate(`${t('settled')} ${dmCur(d.cashOut)}`, true); });
     on('error', (d) => { if (d && d.code === 'auth') { sessionStorage.removeItem('buyin.token'); es.close(); gate(t('noTicket')); } else if (d && d.error) toast(d.error); });
     es.onopen = () => { S.retry = 0; };
@@ -296,6 +296,8 @@ async function sendEntropy(seedCommit) {
 }
 
 function onHand(h) {
+    flushSeats();   // [SHOWDOWN_SEQ_0_10_4] 지난 판 연출 중에 모아 둔 좌석 갱신
+    S.sd = null;
     S.hand = { ...h, board: [...h.board] };
     S.turn = null; S.reveal = {}; S.bubbles = {}; S.winners = null; S.hole = null; S.holeOk = null;
     S.raising = null; S.preAct = ''; S.rabbit = null; endTipPick();
@@ -374,6 +376,8 @@ async function checkPublic(handId, list) {
 function onResult(d) {
     if (!S.hand) return;
     checkPublic(d.handId, [...Object.values(d.holes || {}).flat(), ...(d.board || []), ...(d.peekBoard || [])]);
+    // [SHOWDOWN_SEQ_0_10_4] 아직 안 연 홀카드 — 레이즈홀덤처럼 한 자리씩 연다(패자 먼저, 승자 마지막). 올인 런아웃이면 onRunout 이 이미 순서를 정했다
+    const fresh = Object.keys(d.holes || {}).map(Number).filter((seat) => !S.reveal[seat] && seat !== mySeat());
     if (d.holes) Object.assign(S.reveal, d.holes);
     if (d.board) {
         const nb = d.board.map(codeOf);
@@ -384,8 +388,6 @@ function onResult(d) {
     const peek = (d.peekBoard || []).map(codeOf).filter(Boolean);
     S.rabbit = peek.length && mySeat() >= 0 ? { handId: d.handId, cards: peek, until: Date.now() + 3000, open: false } : null;
     if (S.rabbit) setTimeout(() => { if (S.rabbit && !S.rabbit.open) render(); }, 3050);
-    if (S.darkHand === d.handId) showDarkReveal();
-    for (const [seat, st] of Object.entries(d.stacks || {})) if (S.seats[seat]) S.seats[seat].stack = st;
     const r = d.result || {};
     const win = {};
     if (r.type === 'uncontested') win[r.winner] = (win[r.winner] || 0) + r.amount;
@@ -394,20 +396,131 @@ function onResult(d) {
     const cards = new Set(real.flatMap((w) => w.winningCards || []).map(codeOf));
     const hands = Object.fromEntries((r.hands || []).filter((h) => h.handRank).map((h) => [h.seat, prettyRank(h.handRank)]));
     const top = real.find((w) => hands[w.seat]);
-    S.winners = { seats: win, hands, cards, big: top ? bigHandName(hands[top.seat]) : '' };
-    if (win[mySeat()] > 0) play('win');
+    const winners = { seats: win, hands, cards, big: top ? bigHandName(hands[top.seat]) : '' };
+
+    const hid = d.handId;
+    const now = Date.now();
+    let winAt = now;
+    if (S.sd && S.sd.handId === hid) winAt = S.sd.winAt;   // 올인 런아웃 — 홀카드·보드 순서는 이미 정해졌다
+    else if (fresh.length && d.type === 'showdown' && S.live) {
+        // 보통 쇼다운 — 0.5초 뒤 0.4초 간격, 승자는 맨 뒤(0.8초 더). 다 뒤집히고(0.6초) 0.7초 뒤 승자·칩. 값은 TableServer showdownMs 와 같다
+        const order = showOrder(fresh);
+        const losers = order.filter((x) => !(win[x] > 0)), wins = order.filter((x) => win[x] > 0);
+        const seq = [...losers, ...wins];
+        const at = {};
+        seq.forEach((seat, i) => { at[seat] = now + 500 + i * 400 + (i === seq.length - 1 && seq.length > 1 && win[seat] > 0 ? 800 : 0); });
+        const last = Math.max(...Object.values(at));
+        winAt = last + 600 + 700;
+        S.sd = { handId: hid, at, winAt, ranks: hands };
+        for (const seat of seq) setTimeout(() => { if (S.hand && S.hand.handId === hid) { play('card'); render(); } }, at[seat] - now);
+    }
+
+    // 결과 전 — 차례·베팅을 걷고 팟은 남긴다. 말풍선도 남긴다(운영 화면처럼 마지막 액션이 보인다)
     S.turn = null; S.hand.toAct = null;
-    for (const p of S.hand.seats) p.bet = 0;   // 말풍선은 남긴다(운영 화면처럼 마지막 액션이 보인다)
+    for (const p of S.hand.seats) p.bet = 0;
     hideActions();
     render();
-    const hid = d.handId;
-    // 래빗을 열었으면 다음 판이 올 때까지 보드를 남긴다(예전 화면)
-    const clear = () => {
+
+    const apply = () => {
         if (!S.hand || S.hand.handId !== hid) return;
-        if (S.rabbit && S.rabbit.open) return;
-        S.hand = null; S.winners = null; S.reveal = {}; S.hole = null; S.rabbit = null; render();
+        if (S.darkHand === hid) showDarkReveal();
+        for (const [seat, st] of Object.entries(d.stacks || {})) if (S.seats[seat]) S.seats[seat].stack = st;
+        S.winners = winners;
+        flushSeats();
+        if (win[mySeat()] > 0) play('win');
+        render();
+        // 래빗을 열었으면 다음 판이 올 때까지 보드를 남긴다(예전 화면)
+        const clear = () => {
+            if (!S.hand || S.hand.handId !== hid) return;
+            if (S.rabbit && S.rabbit.open) return;
+            S.hand = null; S.winners = null; S.reveal = {}; S.hole = null; S.rabbit = null; S.sd = null; render();
+        };
+        setTimeout(clear, S.rabbit ? 4800 : 3800);
     };
-    setTimeout(clear, S.rabbit ? 4800 : 3800);
+    if (winAt > now + 20) setTimeout(apply, winAt - now); else apply();
+}
+
+/**
+ * [SHOWDOWN_SEQ_0_10_4] 올인으로 베팅이 끝났다 — SHOWDOWN → 홀카드를 0.4초 간격으로 한 자리씩 → 보드를 한 단계씩(1초 간격, 리버는 빛나게) → 승자.
+ * 레이즈홀덤 연출 순서 그대로(all_in_holecards → 런아웃). 결과(result)는 같은 순간 오지만 onResult 가 S.sd.winAt 까지 기다린다.
+ */
+function onRunout(d) {
+    if (!S.hand) return;
+    checkPublic(d.handId, [...Object.values(d.holes || {}).flat(), ...(d.stages || []).flatMap((x) => x.cards)]);
+    const hid = d.handId;
+    const now = Date.now();
+    const seats = showOrder(Object.keys(d.holes || {}).map(Number));
+    Object.assign(S.reveal, d.holes || {});
+    clearBets(); S.turn = null; S.hand.toAct = null; hideActions();
+    const stages = d.stages || [];
+    if (!S.live) {   // 들어오자마자 받은 이벤트 — 연출 없이
+        for (const x of stages) S.hand.board.push(...x.cards);
+        render();
+        return;
+    }
+    const at = {};
+    seats.forEach((seat, i) => { at[seat] = now + 1600 + i * 400; });
+    for (const seat of seats) if (seat !== mySeat()) setTimeout(() => { if (S.hand && S.hand.handId === hid) { play('card'); render(); } }, at[seat] - now);
+    const t0 = now + 1600 + Math.max(0, seats.length - 1) * 400 + 600;
+    stages.forEach((x, j) => {
+        const start = t0 + j * 1000;
+        const from = S.hand.board.length;
+        x.cards.forEach((_c, i) => {
+            const k = from + i;
+            const key = `b:${hid}:${k}`;
+            S.anim[key] = start + i * 150;
+            S.anim[key + ':c'] = { cls: k === 4 ? 'fast river-glow' : 'fast', delay: 0, dur: 1.6 };
+        });
+        S.hand.board.push(...x.cards);
+        setTimeout(() => { if (S.hand && S.hand.handId === hid) { play('card'); render(); } }, start - now);
+    });
+    const boardEnd = stages.length ? t0 + (stages.length - 1) * 1000 + 900 : t0;
+    S.sd = { handId: hid, at, winAt: boardEnd + 700, ranks: null };   // 런아웃은 보드가 다 깔린 뒤에 족보 — 미리 알려 주지 않는다
+    showBanner('SHOWDOWN', 4000, true); play('showdown');   // 올인으로 베팅이 끝났다 — 예전 화면의 SHOWDOWN
+    render();
+}
+
+/** 여는 순서 — 딜러 다음 자리부터 시계 방향 */
+function showOrder(list) {
+    const d = S.hand ? S.hand.dealer : -1;
+    return [...list].sort((a, b) => ((a - d - 1 + 64) % 64) - ((b - d - 1 + 64) % 64));
+}
+/** 이 자리 카드를 지금 보여 줘도 되나 — 순차 공개 중이면 그 자리 차례가 와야 */
+function sdShown(seat) {
+    if (!S.reveal[seat]) return false;
+    const sd = S.sd;
+    if (!sd || !S.hand || sd.handId !== S.hand.handId || !(seat in sd.at)) return true;
+    return Date.now() >= sd.at[seat];
+}
+/** 승자 표시 전인가(순차 공개 중) */
+function sdBusy() {
+    return !!(S.sd && S.hand && S.sd.handId === S.hand.handId && !S.winners && Date.now() < S.sd.winAt + 50);
+}
+/** 지금 보이는 보드 — 런아웃 카드가 아직 안 깔렸으면 빼고(족보 글자가 미리 알려 주지 않게) */
+function shownBoard() {
+    const h = S.hand;
+    if (!h) return [];
+    const now = Date.now();
+    return h.board.filter((_c, k) => !(S.anim[`b:${h.handId}:${k}`] > now)).map(codeOf);
+}
+function applySeat(d) {
+    const x = d.seat;
+    S.seats[x.seat] = x.empty ? null : x;
+    if (S.me && x.seat === S.me.seat && !x.empty) Object.assign(S.me, x);
+}
+function flushSeats() {
+    const q = S.sdQ; S.sdQ = [];
+    for (const d of q) applySeat(d);
+}
+/** 순차 공개 때 뒤집으며 여는 카드(작은 카드) */
+function sdCards(m, seat, shown) {
+    const sd = S.sd, timed = sd && S.hand && sd.handId === S.hand.handId && seat in sd.at;
+    shown.forEach((c, i) => {
+        const w = el('div', 'mc');
+        const code = codeOf(c);
+        w.appendChild(timed ? flipEl(code, winLook(code), `sd:${sd.handId}:${seat}:${i}`, 'sd', i * 0.12, 0.6) : cardEl(code, winLook(code)));
+        m.appendChild(w);
+    });
 }
 
 function clearBets() {
@@ -678,11 +791,30 @@ function nameboxEl(s, w, hgt, nmPx, stPx) {
     nb.style.width = w + 'px'; nb.style.height = hgt + 'px';
     nb.innerHTML = `<i class="flag"></i><i class="fade"></i><div class="info"><span class="nm" style="font-size:${nmPx}px;line-height:${Math.round(nmPx * 1.33)}px">${esc(s.nickname)}</span>`
         + `<span class="st" style="font-size:${stPx}px;line-height:${Math.round(stPx * 1.4)}px">${dm(s.stack)}</span></div>`;
-    // [REBUY_2026_11_11] 칩 0 = 「올인」 딱지, 추가 바이인 뒤 = 「바이인 완료」 딱지
-    const tag = s.rebuy === 'done' ? ['done', t('rbDone')] : s.busted ? ['out', t('rbAllin')] : null;
-    if (tag) { nb.classList.add('tagged'); const b = el('span', 'seat-tag ' + tag[0] + (w < 100 ? ' sm' : ''), esc(tag[1])); b.dataset.testid = 'seat-tag-' + s.seat; nb.appendChild(b); }
+    // [REBUY_2026_11_11] 칩 0 = 「올인」 딱지
+    // [BUYIN_UNITS_0_10_4] 그 밖에는 이 자리 총 바이인 개수(「총 3바이인」) — 재바이인 직후 한 번 초록으로 반짝
+    const fresh = rbDoneFresh(s);
+    const tag = s.busted && s.rebuy !== 'done' ? ['out', t('rbAllin')] : s.bi > 0 ? ['bi' + (fresh ? ' done' : ''), tn('biTotal', s.bi)] : null;
+    if (tag) {
+        nb.classList.add('tagged');
+        const b = el('span', 'seat-tag ' + tag[0] + (w < 100 ? ' sm' : ''), esc(tag[1])); b.dataset.testid = 'seat-tag-' + s.seat;
+        if (fresh) b.style.animationDelay = rbDoneDelay(s);
+        nb.appendChild(b);
+    }
     return nb;
 }
+
+/** [BUYIN_UNITS_0_10_4] 「바이인 완료」를 지금 보여 줄까 — 그 자리·이름·합계로 처음 본 뒤 3.5초만 */
+const RB_SHOW_MS = 3500;
+const rbKey = (s) => `${s.seat}:${s.nickname}:${s.bi || 0}`;
+function rbDoneFresh(s) {
+    if (!s || s.rebuy !== 'done') return false;
+    const k = rbKey(s);
+    if (!(k in S.rbSeen)) { S.rbSeen[k] = Date.now(); setTimeout(render, RB_SHOW_MS + 60); }
+    return Date.now() - S.rbSeen[k] < RB_SHOW_MS;
+}
+/** 다시 그려도 튀어나오는 연출이 처음부터 다시 돌지 않게 — 처음 본 시각부터 이어서 */
+function rbDoneDelay(s) { return ((S.rbSeen[rbKey(s)] - Date.now()) / 1000).toFixed(3) + 's'; }
 
 function blindTag(seat) {
     const h = S.hand;
@@ -703,9 +835,9 @@ function otherSeat(node, s, a, inHand) {
     if (tag) { const b = el('span', 'blind', tag); b.style.left = (ox + 20) + 'px'; b.style.top = (oy + 109) + 'px'; node.appendChild(b); }
     if (S.hand && S.hand.dealer === seat) { const d = dealerEl(); d.style.left = (ox + 2) + 'px'; d.style.top = (oy + 93) + 'px'; node.appendChild(d); }
     if (inHand) {
-        const shown = S.reveal[seat];
+        const shown = sdShown(seat) ? S.reveal[seat] : null;   // [SHOWDOWN_SEQ_0_10_4] 그 자리 차례가 와야 연다
         const m = el('div', 'mini');
-        if (shown) { m.className = 'mini shown'; for (const c of shown) { const w = el('div', 'mc'); w.appendChild(cardEl(codeOf(c), winLook(codeOf(c)))); m.appendChild(w); } m.style.left = (ox + 107) + 'px'; m.style.top = (oy + 48) + 'px'; }
+        if (shown) { m.className = 'mini shown'; sdCards(m, seat, shown); m.style.left = (ox + 107) + 'px'; m.style.top = (oy + 48) + 'px'; }
         else if (!inHand.folded) { for (let k = 0; k < 2; k++) { const w = el('div', 'mc'); w.appendChild(cardEl(null)); m.appendChild(w); } m.style.left = (ox + 98) + 'px'; m.style.top = (oy + 76) + 'px'; }
         if (m.children.length) node.appendChild(m);
     }
@@ -738,7 +870,7 @@ function heroSeat(node, s, a, inHand) {
         holeCards(hole, cards, inHand);
         hole.querySelectorAll('.hc')[1] && (hole.querySelectorAll('.hc')[1].style.marginLeft = (54 - 86) + 'px');
         wrap.appendChild(hole);
-        const rank = !S.winners && !inHand.folded && !inDark() ? liveHandName([...cards, ...(S.hand.board || []).map(codeOf)]) : null;
+        const rank = !S.winners && !inHand.folded && !inDark() ? liveHandName([...cards, ...shownBoard()]) : null;   // [SHOWDOWN_SEQ_0_10_4] 아직 안 깔린 런아웃 카드는 빼고
         if (rank) { const hr = el('div', 'handrank', esc(rank)); hr.style.left = ((28 + 120 + 70) / sc) + 'px'; hr.style.top = ((-157 + 80 + 142) / sc) + 'px'; hr.style.transform = `translateX(-50%) scale(${1 / sc})`; hr.style.transformOrigin = '50% 0'; wrap.appendChild(hr); }
     }
     if (S.turn && S.turn.seat === seat) {
@@ -775,9 +907,9 @@ function otherSeatMobile(node, s, a, inHand) {
     if (tag) { const b = el('span', 'blind sm', tag); b.style.left = '-33px'; b.style.top = '27px'; node.appendChild(b); }
     if (S.hand && S.hand.dealer === seat) { const d = dealerEl(); d.classList.add('sm'); d.style.left = '-44px'; d.style.top = '17px'; node.appendChild(d); }
     if (inHand) {
-        const shown = S.reveal[seat];
+        const shown = sdShown(seat) ? S.reveal[seat] : null;   // [SHOWDOWN_SEQ_0_10_4]
         const m = el('div', 'mini m');
-        if (shown) { m.classList.add('shown'); for (const c of shown) { const w = el('div', 'mc'); w.appendChild(cardEl(codeOf(c), winLook(codeOf(c)))); m.appendChild(w); } m.style.left = '10px'; m.style.top = '-12px'; }
+        if (shown) { m.classList.add('shown'); sdCards(m, seat, shown); m.style.left = '10px'; m.style.top = '-12px'; }
         else if (!inHand.folded) { for (let k = 0; k < 2; k++) { const w = el('div', 'mc'); w.appendChild(cardEl(null)); m.appendChild(w); } m.style.left = '17px'; m.style.top = '7px'; }
         if (m.children.length) node.appendChild(m);
     }
@@ -802,7 +934,7 @@ function heroSeatMobile(node, s, a, inHand) {
         hole.style.left = '155px'; hole.style.top = '684px';
         holeCards(hole, cards, inHand);
         node.appendChild(hole);
-        const rank = !S.winners && !inHand.folded && !inDark() ? liveHandName([...cards, ...(S.hand.board || []).map(codeOf)]) : null;
+        const rank = !S.winners && !inHand.folded && !inDark() ? liveHandName([...cards, ...shownBoard()]) : null;
         if (rank) { const hr = el('div', 'handrank m', esc(rank)); hr.style.left = '208px'; hr.style.top = '642px'; node.appendChild(hr); }
     }
     if (S.turn && S.turn.seat === seat) {
@@ -873,10 +1005,12 @@ function bubbleFor(parent, seat, cx, top, size = '') {
     // [REBUY_2026_11_11] 바이인 신청 말풍선 — 「바이인요~」 → 승인되면 「바이인 완료!」
     //   [REBUY_0_10_3] 「바이인요~」는 직전 판 액션 말풍선(올인 등)이 남아 있어도 먼저 보인다(그 자리는 판에 들지 않는다)
     const st = S.seats && S.seats[seat];
-    const rb = st && (st.rebuy === 'asked' ? 'ask' : st.rebuy === 'done' ? 'done' : null);
-    if (rb === 'ask' || (!b && rb)) {
-        const n = el('div', 'rebuy-bubble ' + rb + (size ? ' ' + size : ''), esc(rb === 'ask' ? t('rbAsk') : t('rbDoneBubble')));
+    //   [BUYIN_UNITS_0_10_4] 「바이인 완료!」는 처음 본 뒤 3.5초 한 번만(종전엔 말풍선이 없을 때마다 — 차례마다 다시 떴다). 몇 바이인인지 함께
+    const rb = st && (st.rebuy === 'asked' ? 'ask' : rbDoneFresh(st) ? 'done' : null);
+    if (rb) {
+        const n = el('div', 'rebuy-bubble ' + rb + (size ? ' ' + size : ''), esc(rb === 'ask' ? t('rbAsk') : st.biNew > 0 ? tn('rbDoneN', st.biNew) : t('rbDoneBubble')));
         n.dataset.testid = 'rebuy-bubble-' + seat;
+        if (rb === 'done') n.style.animationDelay = rbDoneDelay(st);
         n.style.left = cx + 'px'; n.style.top = top + 'px';
         parent.appendChild(n);
         return;
@@ -892,7 +1026,12 @@ function bubbleFor(parent, seat, cx, top, size = '') {
 
 /** 결과 — 이름 상자 아래 "Pair, 8's +805", 이긴 사람 아바타 위 WINNER */
 function resultFor(parent, seat, cx, top, ax, ay, size = '') {
-    if (!S.winners) return;
+    // [SHOWDOWN_SEQ_0_10_4] 보통 쇼다운은 카드를 연 자리부터 족보 글자 — 승자·금액은 다 연 뒤에
+    if (!S.winners) {
+        const rk = S.sd && S.sd.ranks && S.hand && S.sd.handId === S.hand.handId && seat !== mySeat() && sdShown(seat) ? S.sd.ranks[seat] : '';
+        if (rk) { const n = el('div', 'seat-note sd-rank' + (size ? ' ' + size : ''), esc(rk)); n.style.left = cx + 'px'; n.style.top = top + 'px'; parent.appendChild(n); }
+        return;
+    }
     const won = S.winners.seats[seat];
     const hand = S.reveal[seat] || seat === mySeat() ? S.winners.hands[seat] : '';
     if (hand || won) {
