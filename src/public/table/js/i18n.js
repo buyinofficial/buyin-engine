@@ -38,12 +38,43 @@ const T = {
         toLobby: 'Лобби руу буцах', pot: 'НИЙТ ПОТ', potMain: 'ҮНДСЭН', uncalled: 'ДАГААГҮЙ', fold: 'Фолд', check: 'Чек', call: 'Колл', raise: 'Рэйз', bet: 'Бэт', allin: 'Олл-ин', leave: 'Гарах', cardCheck: 'Хөзөр шалгалт', verified: 'Баталгаажсан', waiting: 'Бусад тоглогчийг хүлээж байна', joining: 'Суудал руу орж байна…' },
 };
 
+/** [READY_SESSION_0_10_6] 준비 대기실 · 게임 시간 */
+const T2 = {
+    ko: { rqTitle: '대기실', rqSub: '모두 「준비 완료」를 누르면 게임이 시작됩니다', rqReady: '준비 완료', rqCancel: '준비 취소', rqIsReady: '준비 완료', rqWaitP: '대기 중',
+        rqCount: '{n} / {m} 준비', rqNeed: '2명 이상 앉아야 시작할 수 있어요', rqStart: '{n}초 후 게임 시작', rqTime: '게임 시간 {n}분', rqFinal: '시간 종료 후 마지막 3판', rqNoLimit: '시간 제한 없음', rqMe: '나', rqOut: '칩이 없는 자리는 준비할 수 없어요',
+        gcTime: '게임 시간', gcFinal: '마지막 판', gcIdle: '준비 대기', gcSoon: '곧 마지막 3판',
+        ssWarn: '3분 후 게임 시간이 끝납니다\n이후 마지막 3판을 진행합니다', ssTimeUp: '게임 시간 종료\n이번 판 다음부터 마지막 3판!', ssEnded: '게임이 끝났습니다\n모두 준비하면 다음 게임이 시작돼요', ssFinalN: '마지막 {n} / {m}판' },
+    en: { rqTitle: 'Waiting room', rqSub: 'The game starts when everyone is ready', rqReady: 'Ready', rqCancel: 'Not ready', rqIsReady: 'Ready', rqWaitP: 'Waiting',
+        rqCount: '{n} / {m} ready', rqNeed: 'At least 2 players are needed to start', rqStart: 'Game starts in {n}s', rqTime: 'Game time {n} min', rqFinal: '3 final hands after time', rqNoLimit: 'No time limit', rqMe: 'Me', rqOut: 'A seat with no chips cannot get ready',
+        gcTime: 'GAME TIME', gcFinal: 'FINAL HAND', gcIdle: 'WAITING', gcSoon: '3 final hands soon',
+        ssWarn: 'Game time ends in 3 minutes\nThen 3 final hands are played', ssTimeUp: 'Game time is over\n3 final hands after this one!', ssEnded: 'The game is over\nThe next game starts when everyone is ready', ssFinalN: 'Final hand {n} / {m}' },
+    zh: { rqTitle: '等候室', rqSub: '所有人点击「准备」后开始游戏', rqReady: '准备', rqCancel: '取消准备', rqIsReady: '已准备', rqWaitP: '等待中',
+        rqCount: '{n} / {m} 已准备', rqNeed: '至少需要2名玩家才能开始', rqStart: '{n}秒后开始', rqTime: '游戏时间 {n}分钟', rqFinal: '时间结束后最后3局', rqNoLimit: '无时间限制', rqMe: '我', rqOut: '没有筹码的座位无法准备',
+        gcTime: '游戏时间', gcFinal: '最后一局', gcIdle: '等待准备', gcSoon: '即将最后3局',
+        ssWarn: '3分钟后游戏时间结束\n之后进行最后3局', ssTimeUp: '游戏时间结束\n本局之后最后3局!', ssEnded: '游戏结束\n所有人准备后开始下一局', ssFinalN: '最后 {n} / {m} 局' },
+    ja: { rqTitle: '待機室', rqSub: '全員が「準備完了」を押すとゲームが始まります', rqReady: '準備完了', rqCancel: '準備取消', rqIsReady: '準備完了', rqWaitP: '待機中',
+        rqCount: '{n} / {m} 準備', rqNeed: '開始には2人以上が必要です', rqStart: '{n}秒後にゲーム開始', rqTime: 'ゲーム時間 {n}分', rqFinal: '時間終了後ラスト3ハンド', rqNoLimit: '時間制限なし', rqMe: '自分', rqOut: 'チップのない席は準備できません',
+        gcTime: 'ゲーム時間', gcFinal: 'ラストハンド', gcIdle: '準備待ち', gcSoon: 'まもなくラスト3ハンド',
+        ssWarn: '3分後にゲーム時間が終わります\nその後ラスト3ハンドを行います', ssTimeUp: 'ゲーム時間終了\nこのハンドの後ラスト3ハンド!', ssEnded: 'ゲーム終了\n全員が準備すると次のゲームが始まります', ssFinalN: 'ラスト {n} / {m}' },
+    vi: { rqTitle: 'Phòng chờ', rqSub: 'Ván bắt đầu khi mọi người đều sẵn sàng', rqReady: 'Sẵn sàng', rqCancel: 'Hủy sẵn sàng', rqIsReady: 'Sẵn sàng', rqWaitP: 'Đang chờ',
+        rqCount: '{n} / {m} sẵn sàng', rqNeed: 'Cần ít nhất 2 người để bắt đầu', rqStart: 'Bắt đầu sau {n}s', rqTime: 'Thời gian {n} phút', rqFinal: '3 ván cuối khi hết giờ', rqNoLimit: 'Không giới hạn', rqMe: 'Tôi', rqOut: 'Ghế không có chip không thể sẵn sàng',
+        gcTime: 'THỜI GIAN', gcFinal: 'VÁN CUỐI', gcIdle: 'ĐANG CHỜ', gcSoon: 'Sắp tới 3 ván cuối',
+        ssWarn: 'Còn 3 phút là hết giờ\nSau đó chơi 3 ván cuối', ssTimeUp: 'Hết giờ chơi\n3 ván cuối sau ván này!', ssEnded: 'Trò chơi kết thúc\nVán mới bắt đầu khi mọi người sẵn sàng', ssFinalN: 'Ván cuối {n} / {m}' },
+    mn: { rqTitle: 'Хүлээлгийн өрөө', rqSub: 'Бүгд «Бэлэн» дарахад тоглоом эхэлнэ', rqReady: 'Бэлэн', rqCancel: 'Цуцлах', rqIsReady: 'Бэлэн', rqWaitP: 'Хүлээж байна',
+        rqCount: '{n} / {m} бэлэн', rqNeed: 'Эхлэхэд дор хаяж 2 тоглогч хэрэгтэй', rqStart: '{n}с дараа эхэлнэ', rqTime: 'Тоглох хугацаа {n} мин', rqFinal: 'Цаг дуусахад сүүлийн 3 гар', rqNoLimit: 'Хугацаагүй', rqMe: 'Би', rqOut: 'Чипгүй суудал бэлэн болж чадахгүй',
+        gcTime: 'ХУГАЦАА', gcFinal: 'СҮҮЛИЙН ГАР', gcIdle: 'ХҮЛЭЭЖ БАЙНА', gcSoon: 'Удахгүй сүүлийн 3 гар',
+        ssWarn: '3 минутын дараа хугацаа дуусна\nДараа нь сүүлийн 3 гар', ssTimeUp: 'Хугацаа дууслаа\nЭнэ гарын дараа сүүлийн 3 гар!', ssEnded: 'Тоглоом дууслаа\nБүгд бэлэн болоход дараагийнх эхэлнэ', ssFinalN: 'Сүүлийн гар {n} / {m}' },
+};
+for (const k of Object.keys(T2)) Object.assign(T[k], T2[k]);
+
 let lang = 'ko';
 export function setLang(l) { lang = T[l] ? l : 'en'; document.documentElement.lang = lang; }
 export function getLang() { return lang; }
 export function t(k) { return (T[lang] && T[lang][k]) || T.en[k] || k; }
 /** [BUYIN_UNITS_0_10_4] 개수 문구 — {n} 숫자, {s} 영어 복수 */
 export function tn(k, n) { return t(k).replace('{n}', String(n)).replace('{s}', n > 1 ? 's' : ''); }
+/** [READY_SESSION_0_10_6] {n}·{m} 두 숫자 */
+export function tnm(k, n, m) { return t(k).replace('{n}', String(n)).replace('{m}', String(m)); }
 export function applyStatic(root = document) {
     for (const el of root.querySelectorAll('[data-i18n]')) el.textContent = t(el.getAttribute('data-i18n'));
     for (const el of root.querySelectorAll('[data-i18n-title]')) { el.title = t(el.getAttribute('data-i18n-title')); el.setAttribute('aria-label', el.title); }

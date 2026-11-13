@@ -114,7 +114,7 @@ class PotManager {
      * @param {number} totalPot - 총 팟 금액 (검증용)
      * @returns {Array} [{ seat, amount, handRank, winningCards }]
      */
-    static calculateWinners(activePlayers, communityCards, totalPot) {
+    static calculateWinners(activePlayers, communityCards, totalPot, unit) {   // [CHIP_UNIT_0_10_6] unit — 동점 몫을 버리는 칩 단위
         const results = [];
 
         // 1명만 남은 경우 (모두 폴드) — 남은 한 명이 전체 팟을 그대로 가져가므로
@@ -209,7 +209,7 @@ class PotManager {
             // 팟 분배 (동점 시 균등 분배)
             // [DECIMAL_STAKES_2026_08_30] 칩이 소수가 되면서 나눗셈이 센트 아래로 떨어진다.
             // 몫은 센트 단위로 버리고 나머지는 아래에서 첫 승자에게 준다 — 사라지는 돈이 없다.
-            const { share: shareAmount, remainder: splitRemainder } = splitEvenly(pot.amount, winners.length);
+            const { share: shareAmount, remainder: splitRemainder } = splitEvenly(pot.amount, winners.length, unit);
             let remainder = splitRemainder;
 
             for (let i = 0; i < winners.length; i++) {

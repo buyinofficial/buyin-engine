@@ -19,7 +19,7 @@
 
 const HandEvaluator = require('./HandEvaluator');
 const PotManager = require('./PotManager');
-const { roundMoney, floorMoney } = require('./money');
+const { roundMoney, floorUnit } = require('./money');
 const { opening } = require('./cards');
 const C = require('./crypto');
 
@@ -60,6 +60,7 @@ class HandCore {
         this.strictOrder = !!o.strictOrder;
         const rk = o.rake || {};
         this.rake = { percent: Number(rk.percent) || 0, minPot: Number(rk.minPot) || 0 };
+        if (Number(rk.unit) === 1) this.rake.unit = 1;   // [CHIP_UNIT_0_10_6] 원화 방 — 판 기록 rake 에 남아 verify 도 같은 단위로 다시 계산한다
 
         const list = [...o.seats].sort((a, b) => a.seat - b.seat);
         if (list.length < 2) throw new HandError('seats', 'at least two seats');
@@ -508,7 +509,8 @@ class HandCore {
         if (rakeBase !== undefined && rakeBase !== null) feeBase = Math.max(0, Math.min(contestedPot, Number(rakeBase)));
         const out = { percent: this.rake.percent, minPot: this.rake.minPot, contestedPot, feeBase, totalRake: 0, effectiveRate: 0, perSeat };
         if (!(this.rake.percent > 0) || feeBase <= 0 || !perSeat.length || !contestedPot || contestedPot < this.rake.minPot) return out;
-        const floorTotal = floorMoney(feeBase * this.rake.percent / 100);
+        const U = this.rake.unit;   // [CHIP_UNIT_0_10_6] 원화 방 1 — 레이크를 1원 단위로 버린다(없으면 0.001)
+        const floorTotal = floorUnit(feeBase * this.rake.percent / 100, U);
         if (floorTotal <= 0) return out;
         const attrRate = contestedPot > 0 ? (floorTotal / contestedPot) : 0;
         const basisSum = perSeat.reduce((s, x) => s + x.basis, 0);
@@ -517,10 +519,10 @@ class HandCore {
             const x = perSeat[i];
             let fee;
             if (i === perSeat.length - 1) {
-                fee = roundMoney(floorMoney(basisSum * attrRate) - accumulated);
+                fee = roundMoney(floorUnit(basisSum * attrRate, U) - accumulated);
                 if (fee < 0) fee = 0;
             } else {
-                fee = floorMoney(x.basis * attrRate);
+                fee = floorUnit(x.basis * attrRate, U);
             }
             accumulated = roundMoney(accumulated + fee);
             x.fee = fee;
@@ -543,7 +545,7 @@ class HandCore {
                 potPlayers.push({ seat, player: { hand: this._cards(p.hole), totalHandBet: p.totalHandBet, isFolded: p.isFolded } });
             }
         }
-        const winners = PotManager.calculateWinners(potPlayers, boardCards, this.pot);
+        const winners = PotManager.calculateWinners(potPlayers, boardCards, this.pot, this.rake.unit);
 
         // 비긴 팟(두 명 이상이 나눈 팟)은 레이크 없음 — 한 명이 가져간 팟 금액만 레이크 기준
         const seatsByPot = new Map();
@@ -573,7 +575,7 @@ class HandCore {
             if (w.isUncalledReturn || w.isChop) net = w.amount || 0;
             else if (i === lastReal) net = (w.amount || 0) - (rake.totalRake - distributed);
             else {
-                const share = floorMoney((w.amount || 0) * rake.effectiveRate);
+                const share = floorUnit((w.amount || 0) * rake.effectiveRate, this.rake.unit);
                 distributed += share;
                 net = (w.amount || 0) - share;
             }

@@ -18,11 +18,21 @@ function floorMoney(value) {
     return Math.floor(n * SCALE + 1e-6) / SCALE;
 }
 
-function splitEvenly(total, count) {
+/**
+ * [CHIP_UNIT_0_10_6] 칩 최소 단위로 버린다 — 원화 방은 1(원), 그 밖은 0.001. unit 이 없거나 0.001 이하면 floorMoney 와 같다.
+ * 원화 방에서 레이크·나눠 갖는 팟이 1원 아래로 쪼개지지 않게(스택이 언제나 정수 원) 엔진이 쓴다.
+ */
+function floorUnit(value, unit) {
+    const u = Number(unit) || 0;
+    if (!(u > 1 / SCALE)) return floorMoney(value);
+    return roundMoney(Math.floor((Number(value) || 0) / u + 1e-9) * u);
+}
+
+function splitEvenly(total, count, unit) {
     if (!count || count < 1) return { share: 0, remainder: roundMoney(total) };
-    const share = floorMoney(roundMoney(total) / count);
+    const share = floorUnit(roundMoney(total) / count, unit);
     const remainder = roundMoney(roundMoney(total) - share * count);
     return { share, remainder };
 }
 
-module.exports = { MONEY_DECIMALS, SCALE, roundMoney, floorMoney, splitEvenly };
+module.exports = { MONEY_DECIMALS, SCALE, roundMoney, floorMoney, floorUnit, splitEvenly };

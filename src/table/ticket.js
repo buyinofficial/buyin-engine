@@ -6,7 +6,10 @@
  *
  * 본문 {
  *   v: 1, tid: 좌석표 번호(한 번만 쓴다), exp: 만료(ms),
- *   room: { id, name, sb, bb, maxPlayers, rake: { percent, minPot }, turnSec, endsAt, unit? },
+ *   room: { id, name, sb, bb, maxPlayers, rake: { percent, minPot, unit? }, turnSec, endsAt, sessionMin?, unit? },
+ *         rake.unit (선택) 칩 최소 단위 1 — 원화 방. 블라인드·바이인이 정수여야 하고, 레이크·나눠 갖는 팟을 1 단위로 버린다 [CHIP_UNIT_0_10_6]
+ *         sessionMin (선택) 방 게임 시간(분, 0~720) — 모두 준비하면 첫 판부터 재고, 끝나면 마지막 3판 뒤 준비 대기로 돌아간다.
+ *                    있으면 endsAt 으로 방을 닫지 않는다 [READY_SESSION_0_10_6]
  *         unit  (선택) 1바이인 금액 — 화면에 「바이인 신청」 금액으로 보여 줄 뿐, 엔진 계산에는 쓰지 않는다
  *   display: { currency, rate }   (선택) 화면 표시 환산 — 금액 × rate 를 currency 로 보여 준다
  *   player: { sessionId, odcId, nickname, avatar },
@@ -56,8 +59,9 @@ function verifyTicket(ticket, consoleKey, now = Date.now()) {
     const room = {
         id: String(r.id || ''), name: String(r.name || '').slice(0, 40),
         sb: Number(r.sb), bb: Number(r.bb), maxPlayers: Number(r.maxPlayers),
-        rake: { percent: Number(r.rake && r.rake.percent) || 0, minPot: Number(r.rake && r.rake.minPot) || 0 },
+        rake: { percent: Number(r.rake && r.rake.percent) || 0, minPot: Number(r.rake && r.rake.minPot) || 0, ...(Number(r.rake && r.rake.unit) === 1 ? { unit: 1 } : {}) },
         turnSec: Number(r.turnSec) || 20, endsAt: Number(r.endsAt) || 0,
+        sessionMin: Math.max(0, Math.min(720, Math.floor(Number(r.sessionMin) || 0))),
         unit: money(Number(r.unit)) ? Number(r.unit) : 0,
     };
     if (!/^[A-Za-z0-9_-]{1,32}$/.test(room.id)) throw new TicketError('bad room id');
@@ -73,6 +77,8 @@ function verifyTicket(ticket, consoleKey, now = Date.now()) {
     if (!player.odcId || player.odcId.length > 64) throw new TicketError('bad player id');
     const buyIn = Number(p.buyIn);
     if (!money(buyIn)) throw new TicketError('bad buy-in');
+    // [CHIP_UNIT_0_10_6] 칩 단위 1(원화 방) — 블라인드·바이인이 정수여야 스택이 언제나 정수로 남는다
+    if (room.rake.unit === 1 && ![room.sb, room.bb, buyIn].every(Number.isInteger)) throw new TicketError('amounts must be whole chips in this table');
     // 화면 표시용 환산(예: 칩은 USDT, 화면은 원화) — 게임·정산 금액에는 쓰지 않는다
     const d = p.display || {};
     const display = { currency: String(d.currency || p.currency || '').slice(0, 8), rate: Number(d.rate) > 0 && Number(d.rate) < 1e7 ? Number(d.rate) : 1 };

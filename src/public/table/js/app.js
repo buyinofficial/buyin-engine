@@ -8,14 +8,14 @@
  * 화면 배치는 운영 게임 테이블에서 잰 값(좌석 위치·역할별 보정·칩 자리)을 그대로 쓴다.
  */
 import * as V from './vault.js';
-import { t, tn, setLang, applyStatic, getLang } from './i18n.js';
+import { t, tn, tnm, setLang, applyStatic, getLang } from './i18n.js';
 import { liveHandName, prettyRank, bigHandName } from './hand.js';
 
 /** 디자인 리소스(배경·칩·아바타·딜러·카드 뒷면·글꼴)는 콘솔 리소스 서버에서 받는다 — 그림만 받고 아무것도 보내지 않는다.
  *  어떤 그림을 부르는지는 카드와 무관하다(칩은 공개된 베팅 금액, 카드 앞면은 글자로 그린다). CSP 가 이 주소의 그림·글꼴만 허용한다(table/http.js). */
 const ASSET = 'https://resource.buyinholdem.com/buyin-table/';
 /** 리소스를 바꿔 끼우면 이 값을 올린다 — 브라우저에 남은 예전 그림 대신 바로 새로 받는다 */
-const AV = '?v=20261109';
+const AV = '?v=20261113';   // [TIP_ROYAL_0_10_5] 팁 아이콘을 로열로 바꿨다 — 옛 그림이 캐시에 남지 않게
 
 const $ = (s, r = document) => r.querySelector(s);
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
@@ -66,6 +66,8 @@ const S = {
     sd: null, sdQ: [],
     // [BUYIN_UNITS_0_10_4] 「바이인 완료」를 처음 본 시각 — 자리·이름·합계마다 한 번만 띄운다
     rbSeen: {},
+    // [READY_SESSION_0_10_6] 준비 대기실 · 게임 시간 — gate: 서버 'gate', session: 서버 'session', skew: 서버 시각 − 내 시각
+    gate: null, gateShowAt: 0, session: null, skew: 0, rqBusy: false, gateEnded: false, nextSession: null,
 };
 try { const v = Number(localStorage.getItem('buyin.vol')); if (v >= 0 && v <= 1 && localStorage.getItem('buyin.vol') !== null) S.vol = v; } catch (_e) { /* */ }
 /** 다시 그려도 연출이 처음부터 다시 돌지 않게 — 시작 시각을 기억해 두고 남은 만큼만 돈다(음수 animation-delay) */
@@ -116,6 +118,7 @@ async function boot() {
     addEventListener('resize', () => { layoutMode(); render(); });
     wireButtons();
     checkEngine();
+    setInterval(tickClock, 500);   // [READY_SESSION_0_10_6] 게임 시간 · 시작 카운트다운
 
     // [REBUY_0_10_2] 주소에 새 좌석표가 있으면 그것으로 앉는다 — 이 탭에 남은 예전 자리 토큰(재바이인 전 정산된 자리)은 버린다
     if (qs.get('t')) sessionStorage.removeItem('buyin.token');
@@ -226,7 +229,7 @@ function listen() {
         if (!S.hand) return;
         checkPublic(d.handId, d.cards);
         markBoard(d.handId, S.hand.board.length, d.cards.length, false);
-        S.hand.board.push(...d.cards); S.hand.stage = d.stage; clearBets(); play('card');
+        S.hand.board.push(...d.cards); S.hand.stage = d.stage; clearBets(); play('board');   // [SFX_BOARD_WIN_2026_11_13] 플랍·턴·리버 — 나눠 주는 소리(card)와 따로
         if (S.tipGift && d.stage !== 'preflop') endTipPick();
         render();
     });
@@ -246,6 +249,8 @@ function listen() {
         floatTag(d.seat, '+' + Math.round(d.addedMs / 1000) + 's');
         render();
     });
+    on('gate', onGate);           // [READY_SESSION_0_10_6]
+    on('session', onSession);
     on('runout', onRunout);
     on('result', onResult);
     on('aborted', () => { S.hand = null; S.turn = null; S.sd = null; flushSeats(); render(); });
@@ -265,11 +270,15 @@ async function onSnapshot(d) {
     for (let k = 0; k < (S.hand ? S.hand.board.length : 0); k++) S.anim[`b:${S.hand.handId}:${k}`] = 0;   // 들어올 때 이미 깔린 카드는 연출 없이
     paintRoomLabel(); paintDark();
     hideGate();
+    S.gate = d.gate || null; S.gateShowAt = 0;   // [READY_SESSION_0_10_6]
+    S.session = d.session || null; if (S.session && S.session.serverNow) S.skew = S.session.serverNow - Date.now();
+    if (S.gate && S.gate.serverNow) S.skew = S.gate.serverNow - Date.now();
     if (!d.me.keys || !S.keys || !S.keys.sigJwk) await registerKeys();
     if (d.hole && d.hole.envelope) await openHole(d.hole);
     await sendEntropy(d.hand ? d.hand.nextSeedCommit : d.seedCommit);
     S.live = true;   // 이제부터 오는 이벤트는 실시간 — 연출을 한다
     preloadPickImages();
+    setTimeout(preloadRoyal, 2500);   // [TIP_ROYAL_0_10_5] 로열 팁 영상 — 자리 화면이 다 뜬 뒤
     render();
 }
 
@@ -309,7 +318,11 @@ function onHand(h) {
     }
     sendEntropy(h.nextSeedCommit);
     paintRoomLabel();
-    showBanner('GAME START', 2000); play('start'); play('card');
+    // [READY_SESSION_0_10_6] 마지막 판이면 「마지막 N / 3판」
+    const ss = S.session;
+    const fin = ss && ss.phase === 'final' && ss.finalNo > 0;
+    showBanner(fin ? tnm('ssFinalN', ss.finalNo, ss.finalTotal) : 'GAME START', fin ? 2600 : 2000); play('start'); play('card');
+    renderClock();
     render();
     dealFx(h);
 }
@@ -427,7 +440,7 @@ function onResult(d) {
         for (const [seat, st] of Object.entries(d.stacks || {})) if (S.seats[seat]) S.seats[seat].stack = st;
         S.winners = winners;
         flushSeats();
-        if (win[mySeat()] > 0) play('win');
+        if (Object.values(win).some((v) => v > 0)) play('win');   // [SFX_BOARD_WIN_2026_11_13] 승자 연출 — 종전엔 내가 이겼을 때만 났다
         render();
         // 래빗을 열었으면 다음 판이 올 때까지 보드를 남긴다(예전 화면)
         const clear = () => {
@@ -472,7 +485,7 @@ function onRunout(d) {
             S.anim[key + ':c'] = { cls: k === 4 ? 'fast river-glow' : 'fast', delay: 0, dur: 1.6 };
         });
         S.hand.board.push(...x.cards);
-        setTimeout(() => { if (S.hand && S.hand.handId === hid) { play('card'); render(); } }, start - now);
+        setTimeout(() => { if (S.hand && S.hand.handId === hid) { play('board'); render(); } }, start - now);   // [SFX_BOARD_WIN_2026_11_13] 런아웃 보드
     });
     const boardEnd = stages.length ? t0 + (stages.length - 1) * 1000 + 900 : t0;
     S.sd = { handId: hid, at, winAt: boardEnd + 700, ranks: null };   // 런아웃은 보드가 다 깔린 뒤에 족보 — 미리 알려 주지 않는다
@@ -578,6 +591,8 @@ function render() {
     renderActions();
     renderRebuy();
     renderBadge();
+    renderGate();
+    renderClock();
 }
 
 /**
@@ -640,7 +655,7 @@ function renderBoard() {
     // 판이 없고 앉은 사람이 둘보다 적으면 — 판이 시작되지 않는 이유를 알린다
     let wm = $('.wait-msg');
     if (!wm) { wm = el('div', 'wait-msg'); $('#board-area').appendChild(wm); }
-    wm.textContent = !h && (S.seats || []).filter(Boolean).length < 2 ? t('waiting') : '';
+    wm.textContent = !h && !gateOpen() && (S.seats || []).filter(Boolean).length < 2 ? t('waiting') : '';   // [READY_SESSION_0_10_6] 대기실이 대신 알린다
     wm.hidden = !wm.textContent;
     let big = $('.win-hand');
     if (!big) { big = el('div', 'win-hand'); $('#board-area').appendChild(big); }
@@ -1132,7 +1147,7 @@ function renderActions() {
         ? [[t('allin'), stackAll], [t('full'), pot + tr.currentBet], [t('half'), pot * 0.5 + tr.currentBet], [t('quarter'), pot * 0.25 + tr.currentBet]]
         : [['25%', pot * 0.25 + tr.currentBet], ['50%', pot * 0.5 + tr.currentBet], ['100%', pot + tr.currentBet], [t('allin'), stackAll]];
     for (const [label, val] of presets) {
-        const v = Math.max(minTo, Math.min(stackAll, Math.round(val * 100) / 100));
+        const v = Math.max(minTo, Math.min(stackAll, wholeChips() ? Math.round(val) : Math.round(val * 100) / 100));   // [CHIP_UNIT_0_10_6] 원화 방은 1원 단위
         const b = el('button', '', `<span>${esc(label)}</span><small>${esc(dmCur(v))}</small>`);
         b.type = 'button';
         b.disabled = !canRaise;
@@ -1173,6 +1188,9 @@ function raisingOn() {
     cmd('raising', { active: true }).catch(() => {});
 }
 
+/** [CHIP_UNIT_0_10_6] 칩 단위 1(원화 방) */
+const wholeChips = () => !!(S.room && S.room.rake && S.room.rake.unit === 1);
+
 async function act(action, amount) {
     const tr = S.turn;
     if (!tr || tr.seat !== mySeat() || !S.keys) return;
@@ -1180,7 +1198,8 @@ async function act(action, amount) {
     if (S.acting === tr.handId + ':' + tr.q) return;
     S.acting = tr.handId + ':' + tr.q;
     hideActions();
-    const amt = action === 'RAISE' || action === 'BET' ? Number(amount) : 0;
+    let amt = action === 'RAISE' || action === 'BET' ? Number(amount) : 0;
+    if (wholeChips()) amt = Math.round(amt);   // [CHIP_UNIT_0_10_6] 원화 방 — 엔진이 1원 아래 베팅을 받지 않는다
     const sig = await V.sign(S.keys, V.msg.action(tr.handId, tr.q, action, amt));
     const r = await cmd('act', { q: tr.q, action, amount: amt, sig });
     if (!r.ok) { toast(r.error || 'action failed'); render(); }
@@ -1205,6 +1224,16 @@ function wireButtons() {
         try { await cmd('rebuy'); } catch (_e) { /* 말풍선은 덤 */ }
         sessionStorage.removeItem('buyin.token');   // 정산된 자리 — 돌아올 때는 새 좌석표로 앉는다
         location.href = `${LOBBY_URL}/game/?room_id=${encodeURIComponent(S.room.id)}`;
+    };
+    $('.rq-btn').onclick = async () => {   // [READY_SESSION_0_10_6] 준비 완료 / 준비 취소
+        const g = S.gate, mine = g && (g.players || []).find((x) => x.seat === mySeat());
+        if (!mine || S.rqBusy) return;
+        S.rqBusy = true; renderGate();
+        try {
+            const r = await cmd('ready', { on: !mine.ready });
+            if (!r.ok) toast(r.error || '');
+            else if (!mine.ready) play('check');
+        } finally { S.rqBusy = false; renderGate(); }
     };
     $('#btn-leave').onclick = async () => {
         if (!S.token) return;
@@ -1307,7 +1336,8 @@ function hideGate() { $('#gate').hidden = true; }
 // 효과음 — 이전 게임과 같은 파일(리소스 서버 sfx/)을 받아 Web Audio 로 재생한다. 받기만 하고 아무것도 보내지 않는다
 let actx = null;
 const sfxBuf = new Map();
-const SFX_ALL = ['fold', 'check', 'call', 'bet', 'raise', 'allin', 'minichip', 'raise_chip', 'allin_chip', 'card', 'turn', 'win', 'start', 'showdown'];
+const SFX_ALL = ['fold', 'check', 'call', 'bet', 'raise', 'allin', 'minichip', 'raise_chip', 'allin_chip', 'card', 'board', 'turn', 'win', 'start', 'showdown',   // [SFX_BOARD_WIN_2026_11_13] board = 보드 카드 오픈
+    'tip_flower', 'tip_confetti', 'tip_champagne', 'tip_cigarette'];   // [TIP_ROYAL_0_10_5] 로열 팁 효과음(영상과 0초부터 같이)
 const ACT_SFX = { FOLD: ['fold'], CHECK: ['check'], CALL: ['call', 'minichip'], BET: ['bet', 'raise_chip'], RAISE: ['raise', 'raise_chip'], ALL_IN: ['allin', 'allin_chip'] };
 function audio() {
     try {
@@ -1540,10 +1570,39 @@ async function sendTip(seat, gift) {
     else toast(r.code === 'rate' ? t('tooFast') : (r.error || ''));
 }
 
-/** 선물이 보낸 사람 아바타에서 받는 사람 아바타로 포물선을 그리며 날아가고, 받는 자리 위에 금액이 떠오른다 */
+/**
+ * [TIP_ROYAL_0_10_5] 로열 팁 VFX — 꽃(장미 한 송이)·폭죽·샴페인·시가. 키스는 종전 연출.
+ *   0 ~ 1.05초  로열 아이콘이 보낸 사람 → 받는 사람으로 금빛 꼬리를 끌며 포물선 비행(실제 좌석 위치를 따라간다)
+ *   1.05초 ~     받는 사람 자리에서 투명 영상(VP9 알파, 960×540, 리소스 서버 fx/tip_*.webm)을 도착 장면부터 재생
+ *                — 영상 안 도착점 (0.69, 0.46) 을 받는 사람 아바타 중심에 맞춘다(화면 밖으로 나가면 안쪽으로 민다)
+ *   효과음(sfx/tip_*.mp3)은 0초부터 — 영상 시간표(코르크·따르기·축포·점화)와 그대로 맞는다
+ *   연출일 뿐 — 칩·서명·금액과 무관하다(팁 자체는 sendTip/TableServer._tip). 영상이 안 되면 아이콘 연출로 끝난다.
+ */
+const ROYAL = {
+    flower: { ms: 4800 }, confetti: { ms: 5200 }, champagne: { ms: 6800 }, cigarette: { ms: 6200 },
+};
+const ROYAL_ARRIVE = 1.05;               // 영상 속 전달 구간(초) — 이 뒤부터 받는 자리에서 재생
+const ROYAL_TO = { x: 0.69, y: 0.46 };   // 영상 속 도착점(화면 비율)
+const ROYAL_BOX = { x0: 0.46, x1: 0.93, y0: 0.04, y1: 0.66 };   // 도착 뒤 연출이 그려지는 영역(화면 밖으로 잘리지 않게 이것만 본다)
+const royalVid = new Map();
+/** 영상을 미리 받아 둔다 — 처음 팁에서 기다리지 않게(판에 앉은 뒤 조용할 때 한 번) */
+function preloadRoyal() {
+    for (const id of Object.keys(ROYAL)) {
+        if (royalVid.has(id)) continue;
+        const v = document.createElement('video');
+        v.muted = true; v.playsInline = true; v.preload = 'auto'; v.setAttribute('playsinline', '');
+        v.src = `${ASSET}fx/tip_${id}.webm${AV}`;
+        royalVid.set(id, v);
+    }
+}
+
 function flyGift(from, to, gift, amount) {
     const a = avatarRect(from), b = avatarRect(to);
     if (!a || !b || !GIFTS.includes(gift)) return;
+    const badge = () => tipBadge(to, amount != null ? amount : (S.room && S.room.bb), t('tipQueued'));
+    const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (ROYAL[gift] && S.live && !document.hidden && !reduce) return royalTip(a, b, gift, badge);   // 금액 딱지는 연출이 끝난 뒤(병·꽃을 가리지 않게)
+    setTimeout(badge, 1100);
     const g = el('div', 'gift-fx', `<img alt="" src="${ASSET}tip/${gift}.png${AV}">`);
     const x0 = a.left + a.width / 2, y0 = a.top + a.height / 2, x1 = b.left + b.width / 2, y1 = b.top + b.height / 2;
     const top = Math.min(y0, y1) - 60;
@@ -1557,7 +1616,83 @@ function flyGift(from, to, gift, amount) {
         { transform: at(x1, y1, 1.5), opacity: 0, offset: 1 },
     ], { duration: 1500, easing: 'ease-in-out', fill: 'forwards' });
     setTimeout(() => g.remove(), 1600);
-    setTimeout(() => tipBadge(to, amount != null ? amount : (S.room && S.room.bb), t('tipQueued')), 1100);
+}
+
+function royalTip(a, b, gift, after) {
+    const fx = $('#fx');
+    const mobile = S.layout === 'mobile';
+    // 받는 자리는 아바타 중심보다 조금 위 — 얼굴을 다 가리지 않게
+    const x0 = a.left + a.width / 2, y0 = a.top + a.height / 2, x1 = b.left + b.width / 2, y1 = b.top + b.height * 0.28;
+    const arrive = ROYAL_ARRIVE * 1000;
+    play('tip_' + gift, 0.8);
+
+    // 1) 비행 — 로열 아이콘 + 금빛 꼬리(점점 작아지는 불티) + 도착 섬광
+    const size = mobile ? 58 : 92;
+    const lift = Math.max(70, Math.hypot(x1 - x0, y1 - y0) * 0.35);
+    const cx = (x0 + x1) / 2, cy = Math.min(y0, y1) - lift;
+    const pt = (k) => ({ x: (1 - k) * (1 - k) * x0 + 2 * (1 - k) * k * cx + k * k * x1, y: (1 - k) * (1 - k) * y0 + 2 * (1 - k) * k * cy + k * k * y1 });
+    const ico = el('div', 'royal-ico', `<img alt="" src="${ASSET}tip/${gift}.png${AV}">`);
+    ico.style.width = ico.style.height = size + 'px';
+    fx.appendChild(ico);
+    const frames = [];
+    for (let i = 0; i <= 12; i++) {
+        const k = i / 12, p = pt(k);
+        frames.push({ transform: `translate(${p.x - size / 2}px, ${p.y - size / 2}px) rotate(${(1 - k) * -14}deg) scale(${0.55 + 0.6 * Math.sin(Math.PI * k) + 0.35 * k})`, opacity: k < 0.08 ? k / 0.08 : 1, offset: k });
+    }
+    ico.animate(frames, { duration: arrive, easing: 'cubic-bezier(.45,.05,.35,1)', fill: 'forwards' });
+    const trail = setInterval(() => {
+        const r = ico.getBoundingClientRect();
+        const s = el('i', 'royal-spark');
+        s.style.left = (r.left + r.width / 2 + (Math.random() - 0.5) * size * 0.4) + 'px';
+        s.style.top = (r.top + r.height / 2 + (Math.random() - 0.5) * size * 0.4) + 'px';
+        s.style.setProperty('--d', (6 + Math.random() * 8).toFixed(1) + 'px');
+        fx.appendChild(s);
+        setTimeout(() => s.remove(), 900);
+    }, 28);
+
+    // 2) 영상 — 도착 장면부터, 받는 사람 자리에
+    const W = mobile ? Math.min(innerWidth * 1.35, 540) : Math.min(innerWidth * 0.64, 1040);
+    const H = W * 540 / 960;
+    let left = x1 - ROYAL_TO.x * W, top = y1 - ROYAL_TO.y * H;
+    // 도착 뒤 연출 영역이 화면 밖으로 잘리지 않게 안쪽으로 민다
+    const pad = 6;
+    left += Math.max(0, pad - (left + ROYAL_BOX.x0 * W)) - Math.max(0, left + ROYAL_BOX.x1 * W - (innerWidth - pad));
+    top += Math.max(0, pad - (top + ROYAL_BOX.y0 * H)) - Math.max(0, top + ROYAL_BOX.y1 * H - (innerHeight - pad));
+    const wrap = el('div', 'royal-vfx');
+    wrap.style.cssText = `left:${left}px;top:${top}px;width:${W}px;height:${H}px`;
+    const src = royalVid.get(gift);
+    const v = document.createElement('video');
+    v.muted = true; v.playsInline = true; v.preload = 'auto'; v.setAttribute('playsinline', '');
+    v.src = src ? src.currentSrc || src.src : `${ASSET}fx/tip_${gift}.webm${AV}`;
+    wrap.appendChild(v);
+    const ready = new Promise((res) => {
+        const seek = () => { try { v.currentTime = ROYAL_ARRIVE; } catch (_e) { /* */ } };
+        if (v.readyState >= 1) seek(); else v.addEventListener('loadedmetadata', seek, { once: true });
+        v.addEventListener('seeked', () => res(true), { once: true });
+        v.addEventListener('error', () => res(false), { once: true });
+        setTimeout(() => res(v.readyState >= 2), arrive + 1500);
+    });
+
+    let done = false;
+    const end = () => {
+        if (done) return; done = true;
+        clearInterval(trail);
+        if (after) after();
+        wrap.classList.add('out');
+        setTimeout(() => wrap.remove(), 450);
+    };
+    setTimeout(async () => {
+        clearInterval(trail);
+        ico.remove();
+        const burst = el('div', 'royal-land'); burst.style.left = x1 + 'px'; burst.style.top = y1 + 'px';
+        fx.appendChild(burst); setTimeout(() => burst.remove(), 1000);
+        const ok = await ready;
+        if (!ok) { end(); return; }   // 영상을 못 받으면 도착 섬광으로 끝낸다
+        fx.appendChild(wrap);
+        v.play().catch(() => end());
+        v.addEventListener('ended', end, { once: true });
+        setTimeout(end, ROYAL[gift].ms - arrive + 400);   // 영상 끝 투명 여백 — 늦어도 이 시각에 걷는다
+    }, arrive);
 }
 
 function tipBadge(seat, amount, status) {
@@ -1681,6 +1816,144 @@ function timeBankButton(parent, x, y, size = '') {
         if (!r.ok) { S.tbUsed = ''; toast(r.error || ''); render(); }
     };
     parent.appendChild(b);
+}
+
+// ------------------------------------------------------------ 준비 대기실 · 게임 시간 [READY_SESSION_0_10_6]
+
+/**
+ * 준비 게이트 — 앉은 회원이 모두 「준비 완료」를 눌러야 TEE 가 첫 판을 연다. 게임 시간이 끝나 마지막 3판을 다 치거나
+ * 칠 사람이 2명 아래로 줄면 다시 열린다(아무도 내보내지 않는다). 결과 연출 중이면 delayMs 뒤에 띄운다.
+ */
+function onGate(d) {
+    if (d.serverNow) S.skew = d.serverNow - Date.now();
+    const was = gateOpen();
+    S.gate = d;
+    if (!d.active) { S.gateShowAt = 0; S.gateEnded = false; renderGate(); return; }
+    if (!was && d.delayMs > 0) {
+        S.gateShowAt = Date.now() + d.delayMs;
+        setTimeout(() => { renderGate(); render(); }, d.delayMs + 30);
+    } else if (!was) S.gateShowAt = 0;
+    renderGate();
+}
+
+function gateOpen() { return !!(S.gate && S.gate.active); }
+
+function onSession(d) {
+    if (d.serverNow) S.skew = d.serverNow - Date.now();
+    S.nextSession = null;
+    if (d.event === 'warn') { notice(t('ssWarn'), 7000, 'warn'); play('turn'); }
+    else if (d.event === 'time-up') { notice(t('ssTimeUp'), 6000, 'final'); play('turn'); }
+    else if (d.event === 'ended') {   // 마지막 판 결과를 보여 주는 동안은 「마지막 3 / 3」 그대로 — 대기실이 뜰 때 바꾼다
+        S.gateEnded = true;
+        if (S.session && S.session.phase === 'final') { S.nextSession = d; return; }
+    }
+    S.session = d;
+    renderClock();
+}
+
+function renderGate() {
+    const box = $('#ready-q');
+    const g = S.gate;
+    const show = !!(g && g.active) && Date.now() >= S.gateShowAt && !!S.room;
+    if (box.hidden === show) {
+        $('#table').classList.toggle('gate-open', show);
+        if (show) {   // 대기실이 뜬다 — 지난 판 말풍선을 걷고, 미뤄 둔 게임 시간(준비 대기)을 보인다
+            S.bubbles = {};
+            if (S.nextSession) { S.session = S.nextSession; S.nextSession = null; }
+            box.hidden = false;
+            render();
+        }
+    }
+    box.hidden = !show;
+    if (!show) return;
+    const sub = $('.rq-sub', box);   // 게임 시간이 끝나 돌아왔으면 「게임이 끝났습니다」를 먼저
+    sub.classList.toggle('ended', S.gateEnded);
+    sub.innerHTML = S.gateEnded ? t('ssEnded').split('\n').map((x, i) => i ? esc(x) : `<b>${esc(x)}</b>`).join('<br>') : esc(t('rqSub'));
+    const min = g.sessionMin || 0;
+    $('.rq-time', box).textContent = min ? tn('rqTime', min) : t('rqNoLimit');
+    $('.rq-final', box).textContent = min ? t('rqFinal') : '';
+    $('.rq-final', box).hidden = !min;
+    const list = $('.rq-list', box);
+    list.innerHTML = '';
+    for (const p of g.players || []) {
+        const me = p.seat === mySeat();
+        const li = el('li', (p.ready ? 'on' : '') + (me ? ' me' : ''));
+        li.appendChild(el('i', 'dot'));
+        const nm = el('span', 'nm'); nm.textContent = p.nickname || ('#' + (p.seat + 1)); li.appendChild(nm);
+        if (me) li.appendChild(el('em', '', esc(t('rqMe'))));
+        li.appendChild(el('b', '', esc(p.ready ? t('rqIsReady') : t('rqWaitP'))));
+        list.appendChild(li);
+    }
+    $('.rq-count', box).textContent = tnm('rqCount', g.ready || 0, g.total || 0);
+    const mine = (g.players || []).find((x) => x.seat === mySeat());
+    const btn = $('.rq-btn', box);
+    btn.hidden = !mine;
+    if (mine) {
+        btn.textContent = mine.ready ? t('rqCancel') : t('rqReady');
+        btn.classList.toggle('on', !!mine.ready);
+        btn.disabled = S.rqBusy;
+    }
+    const left = g.startsAt ? Math.ceil((g.startsAt - (Date.now() + S.skew)) / 1000) : 0;
+    const note = $('.rq-note', box);
+    note.classList.toggle('go', left > 0);
+    note.textContent = left > 0 ? tn('rqStart', left) : !mine ? t('rqOut') : (g.total || 0) < 2 ? t('rqNeed') : '';
+    box.classList.toggle('counting', left > 0);
+}
+
+const two = (n) => String(n).padStart(2, '0');
+function fmtDur(ms) {
+    const sec = Math.max(0, Math.ceil(ms / 1000));
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), x = sec % 60;
+    return h ? `${h}:${two(m)}:${two(x)}` : `${two(m)}:${two(x)}`;
+}
+
+/** 왼쪽 위 게임 시간 — 남은 시간(링이 줄어든다) → 3분 전 경고색 → 마지막 판 N / 3 → 준비 대기 */
+function renderClock() {
+    const box = $('#game-clock');
+    const ss = S.session;
+    if (!ss || !ss.minutes) { box.hidden = true; return; }
+    box.hidden = false;
+    const now = Date.now() + S.skew;
+    let mode, k, v, frac;
+    if (ss.phase === 'running') {
+        const left = Math.max(0, ss.endsAt - now);
+        mode = left <= (ss.warnMs || 180000) ? 'warn' : 'run';
+        k = mode === 'warn' ? t('gcSoon') : t('gcTime');
+        v = fmtDur(left);
+        frac = ss.endsAt > ss.startedAt ? left / (ss.endsAt - ss.startedAt) : 0;
+    } else if (ss.phase === 'final') {
+        mode = 'final';
+        k = t('gcFinal');
+        v = `${ss.finalNo || '–'} / ${ss.finalTotal}`;
+        frac = ss.finalTotal ? (ss.finalTotal - (ss.finalNo || 0)) / ss.finalTotal : 0;
+    } else {
+        mode = 'idle'; k = t('gcIdle'); v = fmtDur(ss.minutes * 60000); frac = 1;
+    }
+    box.className = mode;
+    $('.gc-k', box).textContent = k;
+    $('.gc-v', box).textContent = v;
+    $('.gc-arc', box).style.strokeDasharray = `${Math.max(0, Math.min(1, frac)) * 100} 100`;
+    const pips = box.querySelectorAll('.gc-pips i');
+    pips.forEach((p, i) => p.classList.toggle('on', mode === 'final' && i < (ss.finalNo || 0)));
+}
+
+function tickClock() {
+    if (S.session && S.session.phase === 'running') renderClock();
+    if (gateOpen() && (S.gate.startsAt || S.gateShowAt)) renderGate();
+}
+
+/** 큰 안내 띠 — 3분 전 · 시간 종료 · 게임 끝. 첫 줄은 굵게 */
+let noticeTimer = null;
+function notice(text, ms, kind = '') {
+    if (!S.live) return;
+    const n = $('#notice');
+    const [a, ...b] = String(text).split('\n');
+    $('.nt-k', n).textContent = a;
+    $('.nt-v', n).textContent = b.join(' ');
+    n.className = kind;
+    n.hidden = true; void n.offsetWidth; n.hidden = false;
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(() => { n.hidden = true; }, ms);
 }
 
 boot();

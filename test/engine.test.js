@@ -178,7 +178,7 @@ function playRandom(engine, h, players, rnd) {
         let action, amount = 0;
         if (x < 0.15) action = 'FOLD';
         else if (x < 0.5) action = canCheck ? 'CHECK' : 'CALL';
-        else if (x < 0.85) { action = 'RAISE'; amount = Math.round((core.currentBet + core.bigBlind * (1 + rnd() * 6)) * 1000) / 1000; }
+        else if (x < 0.85) { action = 'RAISE'; amount = Math.round((core.currentBet + core.bigBlind * (1 + rnd() * 6)) * 1000) / 1000; if (core.rake.unit === 1) amount = Math.round(amount); }
         else action = 'ALL_IN';
         const q = core.turns;
         let entry;
@@ -305,4 +305,34 @@ test('RULES 2·5장 — 운영 모드에서 시험 설정 금지, 이상한 입�
         assert.strictEqual(r.ok, false, label);
     }
     assert.ok(engine.call('startHand', { ...base, seats: seats(10, 10) }).ok, '정상 입력은 통과');
+});
+
+test('칩 단위 1(원화 방) — 무작위 판 1500개, 레이크·나눠 갖는 팟이 1원 아래로 쪼개지지 않고 칩 보존·재현 검증 통과 [CHIP_UNIT_0_10_6]', () => {
+    const rnd = mulberry(20261113);
+    let raked = 0, chops = 0;
+    for (let i = 0; i < 1500; i++) {
+        const n = 2 + Math.floor(rnd() * 8);
+        const { engine, tableId, players } = setupTable(n);
+        const stacks = players.map(() => Math.round(5000 + rnd() * 300000));
+        const h = start(engine, tableId, players, stacks, { smallBlind: 1000, bigBlind: 2000, rake: { percent: 4.7, minPot: 0, unit: 1 } });
+        const f = playRandom(engine, h, players, rnd);
+        assert.ok(f.ok, f.error);
+        const rk = f.record.result.rake;
+        assert.strictEqual(f.record.rake.unit, 1, '판 기록에 칩 단위');
+        for (const v of Object.values(f.record.stacksEnd)) assert.ok(Number.isInteger(v), `정수 스택 ${v}`);
+        for (const x of rk.perSeat) assert.ok(Number.isInteger(x.fee), `정수 레이크 ${x.fee}`);
+        if (rk.totalRake > 0) raked++;
+        if ((f.record.result.winners || []).some((w) => w.isChop)) chops++;
+        const before = Object.values(f.record.stacksStart).reduce((s, v) => s + v, 0);
+        const after = Object.values(f.record.stacksEnd).reduce((s, v) => s + v, 0);
+        assert.strictEqual(before - after, rk.totalRake);
+        const v = verifyRecord(f.record, f.sig, engine.call('info').keys.sig);
+        assert.ok(v.ok, v.errors.join('; '));
+    }
+    assert.ok(raked > 300, `레이크 뗀 판 ${raked}`);
+    assert.ok(chops > 5, `나눠 가진 판 ${chops}`);
+    // 0.001·1 밖의 단위는 받지 않는다
+    const { engine, tableId, players } = setupTable(2);
+    const r = engine.call('startHand', { tableId, handNo: 1, seats: players.map((p) => ({ seat: p.seat, odcId: p.odcId, stack: 100 })), dealer: 0, sb: 0, bb: 1, smallBlind: 1, bigBlind: 2, rake: { percent: 5, minPot: 0, unit: 10 } });
+    assert.ok(!r.ok);
 });

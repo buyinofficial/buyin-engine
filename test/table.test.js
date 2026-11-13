@@ -54,8 +54,18 @@ function client(server, ticket) {
         try { server.command(me.token, { type: 'entropy', seedCommit, hex, sig: C.sign(sig.privateKey, C.msgEntropy(j.tableId, seedCommit, hex)) }); } catch (_e) { /* 자리를 떴다 */ }
     };
     const send0 = me.conn.send;
-    me.conn.send = (ev, data) => { send0(ev, data); if (ev === 'hand' && data && data.nextSeedCommit && !me.noEntropy) me.entropy(data.nextSeedCommit); };
+    me.conn.send = (ev, data) => {
+        send0(ev, data);
+        if (ev === 'hand' && data && data.nextSeedCommit && !me.noEntropy) me.entropy(data.nextSeedCommit);
+        // [READY_SESSION_0_10_6] 브라우저에서 「준비 완료」를 누르는 회원 — 게이트가 열리면 누른다(noReady 면 직접)
+        if (ev === 'gate' && data && data.active && !me.noReady && !me.readyQueued && (data.players || []).some((x) => x.seat === me.seat && !x.ready)) {
+            me.readyQueued = true;
+            server.clock.setTimeout(() => { me.readyQueued = false; if (!me.noReady) { try { server.command(me.token, { type: 'ready' }); } catch (_e) { /* 자리를 떴다 */ } } }, 0);
+        }
+    };
     me.entropy(k.seedCommit);
+    if (client.noReady) me.noReady = true;
+    else { try { server.command(me.token, { type: 'ready' }); } catch (_e) { /* */ } }
     return me;
 }
 
@@ -555,4 +565,99 @@ test('테이블: 바이인 개수(표시용) — 좌석표 금액 ÷ 1바이인,
     const env2 = setup(2);
     const r2 = env2.server.rooms.get('r1');
     assert.strictEqual(env2.server._publicSeat(r2, r2.seats[env2.players[0].seat]).bi, 0);
+});
+
+/** [READY_SESSION_0_10_6] 「준비 완료」를 직접 누르는 회원들로 앉힌다 */
+function setupManual(n, room = {}) {
+    client.noReady = true;
+    try { return setup(n, room); } finally { client.noReady = false; }
+}
+const ready = (env, p, on = true) => env.server.command(p.token, { type: 'ready', on });
+const lastOf = (p, ev) => { const e = [...p.events].reverse().find((x) => x[0] === ev); return e && e[1]; };
+
+test('테이블: 준비 게이트 — 2명이 앉아도 모두 「준비 완료」 전에는 시작하지 않고, 준비를 풀면 멈추고, 2명 아래로 줄면 다시 게이트 [READY_SESSION_0_10_6]', () => {
+    const env = setupManual(3);
+    const { server, clock, players } = env;
+    const room = server.rooms.get('r1');
+    clock.advance(20000);
+    assert.ok(!room.hand && room.gate, '아무도 준비 안 함 — 시작 안 함');
+    ready(env, players[0]); ready(env, players[1]);
+    clock.advance(20000);
+    assert.ok(!room.hand, '3명 중 2명만 준비 — 시작 안 함');
+    const g = lastOf(players[2], 'gate');
+    assert.strictEqual(g.active, true); assert.strictEqual(g.total, 3); assert.strictEqual(g.ready, 2);
+    ready(env, players[2]);
+    assert.ok(lastOf(players[0], 'gate').startsAt > clock.now(), '모두 준비 — 시작 카운트다운');
+    ready(env, players[2], false);   // 카운트다운 중 취소
+    clock.advance(5000);
+    assert.ok(!room.hand && room.gate, '준비 취소 — 멈춤');
+    ready(env, players[2]);
+    clock.advance(3500);
+    assert.ok(room.hand, '모두 준비 — 시작');
+    assert.strictEqual(room.gate, false);
+    assert.strictEqual(lastOf(players[0], 'gate').active, false);
+    // 게이트가 닫힌 뒤 「준비」는 아무 일도 하지 않는다
+    assert.deepStrictEqual(ready(env, players[0]), { ok: true, gate: false });
+    // 판 도중 두 명이 나간다 → 판이 끝나면 1명만 남아 게이트로 돌아간다(새로 온 사람과 바로 시작하지 않는다)
+    server.command(players[1].token, { type: 'leave' });
+    server.command(players[2].token, { type: 'leave' });
+    for (let i = 0; i < 100 && room.hand; i++) clock.advance(1000);
+    assert.ok(!room.hand);
+    assert.ok(room.gate, '1명 남음 — 준비 게이트');
+    assert.strictEqual(room.seats.filter(Boolean).length, 1, '남은 사람은 그대로 앉아 있다');
+    const p3 = client(server, env.ticket(7));
+    clock.advance(20000);
+    assert.ok(!room.hand, '새로 온 사람과 바로 시작하지 않는다');
+    ready(env, players[0]); ready(env, p3);
+    clock.advance(3500);
+    assert.ok(room.hand, '둘 다 준비 — 시작');
+});
+
+test('테이블: 게임 시간 — 첫 판부터 재고, 3분 전 안내, 시간이 끝나면 마지막 3판 뒤 준비 게이트(정산·퇴장 없음), 다시 준비하면 새 시간 [READY_SESSION_0_10_6]', () => {
+    const env = setupManual(2, { sessionMin: 10, endsAt: 1 });   // 옛 끝 시각(endsAt)이 지났어도 게임 시간이 있으면 방을 닫지 않는다
+    const { server, clock, players, out } = env;
+    const room = server.rooms.get('r1');
+    assert.strictEqual(lastOf(players[0], 'snapshot').session.phase, 'idle');
+    ready(env, players[0]); ready(env, players[1]);
+    clock.advance(3500);
+    assert.ok(room.hand);
+    const st = lastOf(players[0], 'session');
+    assert.strictEqual(st.event, 'start'); assert.strictEqual(st.phase, 'running');
+    assert.strictEqual(st.endsAt - st.startedAt, 10 * 60000);
+    // 판을 계속 친다 — 차례가 오면 체크/콜(둘 다 칩이 남게)
+    const fold = () => {
+        for (let g = 0; g < 50 && room.hand; g++) {
+            const h = room.hand;
+            if (h.toAct === null) { clock.advance(10); continue; }
+            const p = players.find((x) => x.seat === h.toAct);
+            const t = lastTurn(p);
+            const action = t.toCall > 0 ? 'FOLD' : 'CHECK';
+            server.command(p.token, { type: 'act', q: t.q, action, amount: 0, sig: C.sign(p.sig.privateKey, C.msgAction(t.handId, t.q, action, 0)) });
+        }
+    };
+    const events = (ev) => players[0].events.filter((x) => x[0] === ev).map((x) => x[1]);
+    let hands = 0;
+    while (clock.now() < st.endsAt - 60000) { fold(); hands++; waitHand(clock, () => room); }
+    assert.ok(events('session').some((x) => x.event === 'warn'), '3분 전 안내');
+    assert.ok(!events('session').some((x) => x.event === 'time-up'));
+    // 시간이 끝날 때까지 계속 — 끝난 뒤 마지막 3판
+    while (!events('session').some((x) => x.event === 'time-up')) { fold(); hands++; waitHand(clock, () => room); }
+    const finals = () => events('session').filter((x) => x.event === 'final-hand');
+    for (let i = 0; i < 6 && !events('session').some((x) => x.event === 'ended'); i++) { fold(); waitHand(clock, () => room); }
+    assert.deepStrictEqual(finals().map((x) => x.finalNo), [1, 2, 3], '마지막 1·2·3판');
+    assert.ok(events('session').some((x) => x.event === 'ended'), '게임 끝');
+    clock.advance(30000);
+    assert.ok(!room.hand && room.gate, '준비 게이트로 돌아갔다 — 더 시작하지 않는다');
+    assert.ok(server.rooms.get('r1') === room, '방은 그대로');
+    assert.strictEqual(room.seats.filter(Boolean).length, 2, '아무도 내보내지 않는다');
+    assert.strictEqual(out.filter((x) => x.kind === 'settle').length, 0, '정산서 없음');
+    assert.strictEqual(lastOf(players[1], 'gate').active, true);
+    // 다시 모두 준비 → 새 게임 시간
+    ready(env, players[0]); ready(env, players[1]);
+    clock.advance(3500);
+    assert.ok(room.hand);
+    const st2 = lastOf(players[0], 'session');
+    assert.strictEqual(st2.event, 'start');
+    assert.strictEqual(st2.endsAt - st2.startedAt, 10 * 60000);
+    assert.ok(hands > 3);
 });

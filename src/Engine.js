@@ -186,6 +186,11 @@ class Engine {
         if (!validMoney(smallBlind) || !validMoney(bigBlind) || Number(smallBlind) >= Number(bigBlind)) throw new HandError('input', 'bad blinds');
         // 레이크는 테이블 규칙 — 0~20%, 최소 팟 0 이상. 판 기록에 그대로 남아 누구나 확인한다
         const rakeRule = { percent: Number(rake && rake.percent) || 0, minPot: Number(rake && rake.minPot) || 0 };
+        // [CHIP_UNIT_0_10_6] 칩 단위 — 원화 방(1원)만 적는다. 없으면 종전 0.001(옛 판 기록과 같은 모양)
+        if (rake && rake.unit !== undefined && rake.unit !== null && Number(rake.unit) !== 0.001) {
+            if (Number(rake.unit) !== 1) throw new HandError('input', 'bad chip unit');
+            rakeRule.unit = 1;
+        }
         if (!(rakeRule.percent >= 0 && rakeRule.percent <= 20) || !(rakeRule.minPot >= 0 && rakeRule.minPot < MAX_MONEY)) throw new HandError('input', 'bad rake rule');
         // 키가 없는 좌석(접속 안 한 토너먼트 참가자 등)도 판에는 들어간다 — 카드는 아무에게도 안 나가고(봉투 없음),
         // 칩이 나가는 액션은 서명이 없으니 할 수 없다. 운영 서버가 대신 할 수 있는 건 체크·폴드뿐이다.
