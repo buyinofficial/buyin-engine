@@ -340,6 +340,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .flip.fast { animation: brd-fast .55s cubic-bezier(.34, 1.56, .64, 1) both; }
 .flip.fast.river-glow { animation: brd-fast .55s cubic-bezier(.34, 1.56, .64, 1) both, river-glow 1.2s .4s ease-out both; }
 .flip.deal { animation: hole-deal .71s both; }
+/* [RUNOUT_TENSION_0_10_7] 올인 런아웃 보드 — 플랍은 한 장씩, 턴은 뒷면을 크게 보였다가, 리버는 더 오래 뜸을 들이다 뒤집고 빛난다(시간표 app.js RUNOUT) */
+.flip.sd-flop { animation: sd-flop .9s cubic-bezier(.22, 1, .36, 1) both; }
+.flip.sd-turn { animation: sd-turn 1.6s cubic-bezier(.3, .8, .3, 1) both; }
+.flip.sd-river { animation: sd-river 2.6s cubic-bezier(.3, .8, .3, 1) both, river-glow 1.4s 1.7s ease-out both; }
+@keyframes sd-flop { 0% { transform: translateY(-14px) rotateY(180deg) scale(1.08); opacity: 0; } 25% { opacity: 1; transform: rotateY(180deg) scale(1.08); } 100% { transform: none; opacity: 1; } }
+@keyframes sd-turn { 0% { transform: scale(1.5) rotateY(180deg); opacity: 0; } 12% { opacity: 1; } 56% { transform: scale(1.32) rotateY(180deg); } 100% { transform: none; opacity: 1; } }
+@keyframes sd-river { 0% { transform: scale(1.6) rotateY(180deg); opacity: 0; } 8% { opacity: 1; } 40% { transform: scale(1.45) rotateY(180deg); } 50% { transform: scale(1.5) rotateY(180deg) translateY(-3px); } 58% { transform: scale(1.45) rotateY(180deg) translateY(0); } 100% { transform: none; opacity: 1; } }
+.royal-vfx img { width: 100%; height: 100%; display: block; }
 @keyframes brd-in { from { transform: rotateY(90deg); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes brd-in-m { from { transform: scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes brd-river { 0%, 35% { transform: scale(1.5) rotateY(180deg); } 100% { transform: scale(1) rotateY(0deg); } }

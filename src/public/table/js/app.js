@@ -454,6 +454,23 @@ function onResult(d) {
 }
 
 /**
+ * [RUNOUT_TENSION_0_10_7] 올인 런아웃 보드 시간표(ms). 단계는 뒤에서부터 리버·턴·플랍(올인 시점에 따라 1~3단계).
+ *   at: 런아웃 보드 시작부터 그 단계 시작, gap: 한 단계 안 카드 간격, flip: 시작부터 앞면이 보이기 시작하는 때(소리), dur: 연출 길이
+ *   TableServer.showdownMs 의 RUNOUT_STAGE_MS 와 같은 값이어야 한다(플랍→턴 2400, 턴→리버 2800, 리버 꼬리 2600)
+ */
+const RUNOUT = {
+    flop: { next: 2400, gap: 350, flip: 0, dur: 900, cls: 'sd-flop' },
+    turn: { next: 2800, gap: 0, flip: 900, dur: 1600, cls: 'sd-turn' },
+    river: { next: 2600, gap: 0, flip: 1500, dur: 2600, cls: 'sd-river' },
+};
+function runoutPlan(n) {
+    const names = ['flop', 'turn', 'river'].slice(3 - Math.max(0, Math.min(3, n)));
+    let at = 0;
+    return names.map((nm) => { const p = { ...RUNOUT[nm], at }; at += RUNOUT[nm].next; return p; });
+}
+function runoutBoardMs(n) { return runoutPlan(n).reduce((a, p) => a + p.next, 0); }
+
+/**
  * [SHOWDOWN_SEQ_0_10_4] 올인으로 베팅이 끝났다 — SHOWDOWN → 홀카드를 0.4초 간격으로 한 자리씩 → 보드를 한 단계씩(1초 간격, 리버는 빛나게) → 승자.
  * 레이즈홀덤 연출 순서 그대로(all_in_holecards → 런아웃). 결과(result)는 같은 순간 오지만 onResult 가 S.sd.winAt 까지 기다린다.
  */
@@ -475,19 +492,27 @@ function onRunout(d) {
     seats.forEach((seat, i) => { at[seat] = now + 1600 + i * 400; });
     for (const seat of seats) if (seat !== mySeat()) setTimeout(() => { if (S.hand && S.hand.handId === hid) { play('card'); render(); } }, at[seat] - now);
     const t0 = now + 1600 + Math.max(0, seats.length - 1) * 400 + 600;
+    /* [RUNOUT_TENSION_0_10_7] 보드를 긴장감 있게 — 종전에는 플랍·턴·리버가 1초 간격으로 0.55초 만에 휙휙 열렸다.
+       플랍: 한 장씩(0.35초 간격) 뒤집기 → 2.4초 쉬고 턴: 뒷면을 크게 보였다가 뒤집기 → 2.8초 쉬고 리버: 뒷면을 더 오래 보였다가 뒤집고 빛.
+       단계 시간표는 RUNOUT 한 곳 — TableServer.showdownMs 와 같은 값(다음 판을 그만큼 늦춘다) */
+    const plan = runoutPlan(stages.length);
     stages.forEach((x, j) => {
-        const start = t0 + j * 1000;
+        const st = plan[j];
+        const start = t0 + st.at;
         const from = S.hand.board.length;
         x.cards.forEach((_c, i) => {
             const k = from + i;
             const key = `b:${hid}:${k}`;
-            S.anim[key] = start + i * 150;
-            S.anim[key + ':c'] = { cls: k === 4 ? 'fast river-glow' : 'fast', delay: 0, dur: 1.6 };
+            S.anim[key] = start + i * st.gap;
+            S.anim[key + ':c'] = { cls: st.cls, delay: 0, dur: st.dur / 1000 };
+            S.anim[key + ':v'] = start + i * st.gap + st.flip;   // 앞면이 보이는 때 — 족보 글자가 뒷면일 때 미리 알려 주지 않게(shownBoard)
         });
         S.hand.board.push(...x.cards);
-        setTimeout(() => { if (S.hand && S.hand.handId === hid) { play('board'); render(); } }, start - now);   // [SFX_BOARD_WIN_2026_11_13] 런아웃 보드
+        // 소리는 카드가 실제로 뒤집히는 순간에
+        setTimeout(() => { if (S.hand && S.hand.handId === hid) { play('board'); render(); } }, start + st.flip - now);   // [SFX_BOARD_WIN_2026_11_13] 런아웃 보드
+        if (st.flip > 0) setTimeout(() => { if (S.hand && S.hand.handId === hid) render(); }, start - now);
     });
-    const boardEnd = stages.length ? t0 + (stages.length - 1) * 1000 + 900 : t0;
+    const boardEnd = t0 + runoutBoardMs(stages.length);
     S.sd = { handId: hid, at, winAt: boardEnd + 700, ranks: null };   // 런아웃은 보드가 다 깔린 뒤에 족보 — 미리 알려 주지 않는다
     showBanner('SHOWDOWN', 4000, true); play('showdown');   // 올인으로 베팅이 끝났다 — 예전 화면의 SHOWDOWN
     render();
@@ -514,7 +539,7 @@ function shownBoard() {
     const h = S.hand;
     if (!h) return [];
     const now = Date.now();
-    return h.board.filter((_c, k) => !(S.anim[`b:${h.handId}:${k}`] > now)).map(codeOf);
+    return h.board.filter((_c, k) => !(S.anim[`b:${h.handId}:${k}`] > now) && !(S.anim[`b:${h.handId}:${k}:v`] > now)).map(codeOf);
 }
 function applySeat(d) {
     const x = d.seat;
@@ -668,7 +693,11 @@ const CHIP_VALUES = [1000, 500, 100, 50, 10, 5, 1, 0.1];
 const CHIP_FILE = { 1000: 'chip_1000', 500: 'chip_500', 100: 'chip_100', 50: 'chip_50', 10: 'chip_10', 5: 'chip_5', 1: 'chip_1', 0.1: 'chip_0_1' };
 const cents = (n) => Math.round((Number(n) || 0) * 100);
 const band = (v) => (v >= 1000 ? 3 : v >= 100 ? 2 : v >= 10 ? 1 : v >= 1 ? 0 : -1);
+/** [CHIP_VISUAL_0_10_7] 칩 그림 환산 — 원화 방은 칩이 원이라 50만원이 1000짜리 칩 500개로 쌓였다. 좌석표 display.chipRate(1 USDT = 원)로 나눠
+ *  테더 기준 칩으로 그린다. 그림뿐 — 금액 글자·게임 금액은 그대로 */
+const chipRate = () => { const r = Number(S.me && S.me.display && S.me.display.chipRate); return r > 1 ? r : 1; };
 function chipStackEl(amount, { single = false, cap = 0 } = {}) {
+    amount = (Number(amount) || 0) / chipRate();
     let left = Math.max(0, cents(amount));
     const all = [];
     for (const v of CHIP_VALUES) { const n = Math.floor(left / cents(v)); for (let i = 0; i < n; i++) all.push(v); left -= n * cents(v); }
@@ -1231,8 +1260,7 @@ function wireButtons() {
         S.rqBusy = true; renderGate();
         try {
             const r = await cmd('ready', { on: !mine.ready });
-            if (!r.ok) toast(r.error || '');
-            else if (!mine.ready) play('check');
+            if (!r.ok) toast(r.error || '');   // [READY_NO_SFX_0_10_7] 준비 완료에 체크 소리를 내지 않는다 — 카운트다운 뒤 게임 시작 소리만
         } finally { S.rqBusy = false; renderGate(); }
     };
     $('#btn-leave').onclick = async () => {
@@ -1585,9 +1613,33 @@ const ROYAL_ARRIVE = 1.05;               // 영상 속 전달 구간(초) — �
 const ROYAL_TO = { x: 0.69, y: 0.46 };   // 영상 속 도착점(화면 비율)
 const ROYAL_BOX = { x0: 0.46, x1: 0.93, y0: 0.04, y1: 0.66 };   // 도착 뒤 연출이 그려지는 영역(화면 밖으로 잘리지 않게 이것만 본다)
 const royalVid = new Map();
+/**
+ * [TIP_WEBP_0_10_7] 아이폰(iOS 의 모든 브라우저)·맥 사파리는 투명 WebM(VP9 알파)을 못 튼다 — 종전에는 영상 대신 도착 섬광만 보이고 끝났다.
+ *   그 브라우저는 같은 장면을 도착 뒤부터 자른 투명 애니메이션 WebP(fx/tip_*.webp, 720×406·20fps·한 번 재생)로 보여 준다.
+ *   다른 브라우저도 영상이 안 되면 WebP 로 물러선다. 움직이는 그림은 같은 주소면 처음부터 다시 돌지 않으므로 팁마다 새 주소(&n=)를 미리 받아 둔다
+ */
+const ua = navigator.userAgent || '';
+const NO_ALPHA_WEBM = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
+    || (/Safari\//.test(ua) && !/Chrome|Chromium|CriOS|Edg|OPR|Firefox|FxiOS|SamsungBrowser/.test(ua));
+const royalImg = new Map();
+let royalImgN = 0;
+function preloadRoyalImg(id) {
+    const im = new Image();
+    im.decoding = 'async'; im.alt = '';
+    im.src = `${ASSET}fx/tip_${id}.webp${AV}&n=${Date.now().toString(36)}${++royalImgN}`;
+    royalImg.set(id, im);
+    return im;
+}
+function takeRoyalImg(id) {
+    const im = royalImg.get(id) || preloadRoyalImg(id);
+    setTimeout(() => preloadRoyalImg(id), 8000);   // 다음 팁용 — 이번 연출이 끝난 뒤 받는다
+    royalImg.delete(id);
+    return im;
+}
 /** 영상을 미리 받아 둔다 — 처음 팁에서 기다리지 않게(판에 앉은 뒤 조용할 때 한 번) */
 function preloadRoyal() {
     for (const id of Object.keys(ROYAL)) {
+        if (NO_ALPHA_WEBM) { if (!royalImg.has(id)) preloadRoyalImg(id); continue; }
         if (royalVid.has(id)) continue;
         const v = document.createElement('video');
         v.muted = true; v.playsInline = true; v.preload = 'auto'; v.setAttribute('playsinline', '');
@@ -1621,13 +1673,23 @@ function flyGift(from, to, gift, amount) {
 function royalTip(a, b, gift, after) {
     const fx = $('#fx');
     const mobile = S.layout === 'mobile';
-    // 받는 자리는 아바타 중심보다 조금 위 — 얼굴을 다 가리지 않게
-    const x0 = a.left + a.width / 2, y0 = a.top + a.height / 2, x1 = b.left + b.width / 2, y1 = b.top + b.height * 0.28;
+    /* [TIP_BIG_0_10_7] 연출 크기·자리 — 종전에는 영상(1024px 폭)의 도착점을 받는 사람 아바타 위쪽 28% 에 맞춰,
+       병·장미·잔이 아바타 크기로 아바타·이름 상자에 겹쳐 보였다(PC 에서도 「작게 사라진다」). 팩 미리보기처럼
+       받는 사람 머리 위 공중에서, 1.5배 크게 펼친다. 도착 뒤 연출 영역(ROYAL_BOX)이 화면 밖으로 나가면 안쪽으로 밀고,
+       날아가는 아이콘도 그 실제 도착점으로 간다(영상 속 소품과 이어지게) */
+    const W = mobile ? Math.min(innerWidth * 1.9, 760) : Math.min(innerWidth * 0.95, 1520);
+    const H = W * 540 / 960;
+    const want = { x: b.left + b.width / 2, y: b.top + b.height * 0.15 - (ROYAL_BOX.y1 - ROYAL_TO.y) * H * 0.8 };
+    let left = want.x - ROYAL_TO.x * W, top = want.y - ROYAL_TO.y * H;
+    const pad = 6;
+    left += Math.max(0, pad - (left + ROYAL_BOX.x0 * W)) - Math.max(0, left + ROYAL_BOX.x1 * W - (innerWidth - pad));
+    top += Math.max(0, pad - (top + ROYAL_BOX.y0 * H)) - Math.max(0, top + ROYAL_BOX.y1 * H - (innerHeight - pad));
+    const x0 = a.left + a.width / 2, y0 = a.top + a.height / 2, x1 = left + ROYAL_TO.x * W, y1 = top + ROYAL_TO.y * H;
     const arrive = ROYAL_ARRIVE * 1000;
     play('tip_' + gift, 0.8);
 
     // 1) 비행 — 로열 아이콘 + 금빛 꼬리(점점 작아지는 불티) + 도착 섬광
-    const size = mobile ? 58 : 92;
+    const size = mobile ? 72 : 124;   // [TIP_BIG_0_10_7] 커진 영상 속 소품과 크기를 맞춘다(종전 58·92)
     const lift = Math.max(70, Math.hypot(x1 - x0, y1 - y0) * 0.35);
     const cx = (x0 + x1) / 2, cy = Math.min(y0, y1) - lift;
     const pt = (k) => ({ x: (1 - k) * (1 - k) * x0 + 2 * (1 - k) * k * cx + k * k * x1, y: (1 - k) * (1 - k) * y0 + 2 * (1 - k) * k * cy + k * k * y1 });
@@ -1650,16 +1712,35 @@ function royalTip(a, b, gift, after) {
         setTimeout(() => s.remove(), 900);
     }, 28);
 
-    // 2) 영상 — 도착 장면부터, 받는 사람 자리에
-    const W = mobile ? Math.min(innerWidth * 1.35, 540) : Math.min(innerWidth * 0.64, 1040);
-    const H = W * 540 / 960;
-    let left = x1 - ROYAL_TO.x * W, top = y1 - ROYAL_TO.y * H;
-    // 도착 뒤 연출 영역이 화면 밖으로 잘리지 않게 안쪽으로 민다
-    const pad = 6;
-    left += Math.max(0, pad - (left + ROYAL_BOX.x0 * W)) - Math.max(0, left + ROYAL_BOX.x1 * W - (innerWidth - pad));
-    top += Math.max(0, pad - (top + ROYAL_BOX.y0 * H)) - Math.max(0, top + ROYAL_BOX.y1 * H - (innerHeight - pad));
+    // 2) 영상 — 도착 장면부터, 받는 사람 머리 위에(자리·크기는 위에서 정했다)
     const wrap = el('div', 'royal-vfx');
     wrap.style.cssText = `left:${left}px;top:${top}px;width:${W}px;height:${H}px`;
+    let done = false;
+    const end = () => {
+        if (done) return; done = true;
+        clearInterval(trail);
+        if (after) after();
+        wrap.classList.add('out');
+        setTimeout(() => wrap.remove(), 450);
+    };
+    /** [TIP_WEBP_0_10_7] 움직이는 WebP — 도착 장면부터 잘라 둔 그림이라 붙이는 순간부터 돈다 */
+    const showImg = () => {
+        const im = takeRoyalImg(gift);
+        wrap.innerHTML = ''; wrap.appendChild(im);
+        if (!wrap.isConnected) fx.appendChild(wrap);
+        im.addEventListener('error', () => end(), { once: true });
+        setTimeout(end, ROYAL[gift].ms - arrive + 300);
+    };
+    if (NO_ALPHA_WEBM) {
+        setTimeout(() => {
+            clearInterval(trail);
+            ico.remove();
+            const burst = el('div', 'royal-land'); burst.style.left = x1 + 'px'; burst.style.top = y1 + 'px';
+            fx.appendChild(burst); setTimeout(() => burst.remove(), 1000);
+            showImg();
+        }, arrive);
+        return;
+    }
     const src = royalVid.get(gift);
     const v = document.createElement('video');
     v.muted = true; v.playsInline = true; v.preload = 'auto'; v.setAttribute('playsinline', '');
@@ -1673,23 +1754,15 @@ function royalTip(a, b, gift, after) {
         setTimeout(() => res(v.readyState >= 2), arrive + 1500);
     });
 
-    let done = false;
-    const end = () => {
-        if (done) return; done = true;
-        clearInterval(trail);
-        if (after) after();
-        wrap.classList.add('out');
-        setTimeout(() => wrap.remove(), 450);
-    };
     setTimeout(async () => {
         clearInterval(trail);
         ico.remove();
         const burst = el('div', 'royal-land'); burst.style.left = x1 + 'px'; burst.style.top = y1 + 'px';
         fx.appendChild(burst); setTimeout(() => burst.remove(), 1000);
         const ok = await ready;
-        if (!ok) { end(); return; }   // 영상을 못 받으면 도착 섬광으로 끝낸다
+        if (!ok) { showImg(); return; }   // [TIP_WEBP_0_10_7] 영상을 못 받으면 같은 장면의 움직이는 WebP 로(종전: 도착 섬광으로 끝)
         fx.appendChild(wrap);
-        v.play().catch(() => end());
+        v.play().catch(() => showImg());
         v.addEventListener('ended', end, { once: true });
         setTimeout(end, ROYAL[gift].ms - arrive + 400);   // 영상 끝 투명 여백 — 늦어도 이 시각에 걷는다
     }, arrive);

@@ -26,12 +26,18 @@ const RESULT_PAUSE_MS = 4000;      // 결과를 보여 주는 시간
 /**
  * [SHOWDOWN_SEQ_0_10_4] 쇼다운 연출 시간 — 화면(app.js showdownPlan)이 카드를 한 자리씩 여는 데 쓰는 시간만큼 다음 판을 늦춘다.
  *   보통 쇼다운: 0.5초 뒤 0.4초 간격으로 한 자리씩(마지막 승자는 0.8초 더) → 뒤집기 0.6초 → 0.7초 뒤 승자·칩
- *   올인 런아웃: SHOWDOWN 1.6초 → 홀카드 0.4초 간격 → 뒤집기 0.6초 → 보드 한 단계씩 1초 간격(마지막 0.9초) → 0.7초 뒤 승자·칩
+ *   올인 런아웃: SHOWDOWN 1.6초 → 홀카드 0.4초 간격 → 뒤집기 0.6초 → 보드 플랍 2.4초·턴 2.8초·리버 2.6초(0.10.7, 긴장감) → 0.7초 뒤 승자·칩
  *   연출일 뿐 — 카드·칩·결과와 무관하다(결과는 이미 정해져 보낸 뒤다).
  */
+/** [RUNOUT_TENSION_0_10_7] 런아웃 보드 단계 시간(ms) — 플랍→턴 2400, 턴→리버 2800, 리버 연출 2600. 화면 app.js RUNOUT 과 같은 값 */
+const RUNOUT_STAGE_MS = [2400, 2800, 2600];
+function runoutBoardMs(stages) {
+    const k = Math.max(0, Math.min(3, Number(stages) || 0));
+    return RUNOUT_STAGE_MS.slice(3 - k).reduce((a, b) => a + b, 0);
+}
 function showdownMs(n, runoutStages) {
     if (!(n > 0)) return 0;
-    if (runoutStages !== null) return 1600 + (n - 1) * 400 + 600 + (runoutStages > 0 ? (runoutStages - 1) * 1000 + 900 : 0) + 700;
+    if (runoutStages !== null) return 1600 + (n - 1) * 400 + 600 + runoutBoardMs(runoutStages) + 700;
     return 500 + (n - 1) * 400 + (n > 1 ? 800 : 0) + 600 + 700;
 }
 const EMPTY_ROOM_MS = 10 * 60 * 1000;

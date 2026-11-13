@@ -661,3 +661,16 @@ test('테이블: 게임 시간 — 첫 판부터 재고, 3분 전 안내, 시간
     assert.strictEqual(st2.endsAt - st2.startedAt, 10 * 60000);
     assert.ok(hands > 3);
 });
+
+test('[CHIP_VISUAL_0_10_7] 좌석표 display.chipRate — 칩 그림 환산만 받는다(범위 밖·없으면 빠진다)', () => {
+    const { verifyTicket } = require('../src/table/ticket');
+    const keys = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+    const base = (display) => signTicket({ v: 1, tid: 'tid_chip_' + crypto.randomBytes(4).toString('hex'), exp: Date.now() + 60000,
+        room: { id: 'r1', name: 'won', sb: 1000, bb: 2000, maxPlayers: 9, rake: { percent: 5, minPot: 0, unit: 1 }, turnSec: 20 },
+        player: { sessionId: 'sess_' + crypto.randomBytes(4).toString('hex'), odcId: 'u1', nickname: 'a' }, buyIn: 500000, currency: 'KRW', display }, keys.privateKey);
+    const t1 = verifyTicket(base({ currency: 'KRW', rate: 1, chipRate: 1450 }), keys.publicKey);
+    assert.deepStrictEqual(t1.display, { currency: 'KRW', rate: 1, chipRate: 1450 });
+    assert.strictEqual(t1.buyIn, 500000, '게임 금액은 그대로(원)');
+    assert.strictEqual(verifyTicket(base({ currency: 'KRW', rate: 1 }), keys.publicKey).display.chipRate, undefined);
+    for (const bad of [0, 1, -5, 'x', 1e8]) assert.strictEqual(verifyTicket(base({ currency: 'KRW', rate: 1, chipRate: bad }), keys.publicKey).display.chipRate, undefined, String(bad));
+});

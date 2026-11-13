@@ -11,7 +11,9 @@
  *         sessionMin (선택) 방 게임 시간(분, 0~720) — 모두 준비하면 첫 판부터 재고, 끝나면 마지막 3판 뒤 준비 대기로 돌아간다.
  *                    있으면 endsAt 으로 방을 닫지 않는다 [READY_SESSION_0_10_6]
  *         unit  (선택) 1바이인 금액 — 화면에 「바이인 신청」 금액으로 보여 줄 뿐, 엔진 계산에는 쓰지 않는다
- *   display: { currency, rate }   (선택) 화면 표시 환산 — 금액 × rate 를 currency 로 보여 준다
+ *   display: { currency, rate, chipRate? }   (선택) 화면 표시 환산 — 금액 × rate 를 currency 로 보여 준다
+ *         chipRate (선택) 칩 그림 환산 — 칩 더미를 금액 ÷ chipRate 로 나눠 그린다(원화 방 1 USDT = chipRate 원).
+ *                  50만원이 1000짜리 칩 500개로 쌓이지 않게 테더 기준 칩으로 보인다. 그림뿐 — 게임·정산 금액에는 쓰지 않는다 [CHIP_VISUAL_0_10_7]
  *   player: { sessionId, odcId, nickname, avatar },
  *   buyIn: 칩(=잠근 금액), currency
  * }
@@ -82,6 +84,7 @@ function verifyTicket(ticket, consoleKey, now = Date.now()) {
     // 화면 표시용 환산(예: 칩은 USDT, 화면은 원화) — 게임·정산 금액에는 쓰지 않는다
     const d = p.display || {};
     const display = { currency: String(d.currency || p.currency || '').slice(0, 8), rate: Number(d.rate) > 0 && Number(d.rate) < 1e7 ? Number(d.rate) : 1 };
+    if (Number(d.chipRate) > 1 && Number(d.chipRate) < 1e7) display.chipRate = Number(d.chipRate);   // [CHIP_VISUAL_0_10_7] 칩 그림만
     return { tid: String(p.tid), exp: Number(p.exp), room, player, buyIn, currency: String(p.currency || '').slice(0, 8), display };
 }
 
