@@ -15,7 +15,7 @@
 # Container logs are capped (7 files of 5 MB) so nothing piles up; the engine logs only start-up and clean-up lines, never cards.
 services:
   engine:
-    image: ghcr.io/buyinofficial/buyin-engine@sha256:6d54ebe3d9b65f990b5c60898eaf2b327a8efab6b87b973416023dc64d324578
+    image: ghcr.io/buyinofficial/buyin-engine@sha256:75a750049a34e610d0cb386ccfe1b59967de766d0598fd47decf90942680116b
     restart: always
     # Hardening: no Linux capabilities, no privilege escalation, read-only root filesystem
     # (the engine writes only to /data), small /tmp, memory and process limits.
@@ -49,7 +49,7 @@ services:
       - records:/data
 
   ingress:
-    image: dstacktee/dstack-ingress:2.2@sha256:d05a7b343c37c1cca1bba8dbf7e8f3c6d2118158af2d41c455103796db4f67f0
+    image: dstacktee/dstack-ingress:2.2@sha256:75a750049a34e610d0cb386ccfe1b59967de766d0598fd47decf90942680116b
     restart: always
     ports:
       - "443:443"
