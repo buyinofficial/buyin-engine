@@ -34,6 +34,7 @@ const Engine = require('./Engine');
 const { dstackAttestation } = require('./attest');
 const { RecordStore } = require('./store');
 const { auditReport } = require('./audit');
+const gitid = require('./gitid');   // [GIT_IDS_0_10_25]
 const C = require('./crypto');
 const { TableServer } = require('./table/TableServer');
 const { tableRoutes, tableUpgrade } = require('./table/http');
@@ -102,7 +103,10 @@ const MANIFEST = (() => {
     files.sort();
     const lines = files.map((f) => `${crypto.createHash('sha256').update(fs.readFileSync(path.join(root, f))).digest('hex')}  ${f}`);
     const body = lines.join('\n') + '\n';
-    return { body, treeHash: crypto.createHash('sha256').update(body).digest('hex'), count: files.length };
+    // [GIT_IDS_0_10_25] the same files as git object ids — equal to the `src` and `package.json` entries of
+    // https://api.github.com/repos/buyinofficial/buyin-engine/git/trees/<commit> (a string comparison, no hashing needed)
+    const git = { src: gitid.treeId(path.join(root, 'src')), packageJson: gitid.blobId(fs.readFileSync(path.join(root, 'package.json'))) };
+    return { body, treeHash: crypto.createHash('sha256').update(body).digest('hex'), count: files.length, git };
 })();
 
 function engineId() {
@@ -112,7 +116,7 @@ function engineId() {
 
 function info() {
     const i = engine.call('info');
-    const out = { ...i, review: { files: MANIFEST.count, treeHash: MANIFEST.treeHash } };
+    const out = { ...i, review: { files: MANIFEST.count, treeHash: MANIFEST.treeHash, git: MANIFEST.git } };
     return store ? { ...out, records: { ...store.headInfo(), storage: store.storage(), retentionDays: RETENTION_DAYS, consoleUrl: CONSOLE_URL || null } } : out;
 }
 
@@ -127,7 +131,7 @@ function handleGet(req, res) {
         // 사람·AI 가 읽는 감사 보고서 (평문 markdown) — 값은 /info 와 같다.
         // /ai.html 은 같은 글을 HTML 로 감싼 것 — 일부 AI 웹 열람기는 text/markdown 을 읽지 못한다.
         const base = `https://${String(req.headers.host || '').replace(/[^\w.:-]/g, '')}`;
-        const text = auditReport(engine.call('info'), store ? store.headInfo() : null, store ? store.engineKeys().length : 0, base, { tableMode: !!tables, review: { files: MANIFEST.count, treeHash: MANIFEST.treeHash }, attestLinks: ATTEST_LINKS, explorerReport });
+        const text = auditReport(engine.call('info'), store ? store.headInfo() : null, store ? store.engineKeys().length : 0, base, { tableMode: !!tables, review: { files: MANIFEST.count, treeHash: MANIFEST.treeHash, git: MANIFEST.git }, attestLinks: ATTEST_LINKS, explorerReport });
         if (p === '/ai.html') {
             const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             // 주소는 진짜 링크로 — AI 웹 도구가 64자리 해시가 든 주소를 옮겨 적다 틀리지 않고 그대로 따라가게
@@ -147,7 +151,7 @@ function handleGet(req, res) {
     }
     if (p === '/review/manifest.json') {
         const files = MANIFEST.body.trim().split('\n').map((l) => { const [sha256, file] = l.split(/\s+/); return { path: file, sha256 }; });
-        return send(res, 200, { ok: true, count: MANIFEST.count, treeHash: MANIFEST.treeHash, files }, PUBLIC_HEADERS);
+        return send(res, 200, { ok: true, count: MANIFEST.count, treeHash: MANIFEST.treeHash, git: MANIFEST.git, files }, PUBLIC_HEADERS);
     }
     if (p === '/records/head') return store ? send(res, 200, { ok: true, ...store.headInfo(), storage: store.storage(), retentionDays: RETENTION_DAYS }, PUBLIC_HEADERS) : send(res, 404, { ok: false, error: 'no record store' }, PUBLIC_HEADERS);
     if (p === '/records/keys') return store ? send(res, 200, { ok: true, keys: store.engineKeys() }, PUBLIC_HEADERS) : send(res, 404, { ok: false, error: 'no record store' }, PUBLIC_HEADERS);

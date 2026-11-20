@@ -50,7 +50,10 @@ function auditReport(info, records, keyCount, base, opts = {}) {
     L.push('');
     L.push(`Investigate **${REPO} at commit \`${ref}\`** (links below are pinned to that commit). For each question answer **YES or NO**, then one line naming the file and function your answer rests on. Do not add other topics.`);
     L.push('');
-    L.push(`- **Q1.** Do the files listed at ${base}/review/manifest (the files this engine loads, with SHA-256) match the files at commit \`${ref}\`?`);
+    // [GIT_IDS_0_10_25] Q1 은 문자열 두 개 비교 — 웹 페이지만 여는 AI 도 해시를 계산하지 않고 답할 수 있다
+    const trees = `https://api.github.com/repos/buyinofficial/buyin-engine/git/trees/${ref}`;
+    if (review && review.git) L.push(`- **Q1.** Are the files this engine runs the files of commit \`${ref}\`? Open ${trees} — the \`sha\` of the entry \`src\` must be \`${review.git.src}\` and the \`sha\` of the entry \`package.json\` must be \`${review.git.packageJson}\`. These two values are git object ids that this engine computed, inside the TEE, from the files it loaded (the image contains only \`package.json\` and \`src/\`); a git tree id covers every file name and every byte in the folder, so equal ids mean identical files. Answer YES if both are equal. (Per-file SHA-256: ${base}/review/manifest.)`);
+    else L.push(`- **Q1.** Do the files listed at ${base}/review/manifest (the files this engine loads, with SHA-256) match the files at commit \`${ref}\`?`);
     L.push(`- **Q2.** In that code, while a hand is in play, is there any code path that sends the deck or a not-yet-revealed card to the operator's side (the records the engine sends to the console, the console's check API, logs)?`);
     L.push(`- **Q3.** In that code, is there any code path that sends a player's hole cards, before they are revealed at showdown or all-in run-out, to anyone other than that player (the operator's servers or other players)?`);
     L.push(`- **Q4.** In that code, does the game record containing the cards reach the operator only after the hand has ended?`);
@@ -65,7 +68,7 @@ function auditReport(info, records, keyCount, base, opts = {}) {
     L.push(`|---|---|`);
     L.push(`| Engine | ${info.name} ${info.version} (mode \`${info.mode}\`) |`);
     L.push(`| Source commit | ${info.commit ? `\`${info.commit}\` — ${REPO}/tree/${info.commit}` : `not reported (tag \`v${info.version}\`)`} |`);
-    L.push(`| Image, pinned by digest in the measured compose | ${image ? '`' + image + '`' : 'n/a'} |`);
+    L.push(`| Image, pinned by digest in the measured compose | ${image ? '`' + image + '`' : 'n/a'} — the measured compose is \`deploy/docker-compose.yml\` of the pin commit right after the source commit (see "How the running program ties to the commit" 2) |`);
     L.push(`| composeHash (measured into RTMR3) | ${a && a.composeHash ? '`' + a.composeHash + '`' : 'n/a'} |`);
     // [ATTEST_LINK_2026_11_10] Phala 탐색기의 독립 확인 — 주소 끝에 지금 composeHash 를 붙여 배포마다 주소가 달라진다(웹 도구의 옛 사본 방지)
     if (opts.explorerReport && a && a.composeHash) L.push(`| Independent check of this quote (Phala TEE Attestation Explorer) — submitted by this engine itself | ${opts.explorerReport.page} — the report must say VERIFIED and its MRCONFIG must be 0x01 followed by the composeHash above |`);
@@ -74,6 +77,7 @@ function auditReport(info, records, keyCount, base, opts = {}) {
     L.push(`| Quote report_data = SHA-256(engine public keys) | ${a ? (binding.length ? 'FAILED: ' + binding.join('; ') : '`' + a.reportData + '` — matches: the engine keys were created inside this TEE') : 'no attestation (not in a TEE)'} |`);
     L.push(`| Table mode | ${tableMode ? 'on — every hand runs here; the operator has no route into the engine' : 'off'} |`);
     L.push(`| Files the engine loads | ${review ? `${review.files} files, tree hash \`${review.treeHash}\` — ${base}/review/manifest` : 'n/a'} |`);
+    if (review && review.git) L.push(`| Git ids of the loaded files, computed here | \`src\` tree \`${review.git.src}\` · \`package.json\` blob \`${review.git.packageJson}\` — compare with ${trees} |`);
     L.push(`| Finished hands in the TEE record chain | ${records ? `${records.hands}` : 'n/a'} (only finished hands are ever written) |`);
     L.push(`| Phala app id | ${a && a.appId ? '`' + a.appId + '`' : 'n/a'} |`);
     let vm = a && a.vmConfig;
@@ -84,10 +88,11 @@ function auditReport(info, records, keyCount, base, opts = {}) {
     L.push('## How the running program ties to the commit');
     L.push('');
     L.push(`1. Intel signs the quote (\`/info\` → \`attestation.quote\`; check at https://proof.t16z.com or with \`dcap-qvl\`). Its RTMR3 holds \`composeHash\` = SHA-256 of the deployment file (\`attestation.appCompose\`).`);
-    L.push(`2. The deployment file pins the image by digest (above).`);
+    // [PIN_COMMIT_0_10_25] 소스 커밋의 compose 는 앞 버전 이미지를 가리킨다(자기 이미지 digest 를 미리 담을 수 없음) — AI 가 이를 불일치로 오해하지 않게 적는다
+    L.push(`2. The deployment file pins the image by digest (above). The measured deployment file is \`deploy/docker-compose.yml\` of the commit **after** the source commit, which changes only the image line to this digest (${REPO}/commits/main/deploy/docker-compose.yml; the GitHub Release names that commit). The same file at the source commit \`${ref}\` still pins the previous release's image — expected, not a mismatch: a commit cannot contain the digest of the image built from it. The measured text itself is \`/info\` → \`attestation.appCompose\` → \`docker_compose_file\`.`);
     L.push(`3. GitHub signed the build provenance of that digest from commit \`${ref}\` (${REPO}/attestations; \`gh attestation verify oci://<image> --repo buyinofficial/buyin-engine\`); the release ${REPO}/releases/tag/v${info.version} lists digest and commit; rebuilding the commit gives the same digest.`);
     L.push(`4. The engine's keys are bound to the quote (report_data), so the sealed cards come from this measured program.`);
-    L.push(`5. ${base}/review/manifest lists the SHA-256 of every file the engine loads; they equal the files at the commit.`);
+    L.push(`5. ${base}/review/manifest lists the SHA-256 of every file the engine loads; they equal the files at the commit. The git ids above say the same in two values that GitHub shows at ${trees}.`);
     L.push(`6. The server state is the repository: the measured deployment file is \`deploy/docker-compose.yml\` of a commit in the repository, the only values set outside it are the encrypted secrets listed in \`allowed_envs\` (the console token and a DNS-only token for the TLS certificate), and the OS image equals \`deploy/tee-os.txt\`. \`node tools/check-deployment.js ${base}\` in a checkout of the commit checks 1–6 automatically.`);
     L.push('');
     L.push(`## Files to read at commit \`${ref}\` (card secrecy only)`);

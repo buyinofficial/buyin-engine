@@ -60,7 +60,7 @@ Nothing else is trusted: not the operator, its database, its game/console server
 - *Swap the image under the same tag.* Impossible: the compose pins a digest, not a tag.
 - *Change GitHub after the fact.* Does not change what runs; the digest ties the running image to one exact commit, which anyone can rebuild.
 
-`/review/manifest` lists every file the running engine loads with its SHA-256 and a tree hash. Compare it with `sha256sum` of the files at the commit, or run `tools/check-deployment.js`.
+`/review/manifest` lists every file the running engine loads with its SHA-256 and a tree hash. Compare it with `sha256sum` of the files at the commit, or run `tools/check-deployment.js`. Without computing anything: the audit report (and `/review/manifest.json` → `git`) shows the git tree id of the loaded `src/` folder and the git blob id of `package.json`, computed by the engine from the files it loaded (`src/gitid.js`); GitHub shows the same two ids for the commit at `https://api.github.com/repos/buyinofficial/buyin-engine/git/trees/<commit>` (entries `src` and `package.json`). A git tree id covers every file name and every byte in the folder, so equal ids mean identical files.
 
 ---
 

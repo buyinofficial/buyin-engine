@@ -81,6 +81,14 @@ const step = (ok, name, detail) => { if (!ok) failed++; console.log(`${ok ? 'PAS
         if (local !== h) bad.push(f);
     }
     step(bad.length === 0, `all ${n} files the engine loads match this checkout`, bad.length ? 'differ: ' + bad.join(', ') : `tree hash ${sha256(manifest)}`);
+    // [GIT_IDS_0_10_25] the two git ids the audit report asks an AI to compare with GitHub (Q1)
+    try {
+        const mj = await (await fetch(BASE + '/review/manifest.json')).json();
+        const rev = (p) => execSync(`git rev-parse ${info.commit}:${p}`, { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+        const want = { src: rev('src'), packageJson: rev('package.json') };
+        const ok = !!mj.git && mj.git.src === want.src && mj.git.packageJson === want.packageJson;
+        step(ok, 'the git ids the engine shows (Q1) equal the commit\'s src tree and package.json', `engine ${mj.git ? mj.git.src + ' · ' + mj.git.packageJson : '(none)'} · commit ${want.src} · ${want.packageJson}`);
+    } catch (e) { step(false, 'the git ids the engine shows (Q1) equal the commit\'s src tree and package.json', e.message); }
 
     // 6. server state = repository: deployment file, values set outside the repository, OS image
     let app = {};
