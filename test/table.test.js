@@ -171,7 +171,7 @@ test('테이블: 좌석표로 앉아 판이 TEE 안에서만 돈다 — 카드�
     assert.deepStrictEqual(verifyChain(env.store.range(0, 1e9)), []);
 });
 
-test('테이블: 차례 밖 액션·남의 토큰·옛 차례 번호는 거절, 시간 초과는 폴드만 하고 자리는 그대로, 연속 3번이면 탈락(판이 끝나면 정산)', () => {
+test('테이블: 차례 밖 액션·남의 토큰·옛 차례 번호는 거절, 시간 초과는 폴드만 하고 자리는 그대로, 연속 5번이면 탈락(판이 끝나면 정산)', () => {
     const env = setup(3);
     const { server, clock, players } = env;
     clock.advance(5000);
@@ -195,7 +195,7 @@ test('테이블: 차례 밖 액션·남의 토큰·옛 차례 번호는 거절, 
     const keeper = players.find((p) => p.seat === t2.seat);
     server.command(keeper.token, { type: 'act', q: t2.q, action: 'FOLD', amount: 0, sig: C.sign(keeper.sig.privateKey, C.msgAction(t2.handId, t2.q, 'FOLD', 0)) });
     assert.strictEqual(room.seats[keeper.seat].timeouts, 0);
-    // 계속 방치하면 연속 3번째에 탈락해 정산된다
+    // 계속 방치하면 연속 5번째에 탈락해 정산된다 [TIMEOUT_KICK5_0_10_11]
     for (let i = 0; i < 60 && room.seats.filter(Boolean).length > 1; i++) clock.advance(21000);
     const settled = env.out.filter((x) => x.kind === 'settle');
     assert.ok(settled.filter((x) => x.note.reason === 'timeout').length >= 2, '연속 시간 초과한 사람은 탈락해 정산된다');
@@ -393,9 +393,39 @@ test('테이블: 팁 — 본인 서명·번호 필수, 프리플랍에서만, BB
     const rake = env.out.filter((x) => x.kind === 'hand-record').reduce((x, r) => x + ((r.record.result.rake && r.record.result.rake.totalRake) || 0), 0);
     const after = room.seats.filter(Boolean).reduce((x, s) => x + s.stack, 0);
     assert.ok(Math.abs(before - rake - after) < 1e-6, '방 전체 돈 = 이전 − 레이크');
-    // 프리플랍이 아니면 거절
+    // [TIP_TURN_0_10_11] 리버에서는 거절(프리플랍·플랍·턴은 된다)
     waitHand(clock, () => server.rooms.get('r1'));
-    if (room.hand) { room.hand.stage = 'flop'; clock.advance(3100); assert.throws(() => server.command(a.token, { type: 'tip', to: b.seat, gift: 'kiss', n: 2, sig: sign(a, 2, b, 'kiss', 2) }), /pre-flop/); }
+    if (room.hand) { room.hand.stage = 'river'; clock.advance(3100); assert.throws(() => server.command(a.token, { type: 'tip', to: b.seat, gift: 'kiss', n: 2, sig: sign(a, 2, b, 'kiss', 2) }), /river/);
+        room.hand.stage = 'turn'; server.command(a.token, { type: 'tip', to: b.seat, gift: 'kiss', n: 2, sig: sign(a, 2, b, 'kiss', 2) }); }
+});
+
+test('테이블: 본사 팁 [TIP_HOUSE_0_10_12] — 좌석표 tip 금액(BB 아님)만 보낸 사람에게서 빠지고 받는 사람 칩은 그대로, 사슬에 house, 다시 떠도 같은 스택', () => {
+    const env = setup(3, { tip: 1 });
+    const { server, clock, players } = env;
+    clock.advance(5000);
+    const room = server.rooms.get('r1');
+    const [a, b] = players;
+    const sign = (n, amount) => C.sign(a.sig.privateKey, C.msgTip(room.tableId, a.odcId, n, b.seat, 'flower', amount));
+    assert.throws(() => server.command(a.token, { type: 'tip', to: b.seat, gift: 'flower', n: 1, sig: sign(1, 2) }), /bad tip signature/, 'BB 로 서명하면 거절 — 금액은 좌석표 tip');
+    const before = room.seats.filter(Boolean).reduce((x, s) => x + s.stack, 0);
+    assert.ok(server.command(a.token, { type: 'tip', to: b.seat, gift: 'flower', n: 1, sig: sign(1, 1) }).ok);
+    const handId = room.hand.handId;
+    for (let i = 0; i < 6 && room.hand && room.hand.handId === handId; i++) clock.advance(21000);
+    const done = b.events.find(([ev]) => ev === 'tip-done');
+    assert.ok(done && done[1].house === true && done[1].amount === 1 && !(String(b.seat) in done[1].stacks), '받는 사람 스택은 알리지 않는다(그대로)');
+    const rec = env.out.filter((x) => x.kind === 'hand-record').pop().record;
+    assert.strictEqual(room.seats[a.seat].stack, Math.round((rec.stacksEnd[a.seat] - 1) * 1000) / 1000, '보낸 사람 -1');
+    assert.strictEqual(room.seats[b.seat].stack, rec.stacksEnd[b.seat], '받는 사람 그대로');
+    const tipLine = env.store.range(0, 1e9).find((e) => e.kind === 'tip');
+    assert.ok(tipLine && tipLine.house === true && tipLine.amount === 1);
+    const rake = env.out.filter((x) => x.kind === 'hand-record').reduce((x, r) => x + ((r.record.result.rake && r.record.result.rake.totalRake) || 0), 0);
+    const after = room.seats.filter(Boolean).reduce((x, s) => x + s.stack, 0);
+    assert.ok(Math.abs(before - rake - 1 - after) < 1e-6, '방 전체 돈 = 이전 − 레이크 − 본사 팁');
+    const want = Object.fromEntries(room.seats.filter(Boolean).map((s) => [s.odcId, s.stack]));
+    const out2 = [];
+    new TableServer({ engine: new Engine({ mode: 'dev' }), store: new RecordStore(env.dir), consoleKey: env.consoleKeys.publicKey, outbox: (k, p) => out2.push({ kind: k, ...p }), clock });
+    const got = Object.fromEntries(out2.filter((x) => x.kind === 'settle').map((x) => [x.note.odcId, x.note.cashOut]));
+    assert.deepStrictEqual(got, want, '다시 떠서 정산해도 본사 팁이 빠진 스택');
 });
 
 test('테이블: 팁을 옮긴 뒤 엔진이 다시 떠도 정산서에 팁이 반영된다(사슬의 팁 줄로 다시 계산)', () => {
@@ -443,6 +473,16 @@ test('테이블: 레이즈 중 — 내 차례에만 같은 방에 알린다(금�
     const hev = [...me.events].reverse().find(([e]) => e === 'hand')[1];
     assert.deepStrictEqual(hev.dark, [other.seat], '판 시작 때 방에 알린다');
     assert.strictEqual(room.seats[other.seat].darkNext, false, '한 판짜리 — 다시 눌러야 한다');
+    // [DARK_PEEK_0_10_11] 프리플랍에는 볼 수 없고, 다크가 아닌 사람도 못 한다. 플랍부터 보면 다크가 풀리고 방에 알린다
+    assert.throws(() => server.command(other.token, { type: 'peek' }), /from the flop/);
+    assert.throws(() => server.command(me.token, { type: 'peek' }), /not in the dark/);
+    room.hand.stage = 'flop';
+    assert.ok(server.command(other.token, { type: 'peek' }).ok);
+    assert.deepStrictEqual(room.hand.dark, []);
+    const pk = [...me.events].reverse().find(([e]) => e === 'peek');
+    assert.ok(pk && pk[1].seat === other.seat && pk[1].handId === room.hand.handId, '본 것을 상대에게 알린다');
+    assert.deepStrictEqual(Object.keys(pk[1]).sort(), ['handId', 'seat'], '카드는 보내지 않는다');
+    assert.throws(() => server.command(other.token, { type: 'peek' }), /not in the dark/, '한 번만');
 });
 
 /** 두 사람이 서로 올인해 한 사람이 칩 0 이 될 때까지 판을 돌린다 — 칩 0 이 된 사람을 돌려준다 */
@@ -521,6 +561,9 @@ test('테이블: 올인으로 칩 0 — 바로 정산(0), 자리는 그 회원 �
     // [BUYIN_UNITS_0_10_4] 표시용 바이인 개수 — 이번 1개, 이 자리 합계는 처음 것 + 1
     assert.strictEqual(server._publicSeat(room, seat).biNew, 1);
     assert.strictEqual(server._publicSeat(room, seat).bi, heldBi + 1, '재바이인하면 합계에 더한다');
+    // [PROFILE_STATS_0_10_11] 바이인 금액 합계 — 처음 좌석표 금액 + 재바이인 150
+    const firstBuyIn = server._publicSeat(room, seat).biAmt - 150;
+    assert.ok(firstBuyIn > 0, '처음 바이인 금액이 들어 있다');
     assert.strictEqual(seat.held, false);
     assert.throws(() => server.command(oldToken, { type: 'rebuy' }), /unknown token|seat is gone/, '예전 자리 토큰은 끝났다');
     assert.strictEqual(settles().length, 1, '돌아올 때 정산서를 다시 내지 않는다');
@@ -674,3 +717,269 @@ test('[CHIP_VISUAL_0_10_7] 좌석표 display.chipRate — 칩 그림 환산만 �
     assert.strictEqual(verifyTicket(base({ currency: 'KRW', rate: 1 }), keys.publicKey).display.chipRate, undefined);
     for (const bad of [0, 1, -5, 'x', 1e8]) assert.strictEqual(verifyTicket(base({ currency: 'KRW', rate: 1, chipRate: bad }), keys.publicKey).display.chipRate, undefined, String(bad));
 });
+
+test('[RAISE_TIME_0_10_9] 레이즈 바를 처음 잡으면 한 차례에 한 번 +10초 — 다른 사람·두 번째는 늘지 않는다', () => {
+    const env = setup(2);
+    const { server, players, clock } = env;
+    clock.advance(10);
+    const room = server.rooms.get('r1');
+    for (const p of players) ready(env, p);
+    clock.advance(3500);
+    assert.ok(room.hand, '판 시작');
+    const h = room.hand;
+    const me = players.find((p) => p.seat === h.toAct), other = players.find((p) => p.seat !== h.toAct);
+    const d0 = h.deadline;
+    // 차례가 아닌 사람은 무시
+    clock.advance(400);
+    server.command(other.token, { type: 'raising', active: true });
+    assert.strictEqual(h.deadline, d0);
+    const r = server.command(me.token, { type: 'raising', active: true });
+    assert.strictEqual(r.addedMs, 10000);
+    assert.strictEqual(h.deadline, d0 + 10000);
+    clock.advance(400);
+    server.command(me.token, { type: 'raising', active: true });
+    assert.strictEqual(h.deadline, d0 + 10000, '한 차례에 한 번');
+    assert.ok(other.events.some(([ev, d]) => ev === 'raise-time' && d.seat === me.seat), '같은 방에 알린다');
+});
+
+test('[SHOW_CARDS_0_10_9] 폴드승 승자만 다음 판 전까지 한 번 카드를 보여 준다 — 보인 카드는 그 판 카드 약속과 맞고 자기 카드다', () => {
+    const env = setup(2);
+    const { server, players, clock, engine } = env;
+    const corePub = C.importPublicJwk(engine.call('info').keys.ecdh);
+    waitHand(clock, () => server.rooms.get('r1'));
+    const room = server.rooms.get('r1');
+    const h = room.hand, hid = h.handId;
+    // 각자 자기 카드(봉투)
+    const mine = {};
+    for (const p of players) {
+        const hole = [...p.events].reverse().find((x) => x[0] === 'hole' && x[1].handId === hid);
+        mine[p.seat] = C.openEnvelope(p.ecdh.privateKey, corePub, hid, hole[1].envelope).cards.map((x) => x.c);
+    }
+    const pub = [...players[0].events].reverse().find((x) => x[0] === 'hand' && x[1].handId === hid)[1];
+    // 판 도중에는 보여 줄 수 없다
+    assert.throws(() => server.command(players[0].token, { type: 'show', which: 'both' }), /nothing to show/);
+    const actor = players.find((x) => x.seat === h.toAct), winner = players.find((x) => x.seat !== h.toAct);
+    const t = lastTurn(actor);
+    server.command(actor.token, { type: 'act', q: t.q, action: 'FOLD', amount: 0, sig: C.sign(actor.sig.privateKey, C.msgAction(t.handId, t.q, 'FOLD', 0)) });
+    assert.ok(!room.hand, '폴드승으로 끝');
+    assert.throws(() => server.command(actor.token, { type: 'show', which: 'both' }), /nothing to show/, '진 사람은 못 보여 준다');
+    assert.throws(() => server.command(winner.token, { type: 'show', which: 'middle' }), /bad show choice/);
+    const r = server.command(winner.token, { type: 'show', which: 'left' });
+    assert.strictEqual(r.cards, 1);
+    const ev = [...actor.events].reverse().find((x) => x[0] === 'shown');
+    assert.ok(ev && ev[1].seat === winner.seat && ev[1].handId === hid);
+    assert.strictEqual(ev[1].cards.length, 1);
+    for (const op of ev[1].cards) assert.ok(cards.checkOpening(hid, pub.commitments, op), '카드 약속과 맞는다');
+    assert.strictEqual(ev[1].cards[0].c, mine[winner.seat][0], '자기 왼쪽 카드');
+    // 보낸 카드 값만 비교한다(소금 hex 안에 카드 글자가 우연히 있을 수 있어 글자 검색은 하지 않는다)
+    assert.ok(ev[1].cards.every((x) => !mine[actor.seat].includes(x.c)), '남의 카드는 없다');
+    assert.deepStrictEqual(Object.keys(ev[1]).sort(), ['cards', 'handId', 'seat', 'which'], '덱·씨앗 같은 다른 값은 없다');
+    assert.throws(() => server.command(winner.token, { type: 'show', which: 'right' }), /already shown/, '한 번만');
+    // 다음 판이 시작되면 늦다
+    waitHand(clock, () => server.rooms.get('r1'));
+    assert.ok(room.hand);
+    assert.throws(() => server.command(winner.token, { type: 'show', which: 'both' }), /nothing to show|too late/);
+});
+
+test('[RESUME_0_10_11] 앉은 자리로 돌아오기 — 같은 서명 키·5분 안의 서명에만 그 자리 토큰, 다른 키·옛 시각·없는 좌석표는 거절', () => {
+    const env = setup(2);
+    const { server, players, clock } = env;
+    const p = players[0];
+    const room = server.rooms.get('r1');
+    const s = room.seats[p.seat];
+    const sigJ = C.publicJwk(p.sig.publicKey), fp = C.fingerprint(sigJ);
+    const ts = clock.now();
+    const r = server.resume({ tid: s.tid, ts, auth: { sig: sigJ, proof: C.sign(p.sig.privateKey, C.msgResume(s.tid, fp, ts)) } });
+    assert.strictEqual(r.token, p.token, '같은 자리 토큰');
+    assert.strictEqual(r.seat, p.seat);
+    const other = C.generateKeyPair(), oJ = C.publicJwk(other.publicKey);
+    assert.throws(() => server.resume({ tid: s.tid, ts, auth: { sig: oJ, proof: C.sign(other.privateKey, C.msgResume(s.tid, C.fingerprint(oJ), ts)) } }), /not the key/);
+    const old = ts - 6 * 60 * 1000;
+    assert.throws(() => server.resume({ tid: s.tid, ts: old, auth: { sig: sigJ, proof: C.sign(p.sig.privateKey, C.msgResume(s.tid, fp, old)) } }), /stale/);
+    assert.throws(() => server.resume({ tid: 'tid_none', ts, auth: { sig: sigJ, proof: C.sign(p.sig.privateKey, C.msgResume('tid_none', fp, ts)) } }), /gone/);
+});
+
+test('[AWAY_5MIN_0_10_11] 연결이 끊겨도 5분까지는 자리가 남는다(기본값)', () => {
+    const env = setup(2);
+    const { server, players, clock } = env;
+    assert.strictEqual(server.disconnectGraceMs, 5 * 60 * 1000);
+    const room = server.rooms.get('r1');
+    const p = players[1];
+    for (const f of p.closeFns) f();
+    clock.advance(4 * 60 * 1000);
+    assert.ok(room.seats[p.seat] && !room.seats[p.seat].leaving, '4분 뒤에도 자리가 있다');
+});
+
+test('[AWAY_0_10_16] 자리 비움 — 다음 판부터 카드를 받지 않고, 차례가 오면 바로 체크/폴드(시간 초과로 안 셈), 돌아오면 다음 판부터, 10분이 지나면 나가기(정산 away)', () => {
+    const env = setup(3);
+    const { server, players, clock } = env;
+    clock.advance(5000);
+    const room = server.rooms.get('r1');
+    assert.ok(room.hand && room.hand.seats.length === 3, '세 명이 판에 든다');
+    // 판 도중 자리 비움 — 끝나는 시각이 자리 정보에 실린다
+    const a = players.find((p) => p.seat !== room.hand.toAct);
+    const r = server.command(a.token, { type: 'sitout' });
+    assert.ok(r.ok && r.sitout && r.awayUntil === clock.now() + 10 * 60 * 1000);
+    assert.ok(server._publicSeat(room, room.seats[a.seat]).awayUntil > 0);
+    playOne(env, () => 1);
+    const st = room.seats[a.seat];
+    assert.strictEqual(st.timeouts, 0, '자리 비움 중 자동 체크/폴드는 시간 초과로 세지 않는다');
+    waitHand(clock, () => server.rooms.get('r1'));
+    assert.ok(room.hand && !room.hand.seats.includes(a.seat) && room.hand.seats.length === 2, '다음 판은 자리 비움 없이 둘이서');
+    // 돌아오면 다음 판부터
+    const b = server.command(a.token, { type: 'back' });
+    assert.ok(b.ok && !b.sitout && b.awayUntil === 0);
+    assert.ok(!room.hand.seats.includes(a.seat), '지금 판에는 들지 않는다');
+    playOne(env, () => 1);
+    waitHand(clock, () => server.rooms.get('r1'));
+    assert.ok(room.hand && room.hand.seats.includes(a.seat), '그다음 판부터 다시 든다');
+    playOne(env, () => 1);
+    // 다시 자리 비움 → 10분 → 나가기(정산 away)
+    server.command(a.token, { type: 'sitout' });
+    clock.advance(9 * 60 * 1000);
+    assert.ok(room.seats[a.seat], '9분에는 자리가 있다');
+    clock.advance(61 * 1000);
+    for (let i = 0; i < 40 && room.seats[a.seat]; i++) { playOne(env, () => 1); clock.advance(1000); }
+    assert.ok(!room.seats[a.seat], '10분이 지나면 자리를 정리한다');
+    assert.ok(env.out.some((x) => x.kind === 'settle' && x.note.odcId === a.odcId && x.note.reason === 'away'), '정산 사유 away');
+});
+
+test('[AWAY_0_10_16] 자리 비움은 대기실 준비 인원에서 빠지고, 내 차례에 누르면 바로 넘어간다', () => {
+    client.noReady = true;
+    let env;
+    try { env = setup(3); } finally { client.noReady = false; }
+    const { server, players, clock } = env;
+    const room = server.rooms.get('r1');
+    assert.ok(room.gate, '대기실');
+    server.command(players[2].token, { type: 'sitout' });
+    assert.strictEqual(server._gatePlayers(room).length, 2, '자리 비움은 준비 인원에서 뺀다');
+    server.command(players[0].token, { type: 'ready' }); server.command(players[1].token, { type: 'ready' });
+    clock.advance(5000);
+    assert.ok(room.hand && room.hand.seats.length === 2 && !room.hand.seats.includes(players[2].seat), '둘이서 시작');
+    const turn = players.find((p) => p.seat === room.hand.toAct);
+    const q0 = room.hand.q, h0 = room.hand.handId;
+    server.command(turn.token, { type: 'sitout' });
+    assert.ok(!room.hand || room.hand.handId !== h0 || room.hand.q !== q0 || room.hand.toAct !== turn.seat, '내 차례에 누르면 기다리지 않고 넘어간다(둘이면 폴드로 판이 끝난다)');
+    assert.ok(env.out.some((x) => x.kind === 'hand-record' && x.record.handId === h0) || (room.hand && room.hand.handId === h0), '판은 이어지거나 끝났다');
+});
+
+test('[WATCH_0_10_20] 관전(방장) — 관전 좌석표로 자리 없이 들어와 공개 이벤트만 받는다(홀카드 봉투 없음), 채팅만(방장 표시), 회원들은 관전 중임을 본다, 최대 3명, 나가기', () => {
+    const env = setup(2);
+    const { server, clock, players, consoleKeys } = env;
+    const room0 = server.rooms.get('r1');
+    const R = room0.rules;
+    const wticket = (i) => signTicket({ v: 1, tid: 'tidw_' + i + '_' + crypto.randomBytes(4).toString('hex'), exp: clock.now() + 60000, room: R,
+        player: { sessionId: 'sessw_' + i + '_' + crypto.randomBytes(4).toString('hex'), odcId: 'h' + i, nickname: 'HOST' + i }, watch: 1, currency: 'USDT' }, consoleKeys.privateKey);
+    const j = server.join(wticket(1));
+    assert.ok(j.watch && j.token && j.tableId === room0.tableId);
+    const ev = [];
+    server.subscribe(j.token, { send: (e, d) => ev.push([e, d]), end: () => {}, onClose: () => {} });
+    const snap = ev.find((x) => x[0] === 'snapshot')[1];
+    assert.strictEqual(snap.me.seat, -1); assert.ok(snap.me.watch); assert.strictEqual(snap.hole, null);
+    assert.ok(JSON.stringify(snap).indexOf('envelope') < 0, '관전 상태에 봉투가 없다');
+    assert.ok(players[0].events.some((x) => x[0] === 'watch' && x[1].n === 1 && x[1].names[0] === 'HOST1'), '회원 화면에 관전 중 알림');
+    clock.advance(5000);
+    const room = server.rooms.get('r1');
+    assert.ok(room.hand, '판이 시작됐다');
+    assert.ok(ev.some((x) => x[0] === 'hand'), '공개 판 알림은 받는다');
+    assert.ok(!ev.some((x) => x[0] === 'hole'), '홀카드 봉투는 받지 않는다');
+    assert.ok(!room.hand.seats.includes(-1) && room.hand.seats.length === 2, '관전자는 판에 들지 않는다');
+    // 채팅만
+    const c = server.command(j.token, { type: 'chat', text: '매너 부탁드려요' });
+    assert.ok(c.ok);
+    const chat = players[1].events.filter((x) => x[0] === 'chat').pop()[1];
+    assert.ok(chat.host === true && chat.seat === -1 && chat.nickname === 'HOST1');
+    for (const type of ['act', 'sitout', 'tip', 'show', 'ready', 'emote', 'keys', 'timebank']) {
+        assert.throws(() => server.command(j.token, { type, action: 'FOLD' }), /watchers can only chat/, type);
+    }
+    // 같은 좌석표는 한 번만, 최대 3명
+    const w2 = server.join(wticket(2)), w3 = server.join(wticket(3));
+    assert.throws(() => server.join(wticket(4)), /too many watchers/);
+    // 나가기 → 토큰이 사라지고 회원 화면에 줄어든 수
+    server.command(w3.token, { type: 'leave' });
+    assert.throws(() => server.command(w3.token, { type: 'chat', text: 'x' }), /unknown token/);
+    assert.strictEqual(players[0].events.filter((x) => x[0] === 'watch').pop()[1].n, 2);
+    // 판은 관전과 무관하게 끝까지 — 칩 보존
+    playOne(env, () => 1);
+    assert.ok(env.out.some((x) => x.kind === 'hand-record'));
+    assert.ok(w2.token);
+});
+
+/**
+ * [LEAK_GAMES_0_10_24] 홀덤·PLO4·PLO5 — 판 도중 남의 카드가 어디에도 나가지 않는다(테이블 서버 그대로, 회원이 받은 모든 이벤트와 콘솔로 나간 모든 것).
+ * 이벤트는 실제 연결처럼 받는 순간 글자로 바꿔 둔다(서버 객체를 그대로 들고 있으면 나중에 채워진 공개 칸이 예전 이벤트에 비친다).
+ *  - 봉투를 열면 자기 카드가 2·4·5장, 판 시작 때 약속과 맞는다
+ *  - 남의 카드는 공개 시점(올인 런아웃 runout, 쇼다운 결과 result, 화면 상태의 reveal)에만 — 그 밖의 칸에는 없다
+ *  - 남의 카드가 공개된 뒤에는 그 판에 베팅 차례가 오지 않는다
+ *  - 콘솔로 가는 판 기록(hand-record)은 그 판 결과가 테이블에 나간 뒤에만, 정산서(settle)에는 카드가 없다
+ */
+for (const [game, n, hole, maxPlayers] of [['holdem', 4, 2, 9], ['plo4', 4, 4, 9], ['plo5', 6, 5, 6]]) {
+    test(`[LEAK_GAMES_0_10_24] ${game} — 판 도중 남의 카드는 공개 전엔 어떤 이벤트·콘솔 전송에도 없다, 기록은 결과 뒤에만`, () => {
+        const rnd = (k) => crypto.randomInt(k);
+        const env = setup(n, { game, maxPlayers });
+        const { server, out, clock, players, engine } = env;
+        const corePub = C.importPublicJwk(engine.call('info').keys.ecdh);
+        let seq = 0;
+        for (const p of players) {
+            p.events.push = function (...xs) {
+                for (const x of xs) { x[1] = JSON.parse(JSON.stringify(x[1] === undefined ? null : x[1])); x[2] = ++seq; }
+                return Array.prototype.push.apply(this, xs);
+            };
+        }
+        out.push = function (...xs) { for (const x of xs) x.__seq = ++seq; return Array.prototype.push.apply(this, xs); };
+        let handsDone = 0;
+        for (let g = 0; g < 30; g++) {
+            waitHand(clock, () => server.rooms.get('r1'));
+            const room = server.rooms.get('r1');
+            if (!room || !room.hand) break;
+            const hid = room.hand.handId;
+            for (const p of players.filter((x) => room.seats[x.seat])) {
+                const ev = [...p.events].reverse().find((x) => x[0] === 'hole' && x[1] && x[1].handId === hid);
+                if (!ev) continue;
+                const pay = C.openEnvelope(p.ecdh.privateKey, corePub, hid, ev[1].envelope);
+                assert.strictEqual(pay.cards.length, hole, 'own hole cards');
+                const pub = [...p.events].reverse().find((x) => x[0] === 'hand' && x[1] && x[1].handId === hid)[1];
+                for (const op of pay.cards) assert.ok(cards.checkOpening(hid, pub.commitments, op));
+                p.holes[hid] = pay.cards.map((x) => x.c);
+            }
+            playOne(env, rnd);
+            handsDone++;
+        }
+        assert.ok(handsDone >= 1);
+        let checked = 0;
+        for (const p of players) {
+            const byHand = {};
+            for (const e of p.events) if (e[1] && e[1].handId) (byHand[e[1].handId] = byHand[e[1].handId] || []).push(e);
+            for (const [hid, evs] of Object.entries(byHand)) {
+                const others = players.filter((q) => q !== p && q.holes[hid]).flatMap((q) => q.holes[hid]);
+                let revealed = false;
+                for (const [ev, d] of evs) {
+                    if (ev === 'result') break;
+                    if (ev === 'runout' || ev === 'showdown' || (d.reveal && Object.keys(d.reveal).length)) revealed = true;
+                    if (ev === 'runout' || ev === 'showdown') continue;
+                    if (revealed && ev === 'turn') assert.fail(`${game}: betting turn after cards were revealed`);
+                    const { reveal: _r, ...rest } = d;
+                    const js = JSON.stringify(rest);
+                    const board = d.board || [];
+                    for (const c of others) assert.ok(board.includes(c) || !js.includes(`"${c}"`), `${game}: ${ev} carries another seat's card`);
+                    checked++;
+                }
+            }
+        }
+        assert.ok(checked > 0);
+        for (const o of out) {
+            if (o.kind === 'hand-record') {
+                const hid = o.record.handId;
+                const res = players.flatMap((q) => q.events.filter((x) => x[0] === 'result' && x[1] && x[1].handId === hid).map((x) => x[2]));
+                assert.ok(res.length && Math.min(...res) < o.__seq, `${game}: record of ${hid} sent before its result`);
+                if (game !== 'holdem') assert.strictEqual(o.record.game, game);
+            } else {
+                assert.ok(!/"[2-9TJQKA][shdc]"/.test(JSON.stringify(o)), `${game}: ${o.kind} carries a card`);
+            }
+        }
+        for (const p of players) if (server.rooms.get('r1') && server.rooms.get('r1').seats[p.seat]) server.command(p.token, { type: 'leave' });
+        clock.advance(30000);
+        assert.strictEqual(out.filter((x) => x.kind === 'settle').length, n);
+        for (const r of out.filter((x) => x.kind === 'hand-record')) assert.deepStrictEqual(verifyRecord(r.record, r.sig, engine.call('info').keys.sig).errors, []);
+    });
+}

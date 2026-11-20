@@ -1,0 +1,733 @@
+/*
+ * [WINNER_SD_VFX_0_10_9] 원본 게임(레이스홀덤 인게임) 연출 CSS 를 그대로 옮긴 것 — 바꾸지 않는다.
+ *   winner-vfx.css   : 승자 WINNER / SIDE / UNCALLED (app/components/winner-vfx)
+ *   showdown-vfx.css : SHOW DOWN 충돌 연출 (app/components/showdown-vfx)
+ *   in-the-dark.css  : 인더다크 오라·리본·베일·봉인 (app/components/in-the-dark)
+ * 외부 주소·글꼴 없음(순수 CSS). 그림은 app.js 가 리소스 서버 fx/show.webp·fx/down.webp 를 넣는다.
+ */
+
+/* ===== winner-vfx.css ===== */
+.winner-vfx {
+  --winner-gold-deep: #704108;
+  --winner-gold: #d99a29;
+  --winner-gold-bright: #ffe397;
+  position: relative;
+  display: block;
+  width: min(1180px, 100%);
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  isolation: isolate;
+  background: transparent;
+  cursor: pointer;
+}
+
+.winner-vfx *, .winner-vfx *::before, .winner-vfx *::after { box-sizing: border-box; }
+.winner-vfx__sequence, .winner-vfx__dust { position: absolute; inset: 0; }
+.winner-vfx__sequence { animation: winner-sequence-in .25s ease both; }
+
+.winner-vfx__burst {
+  position: absolute; z-index: 1; top: 50%; left: 50%; width: 70%; height: 42%;
+  transform: translate(-50%, -50%) scale(.1); border-radius: 50%; opacity: 0;
+  background: radial-gradient(ellipse, rgba(255,244,201,.95) 0%, rgba(255,185,54,.34) 18%, transparent 66%);
+  filter: blur(8px); animation: winner-burst 1.3s .35s cubic-bezier(.16,.8,.2,1) both;
+}
+
+.winner-vfx__rays {
+  position: absolute; z-index: 0; top: 50%; left: 50%; width: 72%; aspect-ratio: 1;
+  transform: translate(-50%, -50%) scale(.45) rotate(-8deg); opacity: 0;
+  background: repeating-conic-gradient(from 4deg, rgba(255,209,111,.1) 0 1.5deg, transparent 1.5deg 13deg);
+  -webkit-mask-image: radial-gradient(circle, #000 0 8%, transparent 62%);
+  mask-image: radial-gradient(circle, #000 0 8%, transparent 62%);
+  animation: winner-rays-in 2.2s .52s ease-out both, winner-rays-drift 18s 2.7s linear infinite;
+}
+
+.winner-vfx__shockwaves { position: absolute; z-index: 3; top: 50%; left: 50%; width: 10px; height: 10px; transform: translate(-50%,-50%); }
+.winner-vfx__shockwaves i {
+  position: absolute; inset: 0; border: 2px solid rgba(255,218,128,.72); border-radius: 50%;
+  box-shadow: 0 0 28px rgba(255,187,55,.54); opacity: 0;
+  animation: winner-shockwave 1.35s .46s cubic-bezier(.08,.72,.18,1) both;
+}
+.winner-vfx__shockwaves i:nth-child(2) { animation-delay: .58s; }
+.winner-vfx__shockwaves i:nth-child(3) { animation-delay: .7s; }
+
+.winner-vfx__crest {
+  position: absolute; z-index: 6; top: 31.5%; left: 50%; width: min(440px,42%); height: 30px;
+  transform: translateX(-50%); opacity: 0; animation: winner-crest-in .8s .93s ease-out forwards;
+}
+.winner-vfx__crest-gem {
+  position: absolute; top: 3px; left: 50%; width: 18px; height: 18px;
+  transform: translateX(-50%) rotate(45deg); border: 1px solid #ffebb1;
+  background: linear-gradient(135deg,#fff7ce,#bb7716 55%,#5d3405); box-shadow: 0 0 18px rgba(255,195,67,.65);
+}
+.winner-vfx__crest-line { position: absolute; top: 12px; width: 43%; height: 1px; background: linear-gradient(90deg,transparent,rgba(255,218,125,.75)); }
+.winner-vfx__crest-line--left { left: 0; }
+.winner-vfx__crest-line--right { right: 0; transform: scaleX(-1); }
+
+.winner-vfx__wings { position: absolute; z-index: 4; top: 50%; left: 50%; width: min(1120px,92%); height: 210px; transform: translate(-50%,-50%); }
+.winner-vfx__wing { position: absolute; top: 50%; width: 31%; height: 120px; opacity: 0; }
+.winner-vfx__wing--left { left: 0; transform: translateX(70%) translateY(-50%); animation: winner-wing-left .85s .84s ease-out forwards; }
+.winner-vfx__wing--right { right: 0; transform: translateX(-70%) translateY(-50%) scaleX(-1); animation: winner-wing-right .85s .84s ease-out forwards; }
+.winner-vfx__wing i { position: absolute; left: 0; width: 100%; height: 2px; transform-origin: right center; background: linear-gradient(90deg,transparent,rgba(219,155,43,.44),#ffe09a); box-shadow: 0 0 9px rgba(255,190,67,.22); }
+.winner-vfx__wing i:nth-child(1) { top: 30px; transform: rotate(8deg); }
+.winner-vfx__wing i:nth-child(2) { top: 58px; width: 88%; }
+.winner-vfx__wing i:nth-child(3) { top: 86px; width: 72%; transform: rotate(-9deg); }
+
+.winner-vfx__lockup { position: absolute; z-index: 7; top: 50%; left: 50%; width: 90%; transform: translate(-50%,-50%); text-align: center; }
+.winner-vfx__hand {
+  margin: 0 0 clamp(12px,2.1vw,26px);
+  white-space: nowrap;
+  color: transparent;
+  background: linear-gradient(180deg,#fff8d9 0%,#ffe18a 32%,#b97514 68%,#ffe9a5 100%);
+  background-clip: text; -webkit-background-clip: text;
+  -webkit-text-stroke: 1px rgba(255,235,173,.62);
+  font-family: Georgia,"Times New Roman",serif;
+  font-size: clamp(24px,5.2vw,74px);
+  font-weight: 900; line-height: .9; letter-spacing: .04em;
+  filter: drop-shadow(0 2px 0 #4c2a05) drop-shadow(0 5px 2px rgba(0,0,0,.78)) drop-shadow(0 0 16px rgba(255,183,45,.28));
+  opacity: 0; transform: translateY(30px) scale(.76);
+  animation: winner-hand-forge .68s .42s cubic-bezier(.12,.9,.2,1.15) forwards;
+}
+@media (min-width: 768px) {
+  .winner-vfx__hand { font-size: clamp(24px,3vw,46px); }
+}
+.winner-vfx__title {
+  position: relative; display: flex; justify-content: center; gap: clamp(0px,.3vw,5px); margin: 0;
+  perspective: 700px; font-family: Georgia,"Times New Roman",serif; font-size: clamp(68px,13vw,190px);
+  font-weight: 900; line-height: .78; letter-spacing: -.075em;
+}
+.winner-vfx__title span {
+  position: relative; display: inline-block; color: transparent;
+  background: linear-gradient(180deg,#fff8d9 0%,#ffe18a 17%,#b97514 48%,#ffe9a5 63%,#80500d 82%,#edb84e 100%);
+  background-clip: text; -webkit-background-clip: text; -webkit-text-stroke: 1px rgba(255,235,173,.65);
+  filter: drop-shadow(0 2px 0 #4c2a05) drop-shadow(0 7px 2px rgba(0,0,0,.8)) drop-shadow(0 0 18px rgba(255,183,45,.18));
+  opacity: 0; transform: translateY(45px) rotateX(58deg) scale(.72);
+  animation: winner-letter-forge .72s calc(.56s + var(--letter) * .07s) cubic-bezier(.12,.9,.2,1.15) forwards;
+}
+.winner-vfx__underline {
+  position: relative; display: block; width: min(560px,58%); height: 2px; margin: clamp(20px,4vw,42px) auto 0;
+  transform: scaleX(0); background: linear-gradient(90deg,transparent,#dca33a 15%,#fff0ba 50%,#dca33a 85%,transparent);
+  box-shadow: 0 0 14px rgba(230,167,52,.5); animation: winner-underline-in .85s 1.12s ease-out forwards;
+}
+.winner-vfx__underline i { position: absolute; top: 50%; left: 50%; width: 10px; height: 10px; transform: translate(-50%,-50%) rotate(45deg); border: 1px solid #ffe29a; background: #8d570d; box-shadow: 0 0 15px rgba(255,198,70,.7); }
+
+.winner-vfx__dust { z-index: 5; pointer-events: none; }
+.winner-vfx__dust i {
+  position: absolute; left: var(--x); top: var(--y); width: var(--size); height: var(--size); border-radius: 50%;
+  opacity: 0; background: #ffe7a2; box-shadow: 0 0 8px #e3a53b;
+  animation: winner-dust-rise 3.2s var(--delay) ease-out both, winner-dust-float 3.8s calc(var(--delay) + 3.2s) ease-in-out infinite alternate;
+}
+.winner-vfx__floor-glow { position: absolute; z-index: 2; bottom: 6%; left: 50%; width: 60%; height: 9%; transform: translateX(-50%) scaleX(.25); border-radius: 50%; opacity: 0; background: radial-gradient(ellipse,rgba(239,170,54,.34),transparent 68%); filter: blur(12px); animation: winner-floor-in 1.25s .9s ease-out forwards; }
+
+@keyframes winner-sequence-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes winner-burst { 0% { opacity: 0; transform: translate(-50%,-50%) scale(.08); } 18% { opacity: 1; } 55% { opacity: .62; } 100% { opacity: .12; transform: translate(-50%,-50%) scale(1.2); } }
+@keyframes winner-rays-in { from { opacity: 0; transform: translate(-50%,-50%) scale(.45) rotate(-8deg); } to { opacity: .75; transform: translate(-50%,-50%) scale(1) rotate(0); } }
+@keyframes winner-rays-drift { from { transform: translate(-50%,-50%) rotate(0); } to { transform: translate(-50%,-50%) rotate(360deg); } }
+@keyframes winner-shockwave { 0% { opacity: 0; transform: translate(-50%,-50%) scale(.2); } 14% { opacity: .8; } 100% { opacity: 0; transform: translate(-50%,-50%) scale(55); } }
+@keyframes winner-hand-forge { 0% { opacity: 0; transform: translateY(30px) scale(.76); filter: brightness(3) blur(4px); } 70% { opacity: 1; transform: translateY(-3px) scale(1.03); filter: brightness(1.35) blur(0); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes winner-letter-forge { 0% { opacity: 0; transform: translateY(45px) rotateX(58deg) scale(.72); filter: brightness(3) blur(4px); } 65% { opacity: 1; transform: translateY(-5px) rotateX(-4deg) scale(1.04); filter: brightness(1.35) blur(0); } 100% { opacity: 1; transform: translateY(0) rotateX(0) scale(1); } }
+@keyframes winner-underline-in { to { transform: scaleX(1); } }
+@keyframes winner-crest-in { from { opacity: 0; transform: translateX(-50%) scaleX(.4); } to { opacity: 1; transform: translateX(-50%) scaleX(1); } }
+@keyframes winner-wing-left { to { opacity: .9; transform: translateX(0) translateY(-50%); } }
+@keyframes winner-wing-right { to { opacity: .9; transform: translateX(0) translateY(-50%) scaleX(-1); } }
+@keyframes winner-dust-rise { 0% { opacity: 0; transform: translate(0,20px) scale(.2); } 18% { opacity: .9; } 70% { opacity: .5; } 100% { opacity: .08; transform: translate(calc((var(--x) - 50%) * .12),var(--travel)) scale(1.2); } }
+@keyframes winner-dust-float { from { opacity: .05; transform: translateY(var(--travel)); } to { opacity: .34; transform: translateY(calc(var(--travel) - 18px)); } }
+@keyframes winner-floor-in { to { opacity: 1; transform: translateX(-50%) scaleX(1); } }
+
+@media (max-width: 650px) { .winner-vfx__crest { top: 25%; } }
+@media (prefers-reduced-motion: reduce) {
+  .winner-vfx *, .winner-vfx *::before, .winner-vfx *::after { animation-duration: .01ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; }
+}
+
+/* [dev7 79564/79578] 프로필 오버레이 — 클립 없이 아바타 중심 전체 연출 */
+.winner-vfx--overlay {
+  pointer-events: none;
+  cursor: default;
+  width: 100%;
+  max-width: none;
+  overflow: visible;
+}
+.winner-vfx--overlay .winner-vfx__sequence { overflow: visible; }
+.winner-vfx--overlay .winner-vfx__title {
+  font-size: clamp(36px, 11vw, 132px);
+}
+
+
+/* [dev7 83426]/[dev7 83465] SIDE = pastel green / UNCALLED = silver
+   - text clip 재지정 (배경만 바꾸면 일부 브라우저에서 글자 깨짐)
+   - letter/hand 애니에서 filter(brightness) 제거 → drop-shadow가 덮이지 않게 */
+@keyframes winner-letter-forge-soft {
+  0% { opacity: 0; transform: translateY(45px) rotateX(58deg) scale(.72); }
+  65% { opacity: 1; transform: translateY(-5px) rotateX(-4deg) scale(1.04); }
+  100% { opacity: 1; transform: translateY(0) rotateX(0) scale(1); }
+}
+@keyframes winner-hand-forge-soft {
+  0% { opacity: 0; transform: translateY(30px) scale(.76); }
+  70% { opacity: 1; transform: translateY(-3px) scale(1.03); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.winner-vfx--side .winner-vfx__burst {
+  background: radial-gradient(ellipse, rgba(220,255,230,.95) 0%, rgba(125,200,150,.34) 18%, transparent 66%);
+}
+.winner-vfx--side .winner-vfx__shockwaves i {
+  border-color: rgba(170,230,190,.75); box-shadow: 0 0 28px rgba(120,200,150,.5);
+}
+.winner-vfx--side .winner-vfx__crest-gem {
+  border-color: #d8ffe8;
+  background: linear-gradient(135deg,#eafff2,#6fbf8e 55%,#2d6b48);
+  box-shadow: 0 0 18px rgba(130,210,160,.65);
+}
+.winner-vfx--side .winner-vfx__crest-line { background: linear-gradient(90deg,transparent,rgba(180,230,200,.75)); }
+.winner-vfx--side .winner-vfx__wing i {
+  background: linear-gradient(90deg,transparent,rgba(120,190,150,.44),#d5f5e3);
+  box-shadow: 0 0 9px rgba(130,210,160,.22);
+}
+.winner-vfx--side .winner-vfx__hand,
+.winner-vfx--side .winner-vfx__title span {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background: linear-gradient(180deg,#f0fff6 0%,#c8f0d8 32%,#5faf7e 68%,#e2fbeb 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-stroke: 1px rgba(210,255,230,.62);
+  filter: drop-shadow(0 2px 0 #1f4a32) drop-shadow(0 5px 2px rgba(0,0,0,.78)) drop-shadow(0 0 16px rgba(120,200,150,.28));
+}
+.winner-vfx--side .winner-vfx__hand {
+  animation: winner-hand-forge-soft .68s .42s cubic-bezier(.12,.9,.2,1.15) forwards;
+}
+.winner-vfx--side .winner-vfx__title span {
+  animation: winner-letter-forge-soft .72s calc(.56s + var(--letter) * .07s) cubic-bezier(.12,.9,.2,1.15) forwards;
+}
+.winner-vfx--side .winner-vfx__underline {
+  background: linear-gradient(90deg,transparent,#7dcea0 15%,#e8fff2 50%,#7dcea0 85%,transparent);
+  box-shadow: 0 0 14px rgba(120,200,150,.5);
+}
+.winner-vfx--side .winner-vfx__underline i { border-color: #d5f5e3; background: #3d8f62; box-shadow: 0 0 15px rgba(130,210,160,.7); }
+.winner-vfx--side .winner-vfx__dust i { background: #d5f5e3; box-shadow: 0 0 8px #7dcea0; }
+.winner-vfx--side .winner-vfx__floor-glow { background: radial-gradient(ellipse,rgba(125,200,150,.34),transparent 68%); }
+.winner-vfx--side.winner-vfx--overlay .winner-vfx__title {
+  font-size: clamp(44px, 12vw, 140px);
+  letter-spacing: -.05em;
+}
+.winner-vfx--side.winner-vfx--overlay .winner-vfx__hand {
+  font-size: clamp(18px, 4.2vw, 40px);
+}
+
+.winner-vfx--uncalled .winner-vfx__burst {
+  background: radial-gradient(ellipse, rgba(245,245,250,.95) 0%, rgba(180,185,195,.34) 18%, transparent 66%);
+}
+.winner-vfx--uncalled .winner-vfx__shockwaves i {
+  border-color: rgba(210,215,225,.75); box-shadow: 0 0 28px rgba(170,175,185,.5);
+}
+.winner-vfx--uncalled .winner-vfx__crest-gem {
+  border-color: #eef0f4;
+  background: linear-gradient(135deg,#ffffff,#a8adb8 55%,#5c616a);
+  box-shadow: 0 0 18px rgba(190,195,205,.65);
+}
+.winner-vfx--uncalled .winner-vfx__crest-line { background: linear-gradient(90deg,transparent,rgba(210,215,225,.75)); }
+.winner-vfx--uncalled .winner-vfx__wing i {
+  background: linear-gradient(90deg,transparent,rgba(160,165,175,.44),#e8eaef);
+  box-shadow: 0 0 9px rgba(180,185,195,.22);
+}
+.winner-vfx--uncalled .winner-vfx__hand,
+.winner-vfx--uncalled .winner-vfx__title span {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background: linear-gradient(180deg,#ffffff 0%,#e4e7ec 32%,#8b909a 68%,#f2f3f5 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-stroke: 1px rgba(230,233,238,.62);
+  filter: drop-shadow(0 2px 0 #3a3d44) drop-shadow(0 5px 2px rgba(0,0,0,.78)) drop-shadow(0 0 16px rgba(180,185,195,.28));
+}
+.winner-vfx--uncalled .winner-vfx__hand {
+  animation: winner-hand-forge-soft .68s .42s cubic-bezier(.12,.9,.2,1.15) forwards;
+}
+.winner-vfx--uncalled .winner-vfx__title span {
+  animation: winner-letter-forge-soft .72s calc(.56s + var(--letter) * .07s) cubic-bezier(.12,.9,.2,1.15) forwards;
+}
+.winner-vfx--uncalled .winner-vfx__underline {
+  background: linear-gradient(90deg,transparent,#a8adb8 15%,#f0f2f5 50%,#a8adb8 85%,transparent);
+  box-shadow: 0 0 14px rgba(170,175,185,.5);
+}
+.winner-vfx--uncalled .winner-vfx__underline i { border-color: #e8eaef; background: #6a6f78; box-shadow: 0 0 15px rgba(180,185,195,.7); }
+.winner-vfx--uncalled .winner-vfx__dust i { background: #e8eaef; box-shadow: 0 0 8px #a8adb8; }
+.winner-vfx--uncalled .winner-vfx__floor-glow { background: radial-gradient(ellipse,rgba(180,185,195,.34),transparent 68%); }
+.winner-vfx--uncalled.winner-vfx--overlay .winner-vfx__title {
+  font-size: clamp(28px, 8vw, 92px);
+  letter-spacing: -.055em;
+  gap: 0;
+}
+.winner-vfx--uncalled.winner-vfx--overlay .winner-vfx__hand {
+  font-size: clamp(18px, 4.2vw, 40px);
+}
+
+.board-winner-hand {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  z-index: 25;
+  margin-top: 6px;
+  pointer-events: none;
+  white-space: nowrap;
+  color: transparent;
+  background: linear-gradient(180deg,#fff8d9 0%,#ffe18a 32%,#b97514 68%,#ffe9a5 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-stroke: 1px rgba(255,235,173,.62);
+  font-family: Georgia,"Times New Roman",serif;
+  font-size: clamp(18px, 2.4vw, 34px);
+  font-weight: 900;
+  line-height: .9;
+  letter-spacing: .04em;
+  filter: drop-shadow(0 2px 0 #4c2a05) drop-shadow(0 5px 2px rgba(0,0,0,.78)) drop-shadow(0 0 16px rgba(255,183,45,.28));
+  animation: board-winner-hand-in .7s cubic-bezier(.12,.9,.2,1.15) both;
+}
+@keyframes board-winner-hand-in {
+  0% { opacity: 0; transform: translateX(-50%) translateY(18px) scale(.8); }
+  100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+
+
+/* ===== showdown-vfx.css ===== */
+/* [dev7 80334] Luxury Showdown VFX — transparent overlay, ~3s, no sweep/wave lines */
+
+.showdown-vfx {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  pointer-events: none;
+  isolation: isolate;
+  contain: layout paint;
+  /* [dev7 80437] 상시 마운트 — display:none 금지, 대기는 opacity만 */
+  opacity: 0;
+  visibility: visible;
+}
+.showdown-vfx--playing {
+  opacity: 1;
+}
+
+.showdown-vfx__stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.showdown-vfx__center-aura {
+  position: absolute;
+  inset: 19% 19%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(255, 218, 139, 0.42), rgba(165, 105, 27, 0.13) 40%, transparent 72%);
+  filter: blur(32px); /* [dev7 80427] PC 후광 복원(정적 blur만) */
+  opacity: 0;
+  mix-blend-mode: screen;
+  animation: none;
+}
+.showdown-vfx--playing .showdown-vfx__center-aura {
+  animation: showdown-auraHit 3s ease-out both;
+}
+
+.showdown-vfx__gold-halo {
+  position: absolute;
+  z-index: 5;
+  inset: 19% 18%;
+  border-radius: 50%;
+  opacity: 0;
+  background: radial-gradient(ellipse, rgba(255, 242, 203, 0.32) 0%, rgba(233, 172, 63, 0.24) 18%, rgba(136, 79, 19, 0.09) 47%, transparent 73%);
+  filter: blur(16px); /* [dev7 80427] */
+  mix-blend-mode: screen;
+  animation: none;
+}
+.showdown-vfx--playing .showdown-vfx__gold-halo {
+  animation: showdown-haloBloom 3s ease-out both;
+}
+
+.showdown-vfx__gold-halo i {
+  position: absolute;
+  inset: 18% 16%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(255, 237, 187, 0.28), rgba(216, 144, 39, 0.08) 48%, transparent 72%);
+  filter: blur(20px); /* [dev7 80427] */
+}
+
+.showdown-vfx__impact-core {
+  position: absolute;
+  z-index: 7;
+  left: 50%;
+  top: 50%;
+  width: 23%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%) scale(0.05);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 244, 1), rgba(255, 216, 126, 0.62) 15%, rgba(196, 117, 24, 0.15) 42%, transparent 68%);
+  mix-blend-mode: screen;
+  opacity: 0;
+  animation: none;
+}
+.showdown-vfx--playing .showdown-vfx__impact-core {
+  animation: showdown-coreHit 3s ease-out both;
+}
+
+.showdown-vfx__title-glow {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  top: 50%;
+  width: min(70%, 640px);
+  height: 42%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(ellipse, rgba(255, 220, 140, 0.35), transparent 70%);
+  filter: blur(18px);
+}
+.showdown-vfx--playing .showdown-vfx__title-glow {
+  animation: showdown-haloBloom 3s ease-out both;
+}
+
+.showdown-vfx__title-lockup {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  perspective: 900px;
+  pointer-events: none;
+}
+
+.showdown-vfx__image {
+  position: absolute;
+  left: 50%;
+  display: block;
+  height: auto;
+  object-fit: contain;
+  user-select: none;
+  transform-style: preserve-3d;
+  will-change: transform, opacity;
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+}
+
+.showdown-vfx__image--show {
+  z-index: 2;
+  top: 41%;
+  /* [dev7 80410] PC 기준 크기 30% 축소 */
+  width: min(39.2%, 504px);
+  animation: none;
+  opacity: 0;
+}
+.showdown-vfx--playing .showdown-vfx__image--show {
+  animation: showdown-showImageCollision 3s cubic-bezier(0.12, 0.74, 0.14, 1) both;
+}
+
+.showdown-vfx__image--down {
+  z-index: 3;
+  top: 60.5%;
+  /* [dev7 80410] PC 기준 크기 30% 축소 */
+  width: min(43.4%, 553px);
+  animation: none;
+  opacity: 0;
+}
+.showdown-vfx--playing .showdown-vfx__image--down {
+  animation: showdown-downImageCollision 3s cubic-bezier(0.12, 0.74, 0.14, 1) both;
+}
+
+.showdown-vfx__gold-pearl-field {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  opacity: 0;
+}
+.showdown-vfx--playing .showdown-vfx__gold-pearl-field {
+  opacity: 1;
+  pointer-events: none;
+}
+
+.showdown-vfx__gold-pearl-field i {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, #fffdf0 0 10%, #ffe39a 25%, #d59831 58%, #6f3b0d 100%);
+  box-shadow: 0 0 7px rgba(255, 214, 119, 0.9), 0 0 16px rgba(197, 112, 19, 0.4);
+  opacity: 0;
+  animation: showdown-pearlFloat var(--duration) var(--delay) ease-out both;
+}
+
+/* [dev7 80416] transform/opacity only — animated filter:blur 제거(시작 버벅임 주원인) */
+/* [dev7 80427] 충돌 bounce 복원 — filter 키프레임 변경 없음(정적 drop-shadow만) */
+@keyframes showdown-showImageCollision {
+  0%, 5% { opacity: 0; transform: translate3d(-185%, -50%, 0) rotate(-5deg) scale(0.72); }
+  12% { opacity: 1; }
+  17.2% { transform: translate3d(-45.8%, -50%, 0) rotate(0.5deg) scale(1.08); }
+  19.4% { transform: translate3d(-52.3%, -50%, 0) rotate(-0.3deg) scale(0.97); }
+  22%, 76% { opacity: 1; transform: translate3d(-50%, -50%, 0) rotate(0) scale(1); }
+  90% { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(-52%, -52%, 0) scale(0.95); }
+}
+
+@keyframes showdown-downImageCollision {
+  0%, 5% { opacity: 0; transform: translate3d(85%, -50%, 0) rotate(5deg) scale(0.72); }
+  12% { opacity: 1; }
+  17.2% { transform: translate3d(-54.2%, -50%, 0) rotate(-0.5deg) scale(1.08); }
+  19.4% { transform: translate3d(-47.7%, -50%, 0) rotate(0.3deg) scale(0.97); }
+  22%, 76% { opacity: 1; transform: translate3d(-50%, -50%, 0) rotate(0) scale(1); }
+  90% { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(-48%, -48%, 0) scale(0.95); }
+}
+
+@keyframes showdown-auraHit {
+  0%, 16% { opacity: 0; transform: scale(0.25); }
+  18% { opacity: 0.82; transform: scale(0.86); }
+  28% { opacity: 0.42; transform: scale(1.08); }
+  74% { opacity: 0.28; transform: scale(1.18); }
+  100% { opacity: 0; }
+}
+
+@keyframes showdown-haloBloom {
+  0%, 13% { opacity: 0; transform: scale(0.62); }
+  18% { opacity: 0.95; transform: scale(0.94); }
+  28% { opacity: 0.58; transform: scale(1.04); }
+  76% { opacity: 0.38; transform: scale(1.09); }
+  100% { opacity: 0; transform: scale(1.14); }
+}
+
+@keyframes showdown-coreHit {
+  0%, 16% { opacity: 0; transform: translate(-50%, -50%) scale(0.05); }
+  18% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  22% { opacity: 0.18; transform: translate(-50%, -50%) scale(2.2); }
+  26%, 100% { opacity: 0; transform: translate(-50%, -50%) scale(2.6); }
+}
+
+@keyframes showdown-pearlFloat {
+  0% { opacity: 0; transform: translate(0, 14px) scale(0.25); }
+  13% { opacity: 0.95; transform: translate(0, 0) scale(1); }
+  55% { opacity: 0.72; }
+  100% { opacity: 0; transform: translate(var(--drift-x), var(--drift-y)) scale(0.38); }
+}
+
+/* [dev7 80410] 모바일: 화면 공간 과다 점유 완화 (기존 59/66% → 축소) */
+@media (max-width: 640px) {
+  .showdown-vfx__image--show {
+    top: 46%;
+    width: min(48%, 220px);
+  }
+  .showdown-vfx__image--down {
+    top: 54%;
+    width: min(52%, 240px);
+  }
+  .showdown-vfx__center-aura,
+  .showdown-vfx__gold-halo {
+    inset: 28% 22%;
+  }
+  .showdown-vfx__impact-core {
+    width: 18%;
+  }
+  /* [dev7 80437] 모바일 펄 유지 — 개수는 JS pearlBudget */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .showdown-vfx__image {
+    animation: none;
+    opacity: 1;
+    transform: translate(-50%, -50%);
+    filter: none;
+  }
+  .showdown-vfx__center-aura,
+  .showdown-vfx__gold-halo,
+  .showdown-vfx__impact-core,
+  .showdown-vfx__gold-pearl-field {
+    display: none;
+  }
+}
+
+
+/* ===== in-the-dark.css ===== [ITD_ORIG_0_10_9] 원본 인더다크 CSS 그대로 — 오라(빛·링·별)·리본·베일·봉인. 판 시작 폭발의 움직임(원본 framer-motion)은 table.css 키프레임 */
+/* [IN_THE_DARK_2026_10_27] 인더다크 — 패를 안 보고 치는 좌석의 프로필 VFX.
+   색: 샴페인 골드(#f7e3a3 · #d4af37) + 미드나잇 바이올렛(#7c3aed · #2a0f4d) + 흑단.
+   전부 transform/opacity 애니메이션(GPU) — 좌석 9~11개가 동시에 켜져도 레이아웃을 다시 계산하지 않는다.
+   iOS: 히어로 카드 조상에 filter 를 걸면 카드가 잘리므로([dev7 84398]) 카드 봉인에는 filter 를 쓰지 않는다. */
+
+@property --itd-angle {
+    syntax: '<angle>';
+    initial-value: 0deg;
+    inherits: false;
+}
+
+/* ── 프로필 바깥 오라 (원 밖으로 번진다 — 비-클리핑 wrapper 자식) ── */
+.itd-aura { position: absolute; inset: 0; border-radius: 9999px; pointer-events: none; z-index: 27; transition: opacity .5s ease; }
+
+.itd-aura__bloom {
+    position: absolute; inset: -34%; border-radius: 9999px;
+    background: radial-gradient(circle, rgba(124, 58, 237, .55) 0%, rgba(76, 29, 149, .32) 38%, rgba(212, 175, 55, .12) 56%, transparent 70%);
+    animation: itd-breathe 2.6s ease-in-out infinite;
+}
+
+/* 회전하는 금·보라 왕관 링 */
+.itd-aura__ring {
+    position: absolute; inset: -9%; border-radius: 9999px;
+    background: conic-gradient(from var(--itd-angle),
+        #fff6d6 0deg, #d4af37 40deg, #7c3aed 110deg, #1b0b33 160deg,
+        #a78bfa 210deg, #f7e3a3 260deg, #b8860b 310deg, #fff6d6 360deg);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+            mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+    animation: itd-spin 3.2s linear infinite;
+    box-shadow: 0 0 18px rgba(167, 139, 250, .65), 0 0 34px rgba(212, 175, 55, .35);
+}
+.itd-aura__ring--thin {
+    inset: -17%;
+    background: conic-gradient(from var(--itd-angle), transparent 0deg, rgba(247, 227, 163, .95) 30deg, transparent 70deg,
+        transparent 180deg, rgba(196, 181, 253, .9) 210deg, transparent 250deg);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+            mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+    animation: itd-spin 5.5s linear infinite reverse;
+    box-shadow: none;
+}
+
+/* 궤도를 도는 별 */
+.itd-aura__orbit { position: absolute; inset: -22%; animation: itd-rotate 7s linear infinite; }
+.itd-aura__orbit--rev { inset: -12%; animation: itd-rotate 10s linear infinite reverse; }
+.itd-star {
+    position: absolute; left: 50%; top: 0; width: 9px; height: 9px; margin-left: -4.5px; margin-top: -4.5px;
+    transform-origin: 50% 50%;
+    background: radial-gradient(circle, #fff 0%, #fff3c4 30%, rgba(212, 175, 55, 0) 70%);
+    clip-path: polygon(50% 0%, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0% 50%, 39% 39%);
+    animation: itd-twinkle 1.6s ease-in-out infinite;
+}
+.itd-star--violet { background: radial-gradient(circle, #fff 0%, #ddd6fe 32%, rgba(124, 58, 237, 0) 72%); }
+
+/* 위쪽 리본 "IN THE DARK" */
+.itd-ribbon {
+    /* 위쪽 테두리에 걸친다 — 더 올리면 좌석 위 베팅 말풍선과 겹친다 */
+    position: absolute; left: 50%; top: 0; transform: translate(-50%, -18%);
+    display: inline-flex; align-items: center; gap: .3em; white-space: nowrap; pointer-events: none; z-index: 29;
+    padding: .22em .7em .2em; border-radius: 9999px; font-weight: 900; letter-spacing: .14em; line-height: 1;
+    background: linear-gradient(180deg, #2a0f4d 0%, #120624 100%);
+    border: 1px solid rgba(247, 227, 163, .85);
+    box-shadow: 0 0 0 1px rgba(124, 58, 237, .6), 0 4px 14px rgba(0, 0, 0, .6), 0 0 16px rgba(167, 139, 250, .55);
+}
+.itd-ribbon__text {
+    background: linear-gradient(100deg, #b8860b 0%, #f7e3a3 30%, #ffffff 45%, #f7e3a3 60%, #d4af37 100%);
+    background-size: 220% 100%;
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: itd-sheen 2.4s linear infinite;
+}
+.itd-ribbon svg { width: 1.05em; height: 1.05em; flex-shrink: 0; filter: drop-shadow(0 0 3px rgba(247, 227, 163, .8)); }
+
+/* ── 프로필 안쪽 베일 (원형 클립 안) ── */
+.itd-veil { position: absolute; inset: 0; border-radius: 9999px; pointer-events: none; z-index: 5; overflow: hidden; transition: opacity .5s ease; }
+.itd-veil::before {
+    content: ''; position: absolute; inset: 0;
+    background: radial-gradient(circle at 50% 38%, rgba(30, 10, 60, .05) 0%, rgba(30, 10, 60, .45) 62%, rgba(10, 2, 24, .78) 100%);
+}
+.itd-veil::after {
+    content: ''; position: absolute; top: -20%; bottom: -20%; width: 45%; left: -60%;
+    background: linear-gradient(100deg, transparent 0%, rgba(255, 246, 214, .0) 20%, rgba(255, 246, 214, .55) 50%, rgba(255, 246, 214, 0) 80%, transparent 100%);
+    transform: skewX(-18deg);
+    animation: itd-sweep 3.4s ease-in-out infinite;
+}
+
+/* ── 판 시작 입장 연출 ── */
+.itd-burst { position: absolute; inset: 0; pointer-events: none; z-index: 120; }
+.itd-burst__wave {
+    position: absolute; inset: 0; border-radius: 9999px;
+    border: 3px solid rgba(247, 227, 163, .95);
+    box-shadow: 0 0 24px rgba(167, 139, 250, .9), inset 0 0 18px rgba(212, 175, 55, .7);
+}
+.itd-burst__ray {
+    position: absolute; left: 50%; top: 50%; width: 3px; height: 46%; margin-left: -1.5px;
+    transform-origin: 50% 0%;
+    background: linear-gradient(180deg, rgba(255, 246, 214, 1) 0%, rgba(212, 175, 55, .8) 40%, rgba(124, 58, 237, 0) 100%);
+    border-radius: 3px;
+}
+.itd-burst__title {
+    position: absolute; left: 50%; top: 50%; white-space: nowrap; font-weight: 900; letter-spacing: .22em;
+    font-family: ui-serif, Georgia, 'Times New Roman', serif; font-style: italic;
+    background: linear-gradient(180deg, #ffffff 0%, #f7e3a3 35%, #d4af37 70%, #8a6d1d 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 10px rgba(167, 139, 250, .95)) drop-shadow(0 2px 3px rgba(0, 0, 0, .9));
+}
+
+/* ── 내 카드 봉인 ── */
+.itd-seal { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 80; }
+.itd-seal__veil {
+    position: absolute; inset: -4% -3%; border-radius: 8px;
+    background: linear-gradient(160deg, rgba(42, 15, 77, .55) 0%, rgba(10, 2, 24, .35) 100%);
+    box-shadow: 0 0 0 1.5px rgba(247, 227, 163, .75), 0 0 16px rgba(124, 58, 237, .65);
+    animation: itd-breathe 2.6s ease-in-out infinite;
+}
+.itd-seal__wax {
+    position: relative; width: 46%; aspect-ratio: 1 / 1; max-width: 64px; border-radius: 9999px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+    background: radial-gradient(circle at 35% 30%, #a78bfa 0%, #6d28d9 35%, #3b0f7a 70%, #1e0640 100%);
+    box-shadow: 0 0 0 2px #d4af37, 0 0 0 4px rgba(42, 15, 77, .9), 0 0 0 5px rgba(247, 227, 163, .7), 0 6px 14px rgba(0, 0, 0, .65), 0 0 22px rgba(167, 139, 250, .7);
+    animation: itd-seal-pulse 2.2s ease-in-out infinite;
+}
+.itd-seal__wax svg { width: 42%; height: 42%; color: #f7e3a3; }
+.itd-seal__wax span { font-size: 7px; font-weight: 900; letter-spacing: .14em; color: #f7e3a3; line-height: 1; }
+
+/* ── 토글 버튼 ── */
+.itd-toggle {
+    position: relative; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;
+    border-radius: 9999px; padding: 6px 14px 6px 8px; color: #e9e3ff;
+    background: linear-gradient(180deg, rgba(30, 18, 52, .92) 0%, rgba(12, 6, 24, .94) 100%);
+    border: 1px solid rgba(212, 175, 55, .55);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 6px 18px rgba(0, 0, 0, .55);
+    transition: transform .15s ease, box-shadow .3s ease, border-color .3s ease;
+}
+.itd-toggle:hover { transform: translateY(-1px); border-color: rgba(247, 227, 163, .9); }
+.itd-toggle:active { transform: translateY(1px); }
+.itd-toggle__icon {
+    width: 30px; height: 30px; border-radius: 9999px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(circle at 35% 30%, #4c1d95 0%, #1e0640 80%);
+    box-shadow: 0 0 0 1.5px rgba(212, 175, 55, .75);
+    color: #f7e3a3;
+}
+.itd-toggle__icon svg { width: 17px; height: 17px; }
+.itd-toggle__title { font-size: 12px; font-weight: 900; letter-spacing: .12em; line-height: 1.1; color: #f7e3a3; }
+.itd-toggle__sub { font-size: 10px; font-weight: 700; line-height: 1.15; color: #b9b2d6; }
+.itd-toggle--on {
+    border-color: transparent;
+    background:
+        linear-gradient(180deg, rgba(42, 15, 77, .96), rgba(18, 6, 36, .98)) padding-box,
+        conic-gradient(from var(--itd-angle), #fff6d6, #d4af37, #7c3aed, #1b0b33, #a78bfa, #fff6d6) border-box;
+    border: 1.5px solid transparent;
+    animation: itd-spin 3.2s linear infinite;
+    box-shadow: 0 0 18px rgba(167, 139, 250, .55), 0 0 30px rgba(212, 175, 55, .25), 0 6px 18px rgba(0, 0, 0, .55);
+}
+.itd-toggle--on .itd-toggle__icon { background: radial-gradient(circle at 35% 30%, #a78bfa 0%, #6d28d9 45%, #2a0f4d 100%); box-shadow: 0 0 0 1.5px #f7e3a3, 0 0 12px rgba(167, 139, 250, .9); }
+.itd-toggle--on .itd-toggle__sub { color: #ddd6fe; }
+.itd-toggle--live { cursor: default; }
+.itd-toggle--compact { padding: 0; gap: 0; width: 100%; height: 100%; border-radius: 6px; justify-content: center; flex-direction: column; }
+.itd-toggle--compact .itd-toggle__icon { width: 20px; height: 20px; box-shadow: none; background: transparent; }
+.itd-toggle--compact .itd-toggle__icon svg { width: 15px; height: 15px; }
+.itd-toggle--compact .itd-toggle__title { font-size: 7px; letter-spacing: .06em; }
+.itd-toggle--compact.itd-toggle--on { border-radius: 6px; }
+
+/* ── 판 끝 "이번 판 내 패" ── */
+.itd-reveal {
+    display: flex; align-items: center; gap: 12px; padding: 10px 16px 10px 12px; border-radius: 16px; color: #f5f0ff;
+    background: linear-gradient(180deg, rgba(42, 15, 77, .96), rgba(12, 4, 26, .97));
+    border: 1px solid rgba(247, 227, 163, .7);
+    box-shadow: 0 0 0 1px rgba(124, 58, 237, .5), 0 12px 30px rgba(0, 0, 0, .6), 0 0 26px rgba(167, 139, 250, .45);
+}
+.itd-reveal__card {
+    width: 34px; height: 48px; border-radius: 5px; background: #fbfbfd; color: #14161b; font-weight: 900; font-size: 15px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1;
+    box-shadow: 0 0 0 1.5px #d4af37, 0 4px 10px rgba(0, 0, 0, .5);
+}
+.itd-reveal__card.red { color: #e0263e; }
+.itd-reveal__card small { font-size: 13px; margin-top: 2px; }
+
+@keyframes itd-spin { to { --itd-angle: 360deg; } }
+@keyframes itd-rotate { to { transform: rotate(360deg); } }
+@keyframes itd-breathe { 0%, 100% { opacity: .75; transform: scale(.97); } 50% { opacity: 1; transform: scale(1.04); } }
+@keyframes itd-twinkle { 0%, 100% { opacity: .35; transform: scale(.6); } 50% { opacity: 1; transform: scale(1.25); } }
+@keyframes itd-sheen { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+@keyframes itd-sweep { 0% { left: -60%; } 55%, 100% { left: 130%; } }
+@keyframes itd-seal-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+
+@media (prefers-reduced-motion: reduce) {
+    .itd-aura__ring, .itd-aura__orbit, .itd-aura__bloom, .itd-star, .itd-ribbon__text, .itd-veil::after, .itd-seal__veil, .itd-seal__wax, .itd-toggle--on { animation: none !important; }
+}

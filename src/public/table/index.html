@@ -3,12 +3,26 @@
 <head>
 <meta charset="utf-8">
 <link rel="icon" href="data:,">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>BUY-IN</title>
-<link rel="stylesheet" href="table.css">
-<script type="module" src="js/app.js"></script>
+<!-- [CACHE_BUST_0_10_9] __BUILD__ = 이 엔진 이미지의 커밋(서버가 바꿔 넣는다) — 배포하면 주소가 바뀌어 캐시된 옛 파일을 쓰지 않는다 -->
+<link rel="stylesheet" href="v/__BUILD__/table.css">
+<link rel="stylesheet" href="v/__BUILD__/fx.css">
+<script type="module" src="v/__BUILD__/js/app.js"></script>
 </head>
 <body>
+<!-- [CARD_DEPTH_0_10_23] 카드 숫자·무늬 입체감용 그라데이션(한 곳에 두고 모든 카드가 url(#…)로 쓴다). display:none 이면 일부 브라우저가 그라데이션을 못 찾아 크기 0 으로 숨김 -->
+<svg width="0" height="0" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true" focusable="false"><defs>
+  <linearGradient id="cgRed" x1="0" y1="0" x2="0.35" y2="1"><stop offset="0" stop-color="#f0464c"/><stop offset=".55" stop-color="#d32329"/><stop offset="1" stop-color="#a8141c"/></linearGradient>
+  <linearGradient id="cgBlack" x1="0" y1="0" x2="0.35" y2="1"><stop offset="0" stop-color="#3b4356"/><stop offset=".55" stop-color="#171d2b"/><stop offset="1" stop-color="#080b13"/></linearGradient>
+  <linearGradient id="tbGold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff3c4"/><stop offset=".45" stop-color="#e9c46a"/><stop offset="1" stop-color="#a87a23"/></linearGradient>
+  <radialGradient id="tbRim" cx=".38" cy=".3" r=".8"><stop offset="0" stop-color="#2c3550"/><stop offset=".6" stop-color="#141a2a"/><stop offset="1" stop-color="#080b13"/></radialGradient>
+  <radialGradient id="tbFace" cx=".4" cy=".32" r=".75"><stop offset="0" stop-color="#253049"/><stop offset=".7" stop-color="#111727"/><stop offset="1" stop-color="#0a0e19"/></radialGradient>
+  <linearGradient id="tbIvory" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fffaf0"/><stop offset="1" stop-color="#d9cba6"/></linearGradient>
+  <linearGradient id="cgBlue" x1="0" y1="0" x2="0.35" y2="1"><stop offset="0" stop-color="#4a8cf2"/><stop offset=".55" stop-color="#1f5fcf"/><stop offset="1" stop-color="#123f94"/></linearGradient>
+  <linearGradient id="cgGreen" x1="0" y1="0" x2="0.35" y2="1"><stop offset="0" stop-color="#3fb878"/><stop offset=".55" stop-color="#16884c"/><stop offset="1" stop-color="#0b5a31"/></linearGradient>
+  <linearGradient id="cgShine" x1="0" y1="0" x2="0.25" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".42"/><stop offset=".38" stop-color="#fff" stop-opacity=".1"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+</defs></svg>
 <main id="table" class="pc" data-testid="tee-table">
   <div class="bg"><img class="bg-img" alt=""><div class="bg-shade"></div></div>
   <div id="stage">
@@ -42,9 +56,11 @@
       <div class="gc-txt"><small class="gc-k"></small><b class="gc-v"></b></div>
       <div class="gc-pips" aria-hidden="true"><i></i><i></i><i></i></div>
     </div>
+    <span id="game-tag" hidden data-testid="game-tag"></span>
   </div>
   <div class="corner tr">
     <button type="button" class="round" id="btn-sound" data-i18n-title="sound"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg></button>
+    <button type="button" class="round" id="btn-fs" hidden data-i18n-title="fullscreen" data-testid="btn-fs"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
     <button type="button" class="round" id="btn-settings" data-i18n-title="settings" data-testid="btn-settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
     <button type="button" class="round" id="btn-verify" data-i18n-title="verify"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg></button>
   </div>
@@ -53,10 +69,18 @@
     <div class="act-top">
       <div class="presets"></div>
       <div class="gauge">
-        <div class="gauge-bubble" hidden><b>0</b><span class="cur"></span></div>
+        <div class="gauge-bubble" hidden><span class="rz-allin-label"></span><b>0</b><span class="cur"></span></div>
         <div class="gauge-well"><span class="gauge-fill"></span></div>
+        <div class="rz-flames" aria-hidden="true"><i></i><i></i><i></i></div><div class="rz-embers" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
         <input type="range" class="gauge-input" min="0" max="1000" step="1" value="0" aria-label="raise amount">
         <div class="gauge-handle"><i></i><i></i><i></i></div>
+      </div>
+      <!-- [RAISE_ORIG_0_10_9] 모바일 세로 레이즈 게이지(원본 GameControls) — Raise 를 누르면 열리고, 한 번 더 누르면 확정 -->
+      <div class="mgauge" hidden data-testid="mgauge">
+        <div class="mg-box"><span class="rz-allin-label"></span><b></b><span class="cur"></span></div>
+        <button type="button" class="mg-step mg-plus" aria-label="+3BB">+</button>
+        <div class="mg-track" role="slider" aria-label="raise" tabindex="-1"><span class="mg-fill"></span><span class="mg-handle"></span><div class="rz-flames" aria-hidden="true"><i></i><i></i><i></i></div><div class="rz-embers" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+        <button type="button" class="mg-step mg-minus" aria-label="-3BB">−</button>
       </div>
     </div>
     <div class="act-main">
@@ -66,32 +90,64 @@
     </div>
   </div>
 
-  <div class="verify-badge" data-testid="tee-badge"><button type="button"><span class="lock" aria-hidden="true">🔒</span><span data-i18n="cardCheck"></span><b class="vb-state"></b></button></div>
+  <div class="verify-badge" data-testid="tee-badge" hidden><button type="button"><span class="lock" aria-hidden="true">🔒</span><span data-i18n="cardCheck"></span><b class="vb-state"></b></button></div>
   <button type="button" class="room-label" data-testid="room-hand"></button>
-  <div id="rebuy-bar" hidden data-testid="rebuy-bar"><span class="rb-msg"></span><button type="button" class="rb-go" data-testid="rebuy-go"></button></div>
+  <div id="rebuy-bar" hidden data-testid="rebuy-bar"><span class="rb-msg"></span><button type="button" class="rb-go" data-testid="rebuy-go"></button><button type="button" class="rb-lobby" data-testid="rebuy-lobby" data-i18n="toLobby"></button></div>
+  <div id="watch-bar" hidden data-testid="watch-bar"><span class="wb-eye" aria-hidden="true"></span><b class="wb-t" data-i18n="watchTitle"></b><button type="button" class="wb-req" data-testid="watch-req"><span data-i18n="watchReq"></span><em class="wb-n" hidden>0</em></button><button type="button" class="wb-led" data-testid="watch-ledger" data-i18n="watchLedger"></button><button type="button" class="wb-inv" data-testid="watch-invite" data-i18n="watchInvite"></button></div>
+  <div id="watch-pill" hidden data-testid="watch-pill"><span class="wb-eye" aria-hidden="true"></span><span class="wp-t"></span></div>
+  <div id="away-bar" hidden data-testid="away-bar"><i class="aw-ico" aria-hidden="true"></i><b class="aw-title" data-i18n="awayTitle"></b><span class="aw-sub"></span><button type="button" class="aw-back" data-testid="away-back" data-i18n="awayBack"></button></div>
+  <div id="rebuy-pop" hidden data-testid="rebuy-pop"><div class="rp-sheet"><div class="rp-head"><b class="rp-title" data-i18n="rbBtn"></b><button type="button" class="rp-lobby" data-i18n="toLobby"></button><button type="button" class="rp-x" aria-label="close">×</button></div><div class="rp-body"><iframe class="rp-frame" title="buy-in" data-testid="rebuy-frame"></iframe><div class="rp-wait"></div></div></div></div>
   <div id="emote-pick" hidden data-testid="emote-pick"></div>
   <div id="tip-pick" hidden data-testid="tip-pick"></div>
   <div id="tip-target" hidden data-testid="tip-target"><span class="tt-msg"></span><button type="button" class="tt-x" aria-label="cancel">×</button></div>
+  <!-- [DARK_BY_ACTIONS_0_10_11] PC 인 더 다크 버튼 — 체크/폴드 버튼 왼쪽(액션 줄과 같은 자리·배율, 판 사이에도 보인다) -->
+  <div id="dark-dock"><button type="button" id="btn-dark" class="dark-toggle" data-testid="btn-dark"><i class="dk-ico" aria-hidden="true"></i><span><b data-i18n="darkTitle"></b><small class="dk-sub"></small></span></button></div>
   <div id="chat-dock" data-testid="chat-dock">
-    <button type="button" id="btn-dark" class="dark-toggle" data-testid="btn-dark"><i class="dk-ico" aria-hidden="true"></i><span><b data-i18n="darkTitle"></b><small class="dk-sub"></small></span></button>
     <div id="chat" class="closed" data-testid="chat">
       <button type="button" class="chat-head"><span data-i18n="chatTitle"></span><i class="dot" hidden></i><b class="chev">▲</b></button>
       <div class="chat-lines"></div>
-      <div class="chat-form"><input type="text" class="chat-input" maxlength="200" autocomplete="off" data-i18n-ph="chatPh"><button type="button" class="chat-send" data-i18n="send"></button></div>
+      <form class="chat-form" novalidate><input type="text" class="chat-input" maxlength="200" autocomplete="off" enterkeyhint="send" data-i18n-ph="chatPh"><button type="submit" class="chat-send"><svg class="snd-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.6 11.1 20.2 3.9c.5-.2 1 .3.8.8l-7.2 16.6c-.2.5-.9.5-1.1 0l-2.4-6.7-6.7-2.4c-.5-.2-.5-.9 0-1.1z"/><path d="M10.3 13.7 20.6 4.3"/></svg><span data-i18n="send"></span></button></form>
     </div>
   </div>
   <button type="button" id="btn-chat-m" class="chat-m" data-testid="btn-chat-m" aria-label="chat">💬<i class="dot" hidden></i></button>
+  <div id="chat-feed" data-testid="chat-feed"><div class="cf-lines"></div><form class="chat-form cf-form" novalidate><input type="text" class="chat-input cf-input" data-testid="chat-feed-input" maxlength="200" autocomplete="off" enterkeyhint="send" data-i18n-ph="chatPh"><button type="submit" class="chat-send cf-send" data-testid="chat-feed-send"><svg class="snd-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.6 11.1 20.2 3.9c.5-.2 1 .3.8.8l-7.2 16.6c-.2.5-.9.5-1.1 0l-2.4-6.7-6.7-2.4c-.5-.2-.5-.9 0-1.1z"/><path d="M10.3 13.7 20.6 4.3"/></svg><span data-i18n="send"></span></button></form></div>
   <div id="chat-m" hidden data-testid="chat-m">
     <div class="chat-lines"></div>
-    <div class="chat-form"><input type="text" class="chat-input" maxlength="200" autocomplete="off" data-i18n-ph="chatPh"><button type="button" class="chat-send" data-i18n="send"></button><button type="button" class="chat-x" aria-label="close">×</button></div>
+    <form class="chat-form" novalidate><input type="text" class="chat-input" maxlength="200" autocomplete="off" enterkeyhint="send" data-i18n-ph="chatPh"><button type="submit" class="chat-send"><svg class="snd-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.6 11.1 20.2 3.9c.5-.2 1 .3.8.8l-7.2 16.6c-.2.5-.9.5-1.1 0l-2.4-6.7-6.7-2.4c-.5-.2-.5-.9 0-1.1z"/><path d="M10.3 13.7 20.6 4.3"/></svg><span data-i18n="send"></span></button><button type="button" class="chat-x" aria-label="close">×</button></form>
   </div>
   <div id="banner" hidden aria-hidden="true"><div class="bn-band"><b class="bn-title"></b><small>TEXAS HOLD'EM</small><i class="bn-shine"></i></div></div>
   <div id="dark-reveal" hidden data-testid="dark-reveal"><small data-i18n="darkMyHand"></small><div class="dr-cards"></div></div>
   <div id="settings" hidden data-testid="settings">
-    <div class="st-box">
-      <div class="st-head"><b data-i18n="settings"></b><button type="button" class="st-x" aria-label="close">×</button></div>
-      <label class="st-row"><span data-i18n="volume"></span><input type="range" id="st-vol" min="0" max="1" step="0.1"><b class="st-vv"></b></label>
-      <div class="st-pre"><button type="button" data-v="0">0</button><button type="button" data-v="0.25">25</button><button type="button" data-v="0.5">50</button><button type="button" data-v="0.75">75</button><button type="button" data-v="1">100</button></div>
+    <!-- [SETTINGS2_0_10_23] 설정 다시 디자인 — 사운드 · 화면 · 테이블 세 묶음, 켜고 끄기는 스위치. 「소리 되살리기」는 뺐다(화면으로 돌아오면 자동으로 되살린다) -->
+    <div class="st-box" role="dialog" aria-modal="true">
+      <div class="st-head"><span class="st-hi"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></span><b data-i18n="settings"></b><button type="button" class="st-x" aria-label="close">×</button></div>
+      <section class="st-sec">
+        <h4><span class="st-si"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg></span><span data-i18n="stSound"></span></h4>
+        <div class="st-line"><span data-i18n="sound"></span><button type="button" class="st-sw" role="switch" data-k="sound" data-testid="st-sound"><i></i></button></div>
+        <label class="st-slider"><input type="range" id="st-vol" min="0" max="1" step="0.05"><b class="st-vv"></b></label>
+        <div class="st-line"><span data-i18n="stVoiceOn"></span><button type="button" class="st-sw" role="switch" data-k="voiceOn" data-testid="st-voiceon"><i></i></button></div>
+        <div class="st-seg st-voice"><button type="button" data-v="male" data-i18n="voiceMale"></button><button type="button" data-v="male2" data-i18n="voiceMale2"></button><button type="button" data-v="female" data-i18n="voiceFemale"></button></div>
+        <div class="st-line"><span data-i18n="stTurnAlert"></span><button type="button" class="st-sw" role="switch" data-k="turnAlert" data-testid="st-turnalert"><i></i></button></div>
+      </section>
+      <section class="st-sec">
+        <h4><span class="st-si"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span><span data-i18n="stDisplay"></span></h4>
+        <div class="st-cur" data-testid="st-cur"><div class="st-line"><span class="st-k2"><span data-i18n="stCurrency"></span><small class="st-cur-ex"></small></span></div>
+          <div class="st-seg st-curseg"><button type="button" data-c="KRW" data-i18n="stCurKrw"></button><button type="button" data-c="USDT">USDT</button><button type="button" data-c="VND" data-i18n="stCurVnd"></button></div></div>
+        <label class="st-slider st-zrow" data-testid="st-zoom"><span class="st-sl-k" data-i18n="zoom"></span><input type="range" id="st-zoom" min="0.6" max="1" step="0.05"><b class="st-zv"></b></label>
+        <div class="st-line"><span class="st-k2"><span data-i18n="stFourColor"></span><small class="st-4c"><i class="s">♠</i><i class="h">♥</i><i class="d">♦</i><i class="c">♣</i></small></span><button type="button" class="st-sw" role="switch" data-k="fourColor" data-testid="st-fourcolor"><i></i></button></div>
+        <div class="st-line st-vib"><span data-i18n="stVibrate"></span><button type="button" class="st-sw" role="switch" data-k="vibrate" data-testid="st-vibrate"><i></i></button></div>
+      </section>
+      <section class="st-sec">
+        <h4><span class="st-si"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="6"/><rect x="6.5" y="9.5" width="11" height="5" rx="2.5"/></svg></span><span data-i18n="stTable"></span></h4>
+        <button type="button" class="st-skin" data-testid="st-skin"><span class="sk-label" data-i18n="skin"></span><i class="sk-cur" aria-hidden="true"></i><b class="sk-name"></b><em data-i18n="skinChange"></em></button>
+      </section>
+    </div>
+  </div>
+  <!-- [SKIN_PICK_0_10_12] 테이블 스킨 — 관리자 「테이블 스킨」 목록(리소스 서버 assets/table_skins/skins.json) -->
+  <div id="skin-pick" hidden data-testid="skin-pick">
+    <div class="sp-sheet" role="dialog" aria-modal="true">
+      <div class="sp-head"><div><b data-i18n="skinTitle"></b><small data-i18n="skinSub"></small></div><button type="button" class="sp-x" aria-label="close">×</button></div>
+      <div class="sp-body"></div>
     </div>
   </div>
   <div id="ready-q" hidden data-testid="ready-q">
@@ -104,6 +160,8 @@
         <div class="rq-count"></div>
         <button type="button" class="rq-btn" data-testid="ready-btn"></button>
         <div class="rq-note"></div>
+        <!-- [GATE_CHAT_0_10_23] 대기실 채팅(휴대폰) — 대기실이 가운데 채팅 칸을 덮어 기다리는 동안 대화를 못 했다 -->
+        <div class="rq-chat" data-testid="rq-chat"><div class="rq-lines"></div><form class="chat-form rq-form" novalidate><input type="text" class="chat-input" data-testid="rq-chat-input" maxlength="200" autocomplete="off" enterkeyhint="send" data-i18n-ph="chatPh"><button type="submit" class="chat-send" data-testid="rq-chat-send"><svg class="snd-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.6 11.1 20.2 3.9c.5-.2 1 .3.8.8l-7.2 16.6c-.2.5-.9.5-1.1 0l-2.4-6.7-6.7-2.4c-.5-.2-.5-.9 0-1.1z"/><path d="M10.3 13.7 20.6 4.3"/></svg></button></form></div>
       </div>
     </div>
   </div>
@@ -112,5 +170,12 @@
   <div id="gate" hidden><div class="gate-box"><p class="gate-msg"></p><button type="button" class="gate-back" hidden data-i18n="toLobby"></button></div></div>
 </main>
 <div id="fx" aria-hidden="true"></div>
+<!-- [NET_LEAVE_0_10_9] 연결 상태 · 나가기 확인 (원본 게임과 같은 흐름) -->
+<div id="net-pill" hidden data-testid="net-pill"><i></i><span data-i18n="netRetry"></span></div>
+<div id="net-over" hidden data-testid="net-over"><div class="net-box"><i class="net-spin"></i><b data-i18n="netLost"></b><p data-i18n="netLostSub"></p><button type="button" class="net-reload" hidden data-i18n="netReload"></button></div></div>
+<div id="show-pick" hidden data-testid="show-pick"><small><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg><span data-i18n="showTitle"></span></small><div><button type="button" data-w="left" data-i18n="showLeft"></button><button type="button" data-w="both" data-i18n="showBoth"></button><button type="button" data-w="right" data-i18n="showRight"></button></div></div>
+<div id="pf-pop" hidden data-testid="pf-pop"></div>
+<div id="rotate" hidden data-testid="rotate"><div class="rt-box"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg><b data-i18n="rotate"></b></div></div>
+<div id="leave-ask" hidden data-testid="leave-ask"><div class="la-box"><b data-i18n="leaveAsk"></b><p class="la-sub"></p><div class="la-btns"><button type="button" class="la-no" data-i18n="cancel"></button><button type="button" class="la-yes" data-i18n="leave"></button></div></div></div>
 </body>
 </html>

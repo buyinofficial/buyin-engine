@@ -17,15 +17,16 @@ function imageOf(appCompose) {
 /** 카드 비밀에 관련된 파일만 */
 const READ = [
     ['PROOF.md', 'section 1 "Card secrecy" — the claim and where each step is in the code'],
-    ['src/Engine.js', '`startHand`: the deck is made inside the engine and each player\'s two cards are sealed to that player\'s key; `_closeHand`: the full record exists only after the hand'],
+    ['src/Engine.js', '`startHand`: the deck is made inside the engine and each player\'s hole cards (two in hold\'em, four or five in Omaha — `HandCore` `holeCount`, same code path) are sealed to that player\'s key; `_closeHand`: the full record exists only after the hand'],
     ['src/crypto.js', '`sealEnvelope`: ECDH(engine key, player key) → HKDF → AES-256-GCM'],
-    ['src/table/TableServer.js', '`_startHand`: each sealed envelope goes only to its own seat; `snapshot`: no other player\'s cards; `_emote`, `_chat`, `_timeBank`: relayed to the same table only, never stored or sent to the console, no cards or chips; `_tip`: needs the sender\'s signature, moved after the hand, written to the chain; `_hold` (0.10.1): a seat with 0 chips is settled at once and only held for the same player, who comes back with a new seat ticket (`join`) — there is no other way to add chips'],
+    ['src/table/TableServer.js', '`_startHand`: each sealed envelope goes only to its own seat; `snapshot`: no other player\'s cards; `_emote`, `_chat`, `_timeBank`: relayed to the same table only, never stored or sent to the console, no cards or chips; `_tip`: needs the sender\'s signature, moved after the hand, written to the chain; `_hold` (0.10.1): a seat with 0 chips is settled at once and only held for the same player, who comes back with a new seat ticket (`join`) — there is no other way to add chips; `_joinWatch`, `_watchCommand`: a host watching the table gets no hole-card envelope and can only chat; `resume`: returning to a seat needs the signature of the key the seat was taken with; `_finish`: the record goes to the console after the result is sent to the table'],
     ['src/server.js', 'there is no operator route: no game commands and no record export'],
     ['src/outbox.js', 'outbound connection 1: lines of the record chain, sent to `TEE_CONSOLE_URL` (in the measured compose)'],
     ['src/explorer.js', 'outbound connection 2: this engine sends its own quote (public data, nothing else) to the Phala TEE Attestation Explorer and prints the report address below'],
     ['src/consoleApi.js', 'the console\'s check API (token): results and signed records of finished hands; it is given only the record store'],
     ['src/store.js', 'hands are appended to the record chain (SQLite, schema in the file) only when closed; triggers refuse updates'],
-    ['src/table/http.js', 'the table page is served by this TEE (`connect-src \'self\'` plus fixed sound files of one resource folder, no framing); the seat token is never in a URL'],
+    ['src/table/http.js', 'the table page is served by this TEE (`connect-src \'self\'` and its own `wss://` host plus fixed sound files of one resource folder and the table-background list; it cannot be framed, and the only frame it opens is the lobby\'s buy-in page, another origin); the seat token is never in a URL'],
+    ['src/table/ws.js', 'WebSocket framing for the table (no package, text messages only, 64 KB limit); it carries only the same events and commands as the HTTP routes'],
     ['src/public/table/js/vault.js', 'the player\'s keys are non-extractable WebCrypto keys; the envelope is opened only in the browser'],
     ['Dockerfile', 'the image contains only `package.json` and `src/`'],
 ];
@@ -41,7 +42,7 @@ function auditReport(info, records, keyCount, base, opts = {}) {
     const review = opts.review || null;
     void keyCount;
     const L = [];
-    L.push(`# BUY-IN hold'em — can anyone but the player see the cards during a hand?`);
+    L.push(`# BUY-IN hold'em and Omaha — can anyone but the player see the cards during a hand?`);
     L.push('');
     L.push(`This text is produced by the game engine itself, from inside a TEE (Intel TDX confidential VM on Phala Cloud). Give it to an AI as is. It contains no code: it names the public source to investigate and the live values to check it against. The same report as HTML: ${base}/ai.html · the file list as JSON: ${base}/review/manifest.json.`);
     L.push('');

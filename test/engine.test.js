@@ -336,3 +336,89 @@ test('칩 단위 1(원화 방) — 무작위 판 1500개, 레이크·나눠 갖�
     const r = engine.call('startHand', { tableId, handNo: 1, seats: players.map((p) => ({ seat: p.seat, odcId: p.odcId, stack: 100 })), dealer: 0, sb: 0, bb: 1, smallBlind: 1, bigBlind: 2, rake: { percent: 5, minPot: 0, unit: 10 } });
     assert.ok(!r.ok);
 });
+
+// ------------------------------------------------------------ [OMAHA_0_10_23] 오마하 (PLO4·PLO5, 팟 리밋, 하이만)
+const HandEvaluator = require('../src/HandEvaluator');
+
+test('[OMAHA_0_10_23] 오마하 족보 — 반드시 내 카드 2장 + 보드 3장', () => {
+    // 내 카드 4장이 모두 스페이드여도 보드 스페이드가 2장이면 플러시가 아니다(홀덤이면 로열 플러시)
+    const hole = ['As', 'Ks', 'Qs', 'Js'], board = ['Ts', '9s', '2d', '3c', '7h'];
+    assert.strictEqual(HandEvaluator.evaluate(hole, board).rankName, HandEvaluator.evaluate(['As', 'Ks'], ['Qs', 'Js', 'Ts', '2d', '3c']).rankName, 'holdem baseline royal');
+    const om = HandEvaluator.evaluate(hole, board, true);
+    assert.ok(!/flush/i.test(om.rankName), 'omaha: no flush with only two spades on board → ' + om.rankName);
+    // 보드 하트 4장 + 내 하트 1장 → 오마하는 플러시가 아니다(내 카드 2장 필요)
+    const om2 = HandEvaluator.evaluate(['Ah', '2c', '3d', '4s'], ['Kh', 'Qh', 'Jh', 'Th', '9c'], true);
+    assert.ok(!/flush/i.test(om2.rankName), 'omaha: one heart in hand is not a flush → ' + om2.rankName);
+    // 보드 페어 + 내 카드 페어 → 풀하우스는 홀 2 + 보드 3 으로만
+    const om3 = HandEvaluator.evaluate(['8h', '8d', '2c', '3s'], ['8c', 'Kd', 'Kh', '4c', '9s'], true);
+    assert.ok(/full/i.test(om3.rankName), 'omaha full house 888KK → ' + om3.rankName);
+    assert.strictEqual(om3.bestCards.length, 5);
+});
+
+test('[OMAHA_0_10_23] 팟 리밋 — 프리플랍 1/2 첫 레이즈 최대 7, 큰 레이즈는 한도까지, 한도를 넘는 올인은 한도까지 레이즈', () => {
+    const { engine, tableId, players } = setupTable(3);
+    const h = start(engine, tableId, players, [1000, 1000, 1000], { game: 'plo4' });
+    const core = engine.hands.get(h.handId).core;
+    assert.strictEqual(core.game, 'plo4');
+    for (const p of core.seats.values()) assert.strictEqual(p.hole.length, 4, '홀카드 4장');
+    const first = core.seats.get(players[0].seat);   // 3명: 딜러(0) 먼저(UTG) — SB 1, BB 2
+    assert.strictEqual(core.maxRaiseTo(first), 7, 'pot raise to 7');
+    const q = core.turns, pl = players[0];
+    const r = engine.call('act', { handId: h.handId, entry: { k: 'act', seat: pl.seat, q, action: 'RAISE', amount: 500, sig: pl.signAct(h.handId, q, 'RAISE', 500) } });
+    assert.ok(r.ok, r.error);
+    assert.strictEqual(core.currentBet, 7, '500 → 한도 7');
+    // 다음 사람(SB) 올인 → 팟 한도까지 레이즈: 팟 10(1+2+7), 콜 6 → 7 + 10 + 6 = 23
+    const sb = players[1], q2 = core.turns;
+    const r2 = engine.call('act', { handId: h.handId, entry: { k: 'act', seat: sb.seat, q: q2, action: 'ALL_IN', amount: 0, sig: sb.signAct(h.handId, q2, 'ALL_IN', 0) } });
+    assert.ok(r2.ok, r2.error);
+    assert.strictEqual(core.currentBet, 23, 'all-in → pot raise to 23');
+    assert.ok(!core.seats.get(sb.seat).isAllIn, '칩이 남는다');
+});
+
+test('[OMAHA_0_10_23] PLO5 — 홀카드 5장, 카드가 모자란 인원(9명)은 거절', () => {
+    const a = setupTable(6);
+    const h = start(a.engine, a.tableId, a.players, a.players.map(() => 500), { game: 'plo5' });
+    for (const p of a.engine.hands.get(h.handId).core.seats.values()) assert.strictEqual(p.hole.length, 5);
+    const b = setupTable(9);
+    const r = b.engine.call('startHand', { tableId: b.tableId, handNo: 1, seats: b.players.map((p) => ({ seat: p.seat, odcId: p.odcId, stack: 100 })),
+        dealer: 0, sb: 1, bb: 2, smallBlind: 1, bigBlind: 2, peek: true, game: 'plo5' });
+    assert.ok(!r.ok && /not enough cards/.test(r.error), r.error);
+    const c = setupTable(2);
+    const r3 = c.engine.call('startHand', { tableId: c.tableId, handNo: 1, seats: c.players.map((p) => ({ seat: p.seat, odcId: p.odcId, stack: 100 })),
+        dealer: 0, sb: 0, bb: 1, smallBlind: 1, bigBlind: 2, game: 'stud' });
+    assert.ok(!r3.ok && /unknown game/.test(r3.error));
+});
+
+test('[OMAHA_0_10_23] 오마하 무작위 판 2000개(PLO4·PLO5, 팟 리밋) — 베팅이 팟 한도를 넘지 않고, 칩 보존·기록 재현 검증 통과', () => {
+    const rnd = mulberry(20261119);
+    let showdowns = 0;
+    for (let i = 0; i < 2000; i++) {
+        const game = i % 3 === 2 ? 'plo5' : 'plo4';
+        const n = 2 + Math.floor(rnd() * (game === 'plo5' ? 7 : 9));
+        const { engine, tableId, players } = setupTable(n);
+        const stacks = players.map(() => Math.round((5 + rnd() * 300) * 10) / 10);
+        const rake = i % 2 ? { percent: 4.7, minPot: 1 } : undefined;
+        const h = start(engine, tableId, players, stacks, { smallBlind: 0.5, bigBlind: 1, rake, game });
+        const core = engine.hands.get(h.handId).core;
+        // 액션마다 팟 한도 확인: 한 라운드 베팅이 직전 「현재 베팅 + 팟 + 콜」을 넘지 않는다
+        const realApply = core.apply.bind(core);
+        core.apply = (e) => {
+            const p = core.seats.get(e.seat);
+            const lim = p ? core.maxRaiseTo(p) : Infinity;
+            const out = realApply(e);
+            if (p) assert.ok(p.currentBet <= lim + 1e-9, `bet ${p.currentBet} over pot limit ${lim}`);
+            return out;
+        };
+        const f = playRandom(engine, h, players, rnd);
+        assert.ok(f.ok, f.error);
+        assert.strictEqual(f.record.game, game, '판 기록에 게임');
+        if (f.type === 'showdown') { showdowns++; for (const s of Object.values(f.record.holes || {})) if (Array.isArray(s) && s.length) assert.strictEqual(s.length, game === 'plo5' ? 5 : 4); }
+        const taken = f.record.result.rake ? f.record.result.rake.totalRake : 0;
+        const before = Object.values(f.record.stacksStart).reduce((s, v) => s + v, 0);
+        const after = Object.values(f.record.stacksEnd).reduce((s, v) => s + v, 0);
+        assert.ok(Math.abs(before - after - taken) < 1e-6, `chips ${before} → ${after} + rake ${taken}`);
+        const v = verifyRecord(f.record, f.sig, engine.call('info').keys.sig);
+        assert.ok(v.ok, v.errors.join('; '));
+    }
+    assert.ok(showdowns > 200, 'showdowns ' + showdowns);
+});

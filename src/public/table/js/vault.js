@@ -45,6 +45,7 @@ export const msg = {
     action: (handId, q, action, amount) => JSON.stringify(['pz-act-v1', String(handId), Number(q), String(action), Number(amount) || 0]),
     entropy: (tableId, seedCommit, entropyHex) => JSON.stringify(['pz-ent-v1', String(tableId), String(seedCommit), String(entropyHex)]),
     join: (tid, sigFp) => JSON.stringify(['pz-join-v1', String(tid), String(sigFp)]),
+    resume: (tid, sigFp, ts) => JSON.stringify(['pz-resume-v1', String(tid), String(sigFp), Number(ts)]),   // [RESUME_0_10_11]
     mine: (sigFp, ts, handId) => JSON.stringify(['pz-mine-v1', String(sigFp), Number(ts), String(handId || '')]),
     tip: (tableId, fromOdcId, n, toSeat, type, amount) => JSON.stringify(['pz-tip-v1', String(tableId), String(fromOdcId), Number(n), Number(toSeat), String(type), Number(amount) || 0]),
 };

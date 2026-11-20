@@ -168,7 +168,7 @@ class Engine {
      * 새 판. 운영 서버가 좌석·스택·버튼 위치를 넘긴다. 엔진이 블라인드를 걷고 카드를 나눈다.
      * @returns 판 번호, 공개 약속, 좌석별 홀카드 봉투, 다음 판 씨앗 약속
      */
-    startHand({ tableId, handNo, seats, dealer, sb, bb, smallBlind, bigBlind, peek, rake, strictOrder }) {
+    startHand({ tableId, handNo, seats, dealer, sb, bb, smallBlind, bigBlind, peek, rake, strictOrder, game }) {
         const t = this._table(tableId);
         if (t.liveHandId) {
             const live = this.hands.get(t.liveHandId);
@@ -208,12 +208,15 @@ class Engine {
             const e = t.entropy.get(s.odcId);
             if (e) entropy.push({ seat: s.seat, odcId: s.odcId, hex: e.hex, sig: e.sig });
         }
+        // [OMAHA_0_10_23] 게임 — holdem(기본) · plo4 · plo5. HandCore 가 모르는 값·카드가 모자란 인원은 거절한다
+        const gameName = game === undefined || game === null || game === '' ? 'holdem' : String(game);
+        if (!['holdem', 'plo4', 'plo5'].includes(gameName)) throw new HandError('input', 'unknown game');
         const deck = cards.shuffledDeck(seed, handId, entropy);
         const { commitments, deckCommit } = cards.commitDeck(seed, handId, deck);
 
         const core = new HandCore({
             handId, seed, deck, seats: list, dealer: Number(dealer), sb: Number(sb), bb: Number(bb),
-            smallBlind, bigBlind, peek: !!peek, allowUnsigned: this.allowUnsigned, rake: rakeRule, strictOrder: !!strictOrder,
+            smallBlind, bigBlind, peek: !!peek, allowUnsigned: this.allowUnsigned, rake: rakeRule, strictOrder: !!strictOrder, game: gameName,
         });
 
         // 다음 판 씨앗은 지금 정해 약속만 알린다 — 이번 판 동안 회원들이 그 약속에 무작위 값을 보탠다
@@ -322,6 +325,7 @@ class Engine {
             dealer: s.dealer, sb: s.sb, bb: s.bb, smallBlind: s.smallBlind, bigBlind: s.bigBlind, peek: h.core.peek, rake: h.core.rake,
             allowUnsigned: h.core.allowUnsigned,
             ...(h.core.strictOrder ? { strictOrder: true } : {}),
+            ...(h.core.game !== 'holdem' ? { game: h.core.game } : {}),   // [OMAHA_0_10_23] 홀덤 판 기록은 예전 모양 그대로
             blinds: s.blinds,
             holes: s.holes,
             board: s.board,

@@ -39,7 +39,7 @@ services:
       - TEE_MODE=dstack
       - TEE_RECORD_DIR=/data/records
       - TEE_RPC_TOKEN=${TEE_RPC_TOKEN}
-      - TEE_DISCONNECT_GRACE_MS=60000
+      - TEE_DISCONNECT_GRACE_MS=300000
       - TEE_RETENTION_DAYS=7
       - TEE_CONSOLE_URL=https://buyinholdem.com/tee-records
       - TEE_ATTEST_LINKS=https://console.buyinholdem.com/api/tee/attestation-report?format=links

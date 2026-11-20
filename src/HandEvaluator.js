@@ -47,7 +47,9 @@ class HandEvaluator {
      * @param {string[]} communityCards - 커뮤니티 5장 ['Qs', 'Js', 'Ts', '2d', '3c']
      * @returns {Object} { rank, rankName, score, bestCards, description }
      */
-    static evaluate(holeCards, communityCards) {
+    static evaluate(holeCards, communityCards, omaha = false) {
+        // [OMAHA_0_10_23] 오마하 — 반드시 내 카드 2장 + 보드 3장(내 카드 4·5장 중 2장 조합 × 보드 3장 조합)
+        if (omaha) return this.evaluateOmaha(holeCards, communityCards);
         const allCards = [...holeCards, ...communityCards];
 
         // 모든 5장 조합 평가
@@ -61,6 +63,18 @@ class HandEvaluator {
             }
         }
 
+        return bestHand;
+    }
+
+    /** [OMAHA_0_10_23] 오마하 최고 족보 — 홀 2장 × 보드 3장 조합만 본다(PLO4 6×10, PLO5 10×10 조합) */
+    static evaluateOmaha(holeCards, communityCards) {
+        let bestHand = null;
+        for (const h of this.getCombinations(holeCards, 2)) {
+            for (const b of this.getCombinations(communityCards, 3)) {
+                const hand = this.evaluateFiveCards([...h, ...b]);
+                if (!bestHand || this.compareHands(hand, bestHand) > 0) bestHand = hand;
+            }
+        }
         return bestHand;
     }
 
@@ -263,10 +277,10 @@ class HandEvaluator {
      * @param {string[]} communityCards
      * @returns {Array} 승자 목록 (동점 가능)
      */
-    static determineWinners(players, communityCards) {
+    static determineWinners(players, communityCards, omaha = false) {
         const evaluatedHands = players.map(p => ({
             ...p,
-            handResult: this.evaluate(p.holeCards, communityCards)
+            handResult: this.evaluate(p.holeCards, communityCards, omaha)   // [OMAHA_0_10_23]
         }));
 
         // 최고 점수 찾기

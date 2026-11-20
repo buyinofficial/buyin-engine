@@ -114,6 +114,14 @@ function msgJoin(tid, sigFp) {
     return JSON.stringify(['pz-join-v1', String(tid), String(sigFp)]);
 }
 
+/**
+ * [RESUME_0_10_11] 자리로 돌아오기 — 이 좌석표(tid)로 앉은 자리를 같은 서명 키로 다시 잇는다(다른 탭·다시 열린 화면).
+ * ts 는 요청 시각(ms), 5분 안에서만 받는다
+ */
+function msgResume(tid, sigFp, ts) {
+    return JSON.stringify(['pz-resume-v1', String(tid), String(sigFp), Number(ts)]);
+}
+
 /** 팁 — 이 테이블에서 n 번째로 보내는 팁(좌석마다 1부터, 한 번만 쓴다). 받는 쪽은 좌석 번호(화면은 남의 회원 ID 를 모른다). 금액은 그 방 BB 1개 */
 function msgTip(tableId, fromOdcId, n, toSeat, type, amount) {
     return JSON.stringify(['pz-tip-v1', String(tableId), String(fromOdcId), Number(n), Number(toSeat), String(type), Number(amount) || 0]);
@@ -154,6 +162,6 @@ module.exports = {
     b64u, fromB64u, sha256, sha256hex, stableStringify,
     generateKeyPair, publicJwk, importPublicJwk, fingerprint,
     sign, verify,
-    msgRegister, msgKeyConfirm, msgAction, msgPreAction, msgRaiseCommit, msgEntropy, msgMine, msgJoin, msgTip,
+    msgRegister, msgKeyConfirm, msgAction, msgPreAction, msgRaiseCommit, msgEntropy, msgMine, msgJoin, msgResume, msgTip,
     sealEnvelope, openEnvelope,
 };

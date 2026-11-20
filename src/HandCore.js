@@ -19,6 +19,8 @@
 
 const HandEvaluator = require('./HandEvaluator');
 const PotManager = require('./PotManager');
+/** [OMAHA_0_10_23] 게임 규칙 — 홀카드 수·팟 리밋 */
+const GAMES = { holdem: { hole: 2, potLimit: false }, plo4: { hole: 4, potLimit: true }, plo5: { hole: 5, potLimit: true } };
 const { roundMoney, floorUnit } = require('./money');
 const { opening } = require('./cards');
 const C = require('./crypto');
@@ -58,6 +60,12 @@ class HandCore {
         this.peek = !!o.peek;
         this.allowUnsigned = !!o.allowUnsigned;
         this.strictOrder = !!o.strictOrder;
+        // [OMAHA_0_10_23] 게임 — holdem(홀카드 2, 노리밋) / plo4·plo5(홀카드 4·5, 팟 리밋, 족보는 홀 2 + 보드 3). 판 기록에 남고 verify 도 같은 규칙
+        this.game = o.game === undefined || o.game === null ? 'holdem' : String(o.game);
+        if (!GAMES[this.game]) throw new HandError('input', 'unknown game');
+        this.holeCount = GAMES[this.game].hole;
+        this.potLimit = GAMES[this.game].potLimit;
+        this.omaha = this.holeCount > 2;
         const rk = o.rake || {};
         this.rake = { percent: Number(rk.percent) || 0, minPot: Number(rk.minPot) || 0 };
         if (Number(rk.unit) === 1) this.rake.unit = 1;   // [CHIP_UNIT_0_10_6] 원화 방 — 판 기록 rake 에 남아 verify 도 같은 단위로 다시 계산한다
@@ -66,6 +74,7 @@ class HandCore {
         if (list.length < 2) throw new HandError('seats', 'at least two seats');
         this.order = list.map(s => s.seat);
         if (new Set(this.order).size !== this.order.length) throw new HandError('seats', 'duplicate seat');
+        if (list.length * this.holeCount + 8 > this.deck.length) throw new HandError('seats', 'not enough cards for this many seats');   // 번 3 + 보드 5
         this.seats = new Map();
         for (const s of list) {
             const stack = Number(s.stack);
@@ -139,7 +148,7 @@ class HandCore {
     }
 
     _dealHoles() {
-        for (let round = 0; round < 2; round++) {
+        for (let round = 0; round < this.holeCount; round++) {
             for (const seat of this.order) this.seats.get(seat).hole.push(this._pop());
         }
     }
@@ -209,6 +218,17 @@ class HandCore {
 
     calculateMinRaise() {
         return this.currentBet + Math.max(this.lastRaiseAmount, this.bigBlind);
+    }
+
+    /**
+     * [OMAHA_0_10_23] 이 좌석이 지금 올릴 수 있는 최대 베팅(이번 라운드 합계). 노리밋 = 가진 칩 전부.
+     * 팟 리밋 = 현재 베팅 + (콜한 뒤의 팟) = currentBet + pot + 콜 금액 — 팟에는 이번 라운드 베팅까지 들어 있다
+     */
+    maxRaiseTo(p) {
+        const all = roundMoney(p.stack + p.currentBet);
+        if (!this.potLimit) return all;
+        const call = Math.max(0, roundMoney(this.currentBet - p.currentBet));
+        return Math.min(all, roundMoney(this.currentBet + this.pot + call));
     }
 
     _callAmount(p) {
@@ -320,7 +340,8 @@ class HandCore {
     /** 이전 게임 서버 의 금액 — 팟의 25% 레이즈 (최소 레이즈 이상), 넘치면 올인 */
     _committedRaise(p) {
         const maxBet = p.stack + p.currentBet;
-        const target = Math.max(roundMoney(this.currentBet + this.pot * 0.25), this.calculateMinRaise());
+        let target = Math.max(roundMoney(this.currentBet + this.pot * 0.25), this.calculateMinRaise());
+        if (this.potLimit) target = Math.min(target, this.maxRaiseTo(p));   // [OMAHA_0_10_23] 팟 한도 안에서
         return target >= maxBet ? { action: ACTIONS.ALL_IN, amount: 0 } : { action: ACTIONS.RAISE, amount: target };
     }
 
@@ -370,7 +391,8 @@ class HandCore {
                 }
                 const minRaise = this.calculateMinRaise();
                 const targetBet = amount || minRaise;
-                const correctedBet = (targetBet < minRaise && p.stack + p.currentBet > minRaise) ? minRaise : targetBet;
+                let correctedBet = (targetBet < minRaise && p.stack + p.currentBet > minRaise) ? minRaise : targetBet;
+                if (this.potLimit) correctedBet = Math.min(correctedBet, this.maxRaiseTo(p));   // [OMAHA_0_10_23] 팟 리밋 — 한도보다 크면 한도까지
                 betAmount = Math.min(p.stack, roundMoney(correctedBet - p.currentBet));
                 if (!(roundMoney(p.currentBet + Math.max(0, betAmount)) > roundMoney(this.currentBet))) {
                     const needR = roundMoney(this.currentBet - p.currentBet);
@@ -392,6 +414,10 @@ class HandCore {
             }
 
             case ACTIONS.ALL_IN: {
+                // [OMAHA_0_10_23] 팟 리밋 — 가진 칩이 팟 한도보다 많으면 올인은 「한도까지 레이즈」로(팟 한도를 넘는 올인은 없다)
+                if (this.potLimit && roundMoney(p.stack + p.currentBet) > this.maxRaiseTo(p) && this.maxRaiseTo(p) > this.currentBet) {
+                    return this._resolve(p, ACTIONS.RAISE, this.maxRaiseTo(p));
+                }
                 const othersAi = this._active().filter(o => o.seat !== p.seat);
                 const raiseFacingPossibleAi = othersAi.some(o => !o.isAllIn && (o.stack || 0) > 0);
                 if (!raiseFacingPossibleAi) {
@@ -545,7 +571,7 @@ class HandCore {
                 potPlayers.push({ seat, player: { hand: this._cards(p.hole), totalHandBet: p.totalHandBet, isFolded: p.isFolded } });
             }
         }
-        const winners = PotManager.calculateWinners(potPlayers, boardCards, this.pot, this.rake.unit);
+        const winners = PotManager.calculateWinners(potPlayers, boardCards, this.pot, this.rake.unit, this.omaha);
 
         // 비긴 팟(두 명 이상이 나눈 팟)은 레이크 없음 — 한 명이 가져간 팟 금액만 레이크 기준
         const seatsByPot = new Map();
@@ -586,8 +612,8 @@ class HandCore {
 
         const hands = this._active().map(p => {
             let handRank = null;
-            if (p.hole.length === 2 && boardCards.length === 5) {
-                const ev = HandEvaluator.evaluate(this._cards(p.hole), boardCards);
+            if (p.hole.length >= 2 && boardCards.length === 5) {
+                const ev = HandEvaluator.evaluate(this._cards(p.hole), boardCards, this.omaha);
                 handRank = ev ? (ev.description || ev.rankName) : null;
             }
             return { seat: p.seat, handRank };

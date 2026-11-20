@@ -49,6 +49,7 @@ function verifyRecord(record, sig, engineSigJwk) {
             dealer: record.dealer, sb: record.sb, bb: record.bb,
             smallBlind: record.smallBlind, bigBlind: record.bigBlind,
             peek: record.peek, allowUnsigned: record.allowUnsigned, rake: record.rake, strictOrder: !!record.strictOrder,
+            game: record.game || 'holdem',   // [OMAHA_0_10_23] 오마하 — 같은 규칙(홀 4·5장, 팟 리밋, 홀 2 + 보드 3)으로 다시 계산
         });
         for (const e of record.log || []) {
             if (e.k === 'board') { core.advance(); continue; }

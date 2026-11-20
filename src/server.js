@@ -17,7 +17,7 @@
  *   TEE_RPC_TOKEN       콘솔과 엔진 사이의 토큰 — 기록을 보낼 때 붙이고, 결과 조회(/records/results) 때 확인한다. dstack 모드에서는 반드시 있어야 한다(32자 이상). 암호화 환경변수로만 넣는다
  *   TEE_RECORD_DIR      판 기록 보관 폴더(TEE 데이터 디스크). dstack 모드에서는 반드시 있어야 한다
  *   TEE_CONSOLE_KEY     콘솔 좌석표 공개키(JWK JSON). 있으면 테이블 서버를 켠다. 배포 설정(측정됨)에 공개로 둔다
- *   TEE_DISCONNECT_GRACE_MS 연결이 끊긴 좌석이 탈락하기까지(기본 60000). 배포 설정(측정됨)에 공개로 둔다
+ *   TEE_DISCONNECT_GRACE_MS 연결이 끊긴 좌석이 탈락하기까지(기본 300000 = 5분). 배포 설정(측정됨)에 공개로 둔다
  *   TEE_CONSOLE_URL     사슬에 쓴 줄(끝난 판·정산서 등)을 보내는 콘솔 주소 — 엔진이 밖으로 연결하는 유일한 곳(outbox.js). 배포 설정(측정됨)에 공개로 둔다
  *   TEE_RETENTION_DAYS  보낸 기록을 TEE 에 두는 날 수(기본 7, 최소 1). 지난 하루 파일은 지운다. 배포 설정(측정됨)에 공개로 둔다
  *   TEE_ALLOW_UNSIGNED  1 이면 키 없는 좌석의 평문 카드·서명 없는 액션 허용 (시험 전용, dev 모드만)
@@ -36,7 +36,7 @@ const { RecordStore } = require('./store');
 const { auditReport } = require('./audit');
 const C = require('./crypto');
 const { TableServer } = require('./table/TableServer');
-const { tableRoutes } = require('./table/http');
+const { tableRoutes, tableUpgrade } = require('./table/http');
 const { RateLimiter } = require('./limits');
 const { Outbox } = require('./outbox');
 const { consoleRoutes } = require('./consoleApi');
@@ -204,7 +204,7 @@ function handleMine(req, res) {
     });
 }
 
-let tables = null, tableHandler = null;
+let tables = null, tableHandler = null, tableWs = null;
 
 const server = http.createServer((req, res) => {
     for (const [k, v] of Object.entries(BASE_HEADERS)) res.setHeader(k, v);
@@ -213,6 +213,12 @@ const server = http.createServer((req, res) => {
     if (req.method === 'GET') return handleGet(req, res);
     if (req.method === 'POST' && req.url === '/records/mine') return handleMine(req, res);
     return send(res, 404, { ok: false, error: 'not found' });
+});
+
+// [WS_0_10_10] 웹소켓은 /table/ws 하나뿐 — 다른 업그레이드 요청은 끊는다
+server.on('upgrade', (req, socket, head) => {
+    socket.on('error', () => socket.destroy());
+    if (!(tableWs && tableWs(req, socket, head))) socket.destroy();
 });
 
 // 느린 요청으로 연결을 붙잡아 두는 공격 막기 — 요청은 30초 안에, 머리글은 20초 안에 다 와야 한다(이벤트 흐름은 응답이 길 뿐 요청은 짧다)
@@ -250,6 +256,7 @@ async function start() {
     }
     // 테이블 화면·검증 화면은 언제나 TEE 가 내보낸다(테이블 서버가 꺼져 있으면 앉기·명령만 닫힌다)
     tableHandler = tableRoutes(tables);
+    tableWs = tableUpgrade(tables);
     server.listen(PORT, HOST, () => {
         const i = info();
         console.log(`[tee-engine] ${i.name} ${i.version} mode=${i.mode} listening ${HOST}:${PORT} sigFp=${i.keys.sigFp}`
