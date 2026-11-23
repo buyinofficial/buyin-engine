@@ -23,6 +23,7 @@ const { opening } = require('../cards');
 
 const START_DELAY_MS = 3000;       // 판과 판 사이
 const RESULT_PAUSE_MS = 4000;      // 결과를 보여 주는 시간
+const PICK_SEAT_MS = 90 * 1000;    // [SEAT_CHOOSE_0_10_26] 자리를 고르지 않으면 지금 자리로
 
 /**
  * [SHOWDOWN_SEQ_0_10_4] 쇼다운 연출 시간 — 화면(app.js showdownPlan)이 카드를 한 자리씩 여는 데 쓰는 시간만큼 다음 판을 늦춘다.
@@ -169,7 +170,8 @@ class TableServer {
             }
             throw new TableError('seat', 'player already at this table');
         }
-        const seat = back >= 0 ? back : room.seats.findIndex((s) => !s);
+        // [SEAT_PICK_0_10_25] 잡아 둔 자기 자리(재바이인) → 좌석표가 정한 자리(비어 있으면) → 첫 빈자리
+        const seat = back >= 0 ? back : (t.seat >= 0 && !room.seats[t.seat] ? t.seat : room.seats.findIndex((s) => !s));
         if (seat < 0) throw new TableError('full', 'table is full');
         // 입장 서명(선택) — 이 브라우저의 서명 키. 같은 회원의 새 세션 판단과 '앉은 뒤 키가 바뀌면 탈락'의 기준이 된다
         let joinFp = null;
@@ -188,6 +190,8 @@ class TableServer {
             // [REBUY_0_10_1] rebuy: null | 'asked'(말풍선) | 'done'(돌아옴, 한 판)
             timeBank: TIME_BANK_START, emoteAt: 0, chatRate: { last: 0, start: 0, n: 0 }, sigJwk: null, tipN: 0, tipAt: 0, tips: [], raisingAt: 0, darkNext: false,
             clients: new Set(), joinedAt: this.clock.now(), ready: false,   // [READY_SESSION_0_10_6]
+            choosing: !!t.pick && back < 0,   // [SEAT_CHOOSE_0_10_26] 자리를 고르는 중(잡아 둔 자기 자리로 돌아오면 고르지 않는다)
+            pickable: !!t.pick && back < 0, dealt: false,   // [SEAT_REPICK_0_10_26] 첫 판 전에는 대기실에서 자리를 다시 고를 수 있다
         };
         // 좌석표는 사슬에 먼저 남긴다 — 이후 엔진이 다시 떠도 이 돈은 정산된다
         if (this.store) this.store.appendEvent('seat-in', { tid: t.tid, roomId: room.id, tableId: room.tableId, sessionId: s.sessionId, odcId: s.odcId, buyIn: s.buyIn, currency: s.currency });
@@ -197,6 +201,9 @@ class TableServer {
         room.emptySince = null;
         this.tokens.set(token, { room, seat });
         this._armGone(room, s);   // 화면이 붙기 전까지도 시간을 잰다
+        if (s.choosing) {   // [SEAT_CHOOSE_0_10_26] 90초 안에 고르지 않으면 지금 자리로 앉힌다(자리를 붙잡고 있지 않게)
+            this.clock.setTimeout(() => { if (room.seats[s.seat] === s && s.choosing) this._sit(room, s, { seat: s.seat }); }, PICK_SEAT_MS);
+        }
         this._broadcast(room, 'seat', { seat: this._publicSeat(room, s) });
         this._broadcastGate(room);
         this._maybeStart(room);
@@ -342,6 +349,8 @@ class TableServer {
             case 'entropy': return this._entropy(room, s, m);
             case 'act': return this._act(room, s, m);
             case 'ready': return this._ready(room, s, m);   // [READY_SESSION_0_10_6]
+            case 'sit': return this._sit(room, s, m);   // [SEAT_CHOOSE_0_10_26]
+            case 'repick': return this._repick(room, s);   // [SEAT_REPICK_0_10_26]
             case 'sitout': return this._sitout(room, s, true);    // [AWAY_0_10_16]
             case 'back': return this._sitout(room, s, false);
             case 'leave': return this._leave(room, s, 'left');
@@ -665,7 +674,7 @@ class TableServer {
      * 덱은 TEE 의 씨앗 + 판에 든 모든 회원의 무작위 값으로 섞인다(cards.shuffleKey). 값을 내지 않은 좌석은 그 판을 쉰다.
      */
     _eligible(room) {
-        return room.seats.filter((s) => s && s.keys && s.entropyFor === room.seedCommit && !s.sitout && !s.leaving && s.stack > 0);
+        return room.seats.filter((s) => s && s.keys && s.entropyFor === room.seedCommit && !s.sitout && !s.leaving && s.stack > 0 && !s.choosing);   // [SEAT_CHOOSE_0_10_26]
     }
 
     _maybeStart(room) {
@@ -676,6 +685,15 @@ class TableServer {
             return;
         }
         if (room.startTimer) return;
+        // [RESULT_HOLD_0_10_25] 지난 판 결과 연출(올인 런아웃·카드 공개·승자) 동안은 시작하지 않는다 — 종전엔 그 사이에 무작위 값·좌석·자리 비움 등이
+        //   _maybeStart 를 부르면 3초 뒤 바로 다음 판이 시작돼 승자 연출이 잘렸다. 연출이 끝나는 때(_afterHand 의 타이머)가 다시 부른다
+        //   [RESULT_HOLD_FIX_0_10_25] Node 타이머는 Date.now() 보다 1ms 먼저 울리는 일이 잦다(약 15%) — 그때 그냥 돌아가면 아무도 다시 부르지 않아
+        //   판이 영영 시작되지 않았다(「게임이 끝났는데 시작을 안 한다」). 남은 시간 뒤에 스스로 다시 부른다
+        const wait = room.resumeAt ? room.resumeAt - this.clock.now() : 0;
+        if (wait > 0) {
+            if (!room.resumeTimer) room.resumeTimer = this.clock.setTimeout(() => { room.resumeTimer = null; this._maybeStart(room); }, wait + 5);
+            return;
+        }
         if (this._eligible(room).length < 2) return;
         room.startAt = this.clock.now() + START_DELAY_MS;
         room.startTimer = this.clock.setTimeout(() => { room.startTimer = null; room.startAt = 0; this._startHand(room); }, START_DELAY_MS);
@@ -686,7 +704,7 @@ class TableServer {
 
     /** 준비 게이트에 드는 자리 — 칩이 있고 일어나는 중이 아닌 자리(올인으로 잡아 둔 자리는 빠진다) */
     _gatePlayers(room) {
-        return room.seats.filter((s) => s && !s.held && !s.leaving && !s.sitout && s.stack > 0);   // [AWAY_0_10_16] 자리 비움은 대기실 준비에서 뺀다
+        return room.seats.filter((s) => s && !s.held && !s.leaving && !s.sitout && s.stack > 0 && !s.choosing);   // [SEAT_CHOOSE_0_10_26] 자리를 고르는 중이면 준비 목록에 아직 없다   // [AWAY_0_10_16] 자리 비움은 대기실 준비에서 뺀다
     }
 
     /** 2명 이상이 모두 준비했고, 모두 이번 판에 들 수 있다(키·무작위 값) */
@@ -695,10 +713,53 @@ class TableServer {
         return g.length >= 2 && g.every((s) => s.ready && s.keys && s.entropyFor === room.seedCommit);
     }
 
+    /**
+     * [SEAT_CHOOSE_0_10_26] 들어온 회원이 테이블의 빈자리를 고른다 — 고르는 중(choosing)일 때만, 판에 든 적이 없을 때만.
+     * 지금 자리를 고르면 그대로 앉는다. 자리 번호만 바뀐다 — 칩·카드·판과 무관(아직 어느 판에도 들지 않았다).
+     * 이미 판을 친 자리는 옮길 수 없다(블라인드 피하기 막음)
+     */
+    _sit(room, s, m) {
+        if (!s.choosing) throw new TableError('sit', 'seat already chosen');
+        const to = Number(m && m.seat);
+        if (!Number.isInteger(to) || to < 0 || to >= room.rules.maxPlayers) throw new TableError('sit', 'bad seat');
+        if (to !== s.seat) {
+            if (room.seats[to]) throw new TableError('sit', 'seat is taken');
+            const from = s.seat;
+            room.seats[from] = null;
+            room.seats[to] = s;
+            s.seat = to;
+            this.tokens.set(s.token, { room, seat: to });
+            this._broadcast(room, 'seat', { seat: { seat: from, empty: true } });
+        }
+        s.choosing = false;
+        this._broadcast(room, 'seat', { seat: this._publicSeat(room, s) });
+        this._broadcastGate(room);
+        this._maybeStart(room);
+        return { ok: true, seat: s.seat };
+    }
+
+    /**
+     * [SEAT_REPICK_0_10_26] 대기실에서 「자리 바꾸기」 — 들어와서 자리를 고른 회원이 아직 어느 판에도 들지 않았을 때만 다시 고르는 중으로.
+     * 준비는 풀린다. 판을 한 번이라도 친 자리는 바꿀 수 없다(블라인드 피하기 막음)
+     */
+    _repick(room, s) {
+        if (!s.pickable || s.dealt) throw new TableError('sit', 'seat can no longer be changed');
+        if (room.hand && room.hand.seats.includes(s.seat)) throw new TableError('sit', 'in a hand');
+        if (s.choosing) return { ok: true, seat: s.seat };
+        s.choosing = true; s.ready = false;
+        if (room.startTimer && room.gate) { this.clock.clearTimeout(room.startTimer); room.startTimer = null; room.startAt = 0; }
+        this.clock.setTimeout(() => { if (room.seats[s.seat] === s && s.choosing) this._sit(room, s, { seat: s.seat }); }, PICK_SEAT_MS);
+        this._broadcast(room, 'seat', { seat: this._publicSeat(room, s) });
+        this._broadcastGate(room);
+        this._maybeStart(room);
+        return { ok: true, seat: s.seat };
+    }
+
     /** 「준비 완료」/「준비 취소」 — 게이트가 열려 있을 때만. 칩·카드와 무관해 좌석 토큰만으로 된다 */
     _ready(room, s, m) {
         if (!room.gate) return { ok: true, gate: false };
         if (s.held || s.leaving || !(s.stack > 0)) throw new TableError('ready', 'this seat cannot play now');
+        if (s.choosing) throw new TableError('ready', 'choose a seat first');   // [SEAT_CHOOSE_0_10_26]
         s.ready = m.on !== false;
         if (s.ready) { this._clearAway(s); s.timeouts = 0; }
         this._broadcastGate(room);
@@ -730,7 +791,8 @@ class TableServer {
     /** 자리가 바뀌었다(나감·비움) — 판을 칠 사람이 2명 아래면 게이트로, 게이트면 목록을 새로 알리고 시작을 다시 본다 */
     _seatsChanged(room) {
         if (room.closing || room.settling) return;
-        if (!room.hand && !room.gate && this._gatePlayers(room).length < 2) this._rearmGate(room);
+        // [RESULT_HOLD_0_10_25] 결과 연출 중이면 대기실도 연출이 끝난 뒤에 띄운다
+        if (!room.hand && !room.gate && this._gatePlayers(room).length < 2) this._rearmGate(room, Math.max(0, (room.resumeAt || 0) - this.clock.now()));
         else if (room.gate) this._broadcastGate(room);
         if (room.gate) this._maybeStart(room);
     }
@@ -828,6 +890,7 @@ class TableServer {
         });
         if (!r.ok) { this._broadcast(room, 'error', { error: r.error }); return; }
         room.seedCommit = r.nextSeedCommit;
+        for (const p of players) if (!p.dealt) { p.dealt = true; if (p.pickable) this._broadcast(room, 'seat', { seat: this._publicSeat(room, p) }); }   // [SEAT_REPICK_0_10_26] 판에 들었다 — 이제 자리를 못 바꾼다
         // [READY_SESSION_0_10_6] 게이트를 닫고 게임 시간을 잰다(첫 판) / 마지막 판이면 하나를 쓴다 — 화면이 판보다 먼저 알도록 판 알림 전에
         if (room.gate) { room.gate = false; for (const x of room.seats) if (x) x.ready = false; this._broadcastGate(room); }
         this._sessionOnHandStart(room);
@@ -994,6 +1057,7 @@ class TableServer {
         if (this._timeOver(room)) return this._close(room, 'time');
         // [READY_SESSION_0_10_6] 마지막 판까지 끝났으면 / 칠 사람이 2명 아래면 준비 게이트로 — 결과 연출이 끝난 뒤 화면에 띄운다
         const pause = RESULT_PAUSE_MS + extraMs;
+        room.resumeAt = this.clock.now() + pause;   // [RESULT_HOLD_0_10_25]
         const ss = room.session;
         if (ss && ss.finalLeft === 0 && ss.finalNo > 0) this._endSession(room, pause);
         else if (!room.gate && this._gatePlayers(room).length < 2) this._rearmGate(room, pause);
@@ -1096,7 +1160,7 @@ class TableServer {
     _publicSeat(room, s) {
         return { seat: s.seat, nickname: s.nickname, avatar: s.avatar, stack: s.stack, sitout: s.sitout, awayUntil: s.sitout ? (s.awayUntil || 0) : 0, leaving: s.leaving, keys: s.keys, connected: s.clients.size > 0,
             busted: !!s.held || (this._busted(s) && !(room.hand && room.hand.seats.includes(s.seat))), rebuy: s.rebuy,
-            bi: s.bi || 0, biNew: s.rebuy === 'done' ? (s.biNew || 0) : 0, biAmt: s.biAmt || 0 };   // [PROFILE_STATS_0_10_11] 프로필 창 — 바이인 합계(좌석표에 이미 공개된 금액의 합)   // [BUYIN_UNITS_0_10_4] 표시용 — 합계·방금 받은 개수   // [REBUY_0_10_1]
+            bi: s.bi || 0, biNew: s.rebuy === 'done' ? (s.biNew || 0) : 0, biAmt: s.biAmt || 0, choosing: !!s.choosing, repick: !!(s.pickable && !s.dealt) };   // [SEAT_CHOOSE_0_10_26]   // [PROFILE_STATS_0_10_11] 프로필 창 — 바이인 합계(좌석표에 이미 공개된 금액의 합)   // [BUYIN_UNITS_0_10_4] 표시용 — 합계·방금 받은 개수   // [REBUY_0_10_1]
     }
 
     _publicHand(room) {
@@ -1118,7 +1182,7 @@ class TableServer {
         return {
             room: { id: room.id, name: room.rules.name, game: room.rules.game || 'holdem', sb: room.rules.sb, bb: room.rules.bb, maxPlayers: room.rules.maxPlayers, rake: room.rules.rake, turnSec: room.rules.turnSec, endsAt: room.rules.endsAt, sessionMin: room.rules.sessionMin || 0, tip: room.rules.tip || 0 },
             tableId: room.tableId, seedCommit: room.seedCommit, engine: this.engine.call('info').keys,
-            me: s && { seat: s.seat, odcId: s.odcId, nickname: s.nickname, stack: s.stack, buyIn: s.buyIn, unit: s.unit, bi: s.bi || 0, rebuy: s.rebuy, currency: s.currency, display: s.display, keys: s.keys, sitout: s.sitout, awayUntil: s.sitout ? (s.awayUntil || 0) : 0, timeBank: s.timeBank, tipN: s.tipN, darkNext: s.darkNext, ready: !!s.ready },
+            me: s && { seat: s.seat, odcId: s.odcId, nickname: s.nickname, stack: s.stack, buyIn: s.buyIn, unit: s.unit, bi: s.bi || 0, rebuy: s.rebuy, currency: s.currency, display: s.display, keys: s.keys, sitout: s.sitout, awayUntil: s.sitout ? (s.awayUntil || 0) : 0, timeBank: s.timeBank, tipN: s.tipN, darkNext: s.darkNext, ready: !!s.ready, choosing: !!s.choosing },
             seats: room.seats.map((x) => (x ? this._publicSeat(room, x) : null)),
             hand: this._publicHand(room),
             hole: s && h && h.seats.includes(s.seat) ? { handId: h.handId, envelope: h.envelopes[s.seat] || null } : null,

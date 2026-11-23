@@ -101,12 +101,13 @@ function paintSkinRow() {
     const row = $('.st-skin'); if (!row) return;
     const pc = S.layout === 'pc';
     const s = SK.cur && (SK.list || []).find((x) => x.id === SK.cur.id);
-    $('.sk-name', row).textContent = s ? s.name : t('skinDefault');
+    const ms = SK.main && (SK.list || []).find((x) => x.id === SK.main.id);   // [NO_DEFAULT_SKIN_0_10_26] 고르지 않았으면 메인 테이블 이름
+    $('.sk-name', row).textContent = s ? s.name : ms ? ms.name : '—';
     const e = effSkin(), usable = e && (pc ? e.d : e.m);
     $('.sk-cur', row).style.backgroundImage = `url('${usable ? RES_ROOT + usable : defBg(!pc)}')`;
 }
 function paintSkinMarks() {
-    const id = SK.cur && !(SK.main && SK.cur.id === SK.main.id) ? SK.cur.id : '';   // [SKIN_MAIN_0_10_23] 메인 테이블을 골라 둔 회원도 「기본」에 표시
+    const id = SK.cur ? SK.cur.id : (SK.main ? SK.main.id : '');   // [NO_DEFAULT_SKIN_0_10_26] 고르지 않았으면 메인 테이블 카드에 표시
     document.querySelectorAll('#skin-pick .sp-card').forEach((c) => {
         const on = c.dataset.id === id;
         c.classList.toggle('on', on); c.setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -117,7 +118,9 @@ function paintSkinPick() {
     box.classList.toggle('pc', pc);
     body.innerHTML = '';
     if (!SK.list) { body.appendChild(el('p', 'sp-note', '')).textContent = t(SK.loading ? 'skinLoading' : 'skinFail'); return; }
-    const usable = SK.list.filter((x) => (pc ? x.d : x.m) && !(SK.main && x.id === SK.main.id));   // [SKIN_MAIN_0_10_23] 메인 테이블은 「기본」 칸으로 보인다
+    // [NO_DEFAULT_SKIN_0_10_26] 기본(내장) 테이블 칸은 없다 — 관리자가 정한 메인 테이블이 맨 앞에 「메인」 딱지로(누르면 메인을 따라간다)
+    const mainId = SK.main ? SK.main.id : '';
+    const usable = SK.list.filter((x) => (pc ? x.d : x.m)).sort((a, b) => (b.id === mainId) - (a.id === mainId));
     const card = (s, big) => {
         const b = el('button', 'sp-card' + (big ? ' big' : '') + (s && s.p ? ' prem' : ''));
         b.type = 'button'; b.dataset.id = s ? s.id : '';
@@ -128,8 +131,9 @@ function paintSkinPick() {
         if (s && s.p) fig.appendChild(el('i', 'sp-crown', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18h18l-1.6-9.5-4.9 4.2L12 5.5l-2.5 7.2-4.9-4.2z"/></svg>'));
         fig.appendChild(el('i', 'sp-check', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7"/></svg>'));
         b.appendChild(fig);
-        b.appendChild(el('span', 'sp-name')).textContent = s ? s.name : t('skinDefault');
-        b.onclick = () => setSkin(s);   // 소리 없음(운영 요청 11-16)
+        const nm = b.appendChild(el('span', 'sp-name')); nm.textContent = s.name;
+        if (s.id === mainId) { nm.appendChild(el('i', 'sp-main', esc(t('skinMain')))); b.classList.add('main'); }
+        b.onclick = () => setSkin(s.id === mainId ? null : s);   // 소리 없음(운영 요청 11-16) · 메인 카드는 「메인 따라가기」(관리자가 바꾸면 같이)
         return b;
     };
     const prem = usable.filter((x) => x.p), basic = usable.filter((x) => !x.p);
@@ -140,7 +144,6 @@ function paintSkinPick() {
     }
     body.appendChild(el('div', 'sp-sec')).textContent = t('skinBasic');
     const g = body.appendChild(el('div', 'sp-grid'));
-    g.appendChild(card(null, false));
     for (const s of basic) g.appendChild(card(s, false));
     if (pc && !usable.length) body.appendChild(el('p', 'sp-note', '')).textContent = t('skinPcNone');
     paintSkinMarks();
@@ -208,10 +211,11 @@ const MOBILE_POS = [
 // [MOBILE_11_NEAR_0_10_11] 양옆을 185~545(120px 간격)로 — 종전 175~512 는 아래 자리와 영웅 사이가 너무 비어 영웅만 멀어 보였다(운영 요청 11-16).
 //   왼쪽 아래 채팅 버튼(565)이 가운데 채팅 창으로 바뀌어 그 자리까지 내려올 수 있다
 const MOBILE_POS_11 = [   // [MOBILE_11_SPREAD] 테이블 윗부분까지 넓게 — 위 2자리는 레일 바로 안쪽(y 100)
-    null, [31, 545], [31, 425], [31, 305], [31, 185], [128, 100],   // [SIDE_OUT_0_10_17] 양옆 열 44 → 36, 338 → 346 · [SIDE_OUT2_0_10_18] → 31 / 352
-    [262, 100], [352, 185], [352, 305], [352, 425], [352, 545],
+    null, [34, 545], [34, 425], [34, 305], [34, 185], [133, 100],   // [SIDE_OUT_0_10_17] 양옆 열 44 → 36, 338 → 346 · [SIDE_OUT2_0_10_18] → 31 / 352
+    [257, 100], [349, 185], [349, 305], [349, 425], [349, 545],      // [SEAT11_BIG_0_10_23] 자리가 1.10 배로 커져 이름 상자가 화면 끝에 닿아 → 34 / 349(여백 약 3px), 위 2자리 128·262 → 133·257
 ];
-const MOBILE_11_SCALE = 0.92;
+// [SEAT11_BIG_0_10_23] 11인 방 상대 자리(아바타·이름·카드)가 작다(운영 요청 11-20) — 0.92 → 1.10 (20% 크게)
+const MOBILE_11_SCALE = 1.10;
 /** [SEATS6_0_10_23] 6인 방(오마하) — 화면 자리 → 9석 자리(-1 = 위 가운데: 4·5번 가운데). 영웅·왼쪽 2·위 1·오른쪽 2 */
 const SIX_SLOT = [0, 2, 3, -1, 6, 7];
 const MOBILE_TOP_MID = [[49, 0], [20, 10]];
@@ -622,6 +626,8 @@ function listen() {
     on('turn', (d) => {
         const fresh = !S.turn || S.turn.handId !== d.handId || S.turn.q !== d.q;
         S.turn = d; if (S.hand) { S.hand.toAct = d.seat; S.hand.q = d.q; }
+        // [TURN_CLEAR_BUBBLE_0_10_25] 모바일 — 차례(타이머)가 오면 그 사람의 지난 베팅 말풍선을 걷는다(운영 요청 11-20). 새 액션이 새 말풍선을 띄운다
+        if (fresh && S.layout === 'mobile') delete S.bubbles[d.seat];
         if (S.raising && S.raising.seat !== d.seat) S.raising = null;
         if (d.seat !== mySeat()) { stopTurnSfx(); flushTips(); }   // [SFX_ORIG_0_10_9] · [TIP_DEFER_0_10_9]
         if (fresh && d.seat === mySeat()) {
@@ -815,6 +821,8 @@ async function openHole(d) {
     render();
 }
 
+/** [BUB_PILL_0_10_25] 칩 더미 아이콘(말풍선 앞) — 색은 글자색(currentColor)을 따른다 */
+const CHIP_STACK_SVG = '<svg class="cs" viewBox="0 0 16 16" aria-hidden="true"><ellipse cx="8" cy="12" rx="6" ry="2.2"/><path d="M2 12v-2.2c0 1.2 2.7 2.2 6 2.2s6-1 6-2.2V12"/><ellipse cx="8" cy="8.6" rx="6" ry="2.2"/><path d="M2 8.6V6.4c0 1.2 2.7 2.2 6 2.2s6-1 6-2.2v2.2"/><ellipse cx="8" cy="5.2" rx="6" ry="2.2"/></svg>';
 const ACT_WORD = { FOLD: 'Fold', CHECK: 'Check', CALL: 'Call', BET: 'Bet', RAISE: 'Raise', ALL_IN: 'All-in', BLIND: '' };
 function onAction(d) {
     if (!S.hand) return;
@@ -1155,6 +1163,7 @@ function layoutMode() {
     tb.style.setProperty('--k', k.toFixed(4));
     tb.style.setProperty('--oy', (844 * k <= innerHeight ? (innerHeight - 844 * k) / 2 : innerHeight - 844 * k).toFixed(1) + 'px');
     tb.style.setProperty('--ox', Math.max(0, (innerWidth - 390 * k) / 2).toFixed(1) + 'px');
+    S.mobSide = Math.max(0, (innerWidth - 390 * k) / 2) / k;   // [SEAT11_EDGE_0_10_25] 화폭 양옆에 남는 화면 폭(화폭 px)
 }
 
 const mySeat = () => (S.me ? S.me.seat : -1);
@@ -1178,7 +1187,11 @@ function anchor(seat) {
     const n = maxSeats(), i = screenIndex(seat);
     if (S.layout === 'mobile') {   // 화폭 좌표(390x844) — #stage 가 통째로 늘린다
         if (n > 9 && i > 0 && MOBILE_POS_11[i]) {   // [MOBILE_11_0_10_7]
-            const [x, y] = MOBILE_POS_11[i];
+            let [x, y] = MOBILE_POS_11[i];
+            // [SEAT11_EDGE_0_10_25] 양옆 열은 화면 바깥쪽으로 더 붙인다(운영 요청 11-20) — 주소창 있는 폰은 화폭 양옆에 빈 화면이 남아
+            //   그만큼(화면 끝 약 5px 남기고) 밖으로. 빈 곳이 없으면 34 / 349 그대로(이름 상자가 화면 끝까지 약 3px)
+            const push = Math.min(60, Math.max(0, (S.mobSide || 0) - 4));
+            if (x < 100) x -= push; else if (x > 290) x += push;
             return { x, y, role: ROLE_11[i], scale: MOBILE_11_SCALE };
         }
         if (n === 6) {   // [SEATS6_0_10_23] 6인 방 — 9석 자리 중 고르게(위 가운데는 4·5번 사이)
@@ -1239,7 +1252,10 @@ function renderRebuy() {
     if (!out) return;
     $('.rb-msg', bar).textContent = t('rbLost');
     const unit = S.me && S.me.unit;
-    $('.rb-go', bar).textContent = unit ? `${t('rbBtn')} · ${dmCur(unit)}` : t('rbBtn');
+    // [RB_SLEEK_0_10_25] 글자와 금액을 나눠 그린다(모바일 새 디자인 — 칩 아이콘 · 「바이인 신청」 · 금액 칸)
+    const go = $('.rb-go', bar), lbl = t('rbBtn'), amt = unit ? dmCur(unit) : '';
+    const key = lbl + '|' + amt;
+    if (go.dataset.k !== key) { go.dataset.k = key; go.innerHTML = `${CHIP_STACK_SVG}<span class="rb-t">${esc(lbl)}</span>${amt ? `<b class="rb-a">${esc(amt)}</b>` : ''}`; }
 }
 
 function openRebuyPop() {
@@ -1291,8 +1307,21 @@ function renderWatch() {
     if (pill) {
         const w = S.watchInfo;
         const on = !S.watch && !!(w && w.n > 0);
-        pill.hidden = !on;
-        if (on) $('.wp-t', pill).textContent = t('watchPill') + (w.names && w.names.length ? ' · ' + w.names.join(', ') : '');
+        pill.hidden = true;   // [NO_WATCH_PILL_0_10_25] 「방장 관전 중」 표시는 쓰지 않는다(운영 결정 11-20)
+        // [WATCH_PILL_ROW_0_10_25] 글자는 「방장 관전 중」만 — 방장 이름은 .wp-names(PC 는 옆에 그대로, 모바일은 눌렀을 때 아래 작은 상자)
+        if (on) {
+            $('.wp-t', pill).textContent = t('watchPill');
+            const nm = $('.wp-names', pill), names = (w.names || []).filter(Boolean);
+            nm.textContent = names.join(', ');
+            nm.hidden = !names.length;
+            if (!pill.dataset.wired) {
+                pill.dataset.wired = '1';
+                const flip = (e) => { e.stopPropagation(); if (S.layout === 'mobile') pill.classList.toggle('open'); };
+                pill.addEventListener('click', flip);
+                pill.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') flip(e); });
+                document.addEventListener('click', () => pill.classList.remove('open'));
+            }
+        } else pill.classList.remove('open');
     }
 }
 
@@ -1513,12 +1542,44 @@ function keepInside() {
     }
 }
 
+/** [SEAT_CHOOSE_0_10_26] 들어와서 아직 자리를 고르지 않았다(좌석표 pick) — 고르기 전에는 판·준비에 들지 않는다 */
+function choosingSeat() { const me = S.seats && S.seats[mySeat()]; return !!(S.me && me && me.choosing && !S.watch); }
+/** 빈자리 「앉기」 버튼 — 누르면 그 자리로(지금 잡힌 자리면 그대로). 앉으면 대기실(준비)이 뜬다 */
+function pickSeatEl(seat) {
+    const a = anchor(seat);
+    const b = el('button', 'seat-pick' + (S.layout === 'mobile' ? ' m' : ''), `<i class="sp-ring"><b>+</b></i><span>${esc(t('sitHere'))}</span>`);
+    b.type = 'button'; b.dataset.testid = 'seat-pick-' + seat;
+    b.style.left = a.x + 'px'; b.style.top = a.y + 'px';
+    if (a.scale && a.scale !== 1) b.style.setProperty('--sc', String(a.scale));
+    b.onclick = async (e) => {
+        e.stopPropagation();
+        if (S.sitBusy) return;
+        S.sitBusy = true; b.classList.add('busy');
+        try {
+            const r = await cmd('sit', { seat });
+            if (r && r.ok !== false && Number.isInteger(r.seat)) {
+                S.me.seat = r.seat; S.me.choosing = false;
+                const mine = S.seats[r.seat]; if (mine) mine.choosing = false;
+                play('minichip'); render(); renderGate();
+            } else toastErr((r && r.error) || t('sitTaken'));
+        } catch (_e) { toastErr(t('sitTaken')); }
+        S.sitBusy = false; render();
+    };
+    return b;
+}
+
 function renderSeats() {
     const box = $('#seats');
     box.innerHTML = '';
     const h = S.hand;
+    const ch = choosingSeat();   // [SEAT_CHOOSE_0_10_26] 자리를 고르는 중 — 빈자리(와 지금 잡힌 내 자리)에 「앉기」
+    $('#table').classList.toggle('choosing', ch);
+    let sp = $('#sit-prompt');
+    if (ch && !sp) { sp = el('div', '', ''); sp.id = 'sit-prompt'; sp.dataset.testid = 'sit-prompt'; $('#table').appendChild(sp); }
+    if (sp) { sp.hidden = !ch; if (ch) sp.innerHTML = `<i class="spp-dot"></i>${esc(t('sitPrompt'))}`; }
     for (let seat = 0; seat < maxSeats(); seat++) {
         const s = S.seats[seat];
+        if (ch && (!s || seat === mySeat())) { box.appendChild(pickSeatEl(seat)); continue; }
         if (!s) continue;
         const a = anchor(seat);
         const hero = seat === mySeat();
@@ -1570,6 +1631,22 @@ function avatarEl(s, size, seat, ring = true) {
         if (seat !== mySeat() || S.layout === 'mobile') av.appendChild(el('b', 'ring-sec' + (size < 100 ? ' sm' : '')));   // [HERO_RING_M_0_10_11] 모바일 영웅도   // [TURN_RING_0_10_9] 다른 자리 — 가운데 남은 초(원본)
     }
     if (isAllIn(seat)) av.appendChild(fireCore(seat));
+    // [FOLD_AVATAR_0_10_25] 모바일 폴드 — 말풍선 대신 프로필 원 아래쪽에 「폴드」(운영 시안). 판이 끝날 때까지
+    const hp = S.layout === 'mobile' && S.hand && S.hand.seats ? S.hand.seats.find((x) => x.seat === seat) : null;
+    if (hp && hp.folded && !(s && s.sitout && !s.leaving)) {
+        av.classList.add('is-fold');
+        const fo = el('div', 'fold-ov', `<span>${esc(t('fold'))}</span>`);
+        fo.style.fontSize = Math.max(9, Math.round(size * 0.16)) + 'px';
+        av.appendChild(fo);
+    }
+    // [AWAY_AVATAR_0_10_25] 자리 비움은 말풍선 대신 프로필 원 안에(운영 요청 11-20) — 어둡게 덮고 시계 + 「자리 비움」
+    if (s && s.sitout && !s.leaving) {
+        av.classList.add('is-away');
+        const ov = el('div', 'away-ov', '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>' + esc(t('awayBubble')) + '</span>');
+        ov.style.fontSize = Math.max(9, Math.round(size * 0.15)) + 'px';
+        ov.dataset.testid = 'away-ov-' + seat;
+        av.appendChild(ov);
+    }
     // 팁 받을 사람 고르기 — 선물을 고른 뒤 상대 아바타가 깜빡이고, 누르면 보낸다
     if (S.tipGift && seat !== mySeat()) {
         av.classList.add('tip-target');
@@ -1838,24 +1915,36 @@ function otherSeatMobile(node, s, a, inHand) {
     const seat = s.seat;
     node.style.left = mobileAvatarX(a) + 'px';
     if (a.scale && a.scale !== 1) { node.style.transform = `scale(${a.scale})`; node.style.transformOrigin = '0 0'; }   // [MOBILE_11_0_10_7] 11석은 자리 묶음을 통째로 줄인다
-    const av = avatarEl(s, 69, seat); av.style.left = '-34.5px'; av.style.top = '-34.5px'; node.appendChild(av);
-    seatFx(node, seat, av, 69, true);
+    // [M_CARD_AV_0_10_25] 모바일 상대 자리 — 원형 프로필 대신 그 자리를 카드 두 장이 꽉 채운다(운영 요청 11-20).
+    //   아바타 상자(69px)는 투명하게 남겨 둔다 — 눌러 프로필·팁 받는 사람 고르기·승자 연출·자리 비움·감정 위치가 그대로 이 상자를 쓴다
+    // [M_CARD_AV3_0_10_25] 원형 프로필을 되살리고(운영 요청 11-20), 카드는 베팅 중 작게(프로필 안쪽 아래) → 공개되면 지금 크기로 커진다
+    // [AV_M_SMALL_0_10_25] 원형 프로필 69 → 62(10% 작게, 운영 요청 11-20). 가운데는 그대로
+    const av = avatarEl(s, 62, seat); av.style.left = '-31px'; av.style.top = '-31px'; node.appendChild(av);
+    seatFx(node, seat, av, 62, true);
+    avatarCards(node, seat, inHand, a);
     const nb = nameboxEl(s, 74, 25, 8, 9); nb.style.left = '-37px'; nb.style.top = '25px'; node.appendChild(nb);
     const tag = blindTag(seat);
     if (tag) { const b = el('span', 'blind sm', tag); b.style.left = '-33px'; b.style.top = '27px'; node.appendChild(b); }
     if (S.hand && S.hand.dealer === seat) { const d = dealerEl(); d.classList.add('sm'); d.style.left = '-44px'; d.style.top = '17px'; node.appendChild(d); }
-    if (inHand) {
-        const shown = sdShown(seat) ? S.reveal[seat] : null;   // [SHOWDOWN_SEQ_0_10_4]
-        const m = el('div', 'mini m');
-        // [OM_BACKS_0_10_23] 오른쪽 열 자리는 아바타 왼쪽 위에(좌우 뒤집기, 아바타 가운데 = 0)
-        const flip = rightSide(a);
-        const place = (left, back) => { if (flip) { m.classList.add(back ? 'flipb' : 'flip'); m.style.left = (-left) + 'px'; } else m.style.left = left + 'px'; };
-        if (shown) { m.classList.add('shown'); sdCards(m, seat, shown); place(10); m.style.top = '-12px'; }
-        else if (!inHand.folded) { const n = holeN(); if (n > 2) m.classList.add('om', 'om' + n); for (let k = 0; k < n; k++) { const w = el('div', 'mc'); w.appendChild(cardEl(null)); dealIn(w, seat, k); m.appendChild(w); } place(17, true); m.style.top = '7px'; }
-        if (m.children.length) node.appendChild(m);
-    }
-    bubbleFor(node, seat, 0, -54, 'sm');   // [BUBBLE_CENTER_0_10_11] 아바타 가운데(0)
+    bubbleFor(node, seat, 0, 23, 'sm');   // [BUB_PLATE_0_10_26] 아래 끝 = 이름 상자(25) 2px 위   // [BUBBLE_CENTER_0_10_11] 아바타 가운데(0) · [M_CARD_AV2_0_10_25] 이름 상자(25) 바로 위 · [BUB_PILL_0_10_25] 알약(19px)이 이름 상자에 닿게
     resultFor(node, seat, 0, 54, 0, 0, 'sm');
+}
+
+/**
+ * [M_CARD_AV3_0_10_25] 모바일 상대 자리의 카드 — 베팅 중에는 뒷면을 작게(20x28, 프로필 안쪽 아래 — 오른쪽 열은 왼쪽으로),
+ * 쇼다운에 공개되면 프로필 위에 크게(40x57, 아래 약 20%는 이름 상자에 가려진다) 커지며 열린다. 폴드·대기는 카드 없음
+ */
+function avatarCards(node, seat, inHand, a) {
+    if (!inHand) return;
+    const shown = sdShown(seat) ? S.reveal[seat] : null;   // [SHOWDOWN_SEQ_0_10_4]
+    const box = el('div', 'avc');
+    let n = 2;
+    if (shown) {
+        box.classList.add('shown'); sdCards(box, seat, shown); n = shown.length;
+        box.style.animationDelay = animDelay(`avg:${S.hand ? S.hand.handId : ''}:${seat}`);   // 다시 그려도 커지는 연출이 처음부터 다시 돌지 않게
+    } else return;   // [M_CARD_SD_ONLY_0_10_25] 판 진행 중에는 상대 카드를 그리지 않는다 — 쇼다운에 공개될 때만(운영 요청 11-20). 딜 연출은 아바타로 날아간다
+    if (n > 2) { box.classList.add('om'); const W = shown ? 69 : 60, cw = shown ? 40 : 20; /* [M_CARD_AV4_0_10_25] 작은 카드는 이름 상자 안 폭(60) */ box.style.setProperty('--om-gap', (((W - cw) / (n - 1)) - cw).toFixed(1) + 'px'); }   // [OMAHA_0_10_23]
+    node.appendChild(box);
 }
 
 function heroSeatMobile(node, s, a, inHand) {
@@ -1863,14 +1952,16 @@ function heroSeatMobile(node, s, a, inHand) {
     node.style.left = '0px'; node.style.top = '0px';   // 영웅 묶음은 화폭 왼쪽 아래 고정
     // [HERO_M_BIG_0_10_11] 프로필·이름 상자·아래 버튼 줄을 20% 키웠다(운영 요청 11-16). 아래 끝(버튼 줄 819)은 그대로, 버튼 줄은 이름 상자 폭에 맞춘다.
     //   차례 표시는 다른 자리처럼 프로필 둘레 원형 링 + 가운데 남은 초(종전: 카드 위 타이머 칩 + 가로 막대)
-    const cx = 60, cy = 717, AV_M = 89;
+    // [HERO_M_LEFT_0_10_25] 프로필 묶음을 왼쪽으로 6px(cx 60 → 54, 이름 상자·버튼 줄 14 → 8), 이름 상자 38 → 42 · 버튼 줄 26 → 28.6(세로 10%, 운영 요청 11-20)
+    const cx = 54, cy = 719, AV_M = 80, L = 8;   // [HERO_AV_SMALL_0_10_25] 원형 프로필 89 → 80(10% 작게), 아래 끝은 그대로(가운데 717 → 719)
     const av = avatarEl(s, AV_M, seat, true); av.style.left = (cx - AV_M / 2) + 'px'; av.style.top = (cy - AV_M / 2) + 'px'; node.appendChild(av);
     seatFx(node, seat, av, AV_M, true);
-    const nb = nameboxEl(s, 92, 38, 13, 14); nb.style.left = '14px'; nb.style.top = '750px'; node.appendChild(nb);
-    heroButtons(node, 14, 793, true);   // 프로필 아래 줄 — 감정·팁·다크(예전 화면)
+    // [HERO_BOX_SLIM_0_10_25] 이름 상자 42 → 34(20% 줄임), 줄인 만큼 아래 감정·팁 줄을 28.6 → 36.6 으로(아래 끝 821.6 그대로)
+    const nb = nameboxEl(s, 92, 34, 12.5, 13.5); nb.style.left = L + 'px'; nb.style.top = '747px'; node.appendChild(nb);
+    heroButtons(node, L, 785, true);   // 프로필 아래 줄 — 감정·팁·다크(예전 화면)
     const tag = blindTag(seat);
-    if (tag) { const b = el('span', 'blind sm', tag); b.style.left = '18px'; b.style.top = '753px'; node.appendChild(b); }
-    if (S.hand && S.hand.dealer === seat) { const d = dealerEl(); d.classList.add('sm'); d.style.left = '4px'; d.style.top = '738px'; node.appendChild(d); }
+    if (tag) { const b = el('span', 'blind sm', tag); b.style.left = (L + 4) + 'px'; b.style.top = '751px'; node.appendChild(b); }
+    if (S.hand && S.hand.dealer === seat) { const d = dealerEl(); d.classList.add('sm'); d.style.left = Math.max(0, L - 10) + 'px'; d.style.top = '736px'; node.appendChild(d); }
     const cards = S.hole && S.hand && S.holeHandId === S.hand.handId ? S.hole.map(codeOf) : (S.reveal[seat] || []).map(codeOf);
     if (inHand && cards.length) {
         const hole = el('div', 'hole m' + (inHand.folded ? ' folded' : ''));
@@ -1885,8 +1976,9 @@ function heroSeatMobile(node, s, a, inHand) {
         if (rank) { const hr = el('div', 'handrank m' + rankTier(rank) + (mgd ? ' made-hand-rank' : ''), esc(rank)); hr.style.animationDelay = animDelay(`hr:${S.hand.handId}:${rank}`); if (mgd) hr.style.setProperty('--mg-d', mgd); hr.style.left = '208px'; hr.style.top = '642px'; node.appendChild(hr); }
     }
     // [HERO_TB_M_0_10_11] 타임 연장 칩 — 프로필 오른쪽 위, 칩을 눌러 쓴다
-    if (S.turn && S.turn.seat === seat) timeBankButton(node, cx + 26, cy - 50, 'mc');
-    if (!(S.winners && S.winners.big)) bubbleFor(node, seat, cx, cy - 72, 'sm');
+    timeBankButton(node, cx + 26, cy - 50, 'mc', true);   // [TB_ALWAYS_0_10_25] 늘 보이고 내 차례에만 켜진다
+    // [HERO_BUB_POS_0_10_25] 영웅 말풍선도 다른 자리처럼 이름 상자(747) 바로 위 가운데(알약 19px + 2px)
+    if (!(S.winners && S.winners.big)) bubbleFor(node, seat, L + 46, 745, 'sm');   // [BUB_PLATE_0_10_26] 아래 끝 = 이름 상자(747) 2px 위
     resultFor(node, seat, cx, 794, cx, cy - 8, 'sm');
 }
 
@@ -2016,18 +2108,15 @@ function bubbleFor(parent, seat, cx, top, size = '') {
         parent.appendChild(r);
         return;
     }
+    // [WIN_NO_BUBBLE_0_10_25] 카드 공개(쇼다운·올인 런아웃)부터 승자 연출이 끝날 때까지 모든 말풍선을 내린다 — 말풍선이 공개 카드를 가렸다(운영 요청 11-20)
+    if (S.hand && (S.winners || (S.sd && S.sd.handId === S.hand.handId))) return;
     const b = S.bubbles[seat];
     // [REBUY_2026_11_11] 바이인 신청 말풍선 — 「바이인요~」 → 승인되면 「바이인 완료!」
     //   [REBUY_0_10_3] 「바이인요~」는 직전 판 액션 말풍선(올인 등)이 남아 있어도 먼저 보인다(그 자리는 판에 들지 않는다)
     const st = S.seats && S.seats[seat];
     // [AWAY_0_10_16] 자리 비움 — 그 자리 위에 「자리 비움 중」(모두의 화면)
-    if (st && st.sitout && !st.leaving) {
-        const n = el('div', 'rebuy-bubble away' + (size ? ' ' + size : ''), esc(t('awayBubble')));
-        n.dataset.testid = 'away-bubble-' + seat;
-        n.style.left = cx + 'px'; n.style.top = top + 'px';
-        parent.appendChild(n);
-        return;
-    }
+    //   [AWAY_AVATAR_0_10_25] 말풍선은 띄우지 않는다 — 프로필 원 안에 보인다(avatarEl). 다른 말풍선도 내지 않는 것은 그대로
+    if (st && st.sitout && !st.leaving) return;
     //   [BUYIN_UNITS_0_10_4] 「바이인 완료!」는 처음 본 뒤 3.5초 한 번만(종전엔 말풍선이 없을 때마다 — 차례마다 다시 떴다). 몇 바이인인지 함께
     const rb = st && (st.rebuy === 'asked' ? 'ask' : rbDoneFresh(st) ? 'done' : null);
     if (rb) {
@@ -2039,8 +2128,24 @@ function bubbleFor(parent, seat, cx, top, size = '') {
         return;
     }
     if (!b) return;
-    const word = ACT_WORD[b.a] ?? '';
     const withAmt = b.amt > 0 && b.a !== 'FOLD' && b.a !== 'CHECK';
+    // [BUB_PILL_0_10_25] 모바일 베팅 말풍선 — 운영 시안(남색 알약 + 칩 더미 아이콘 + 「콜 1,000」, 액션마다 테두리 색, 꼬리 없음)
+    if (S.layout === 'mobile') {
+        if (b.a === 'FOLD') return;   // [FOLD_AVATAR_0_10_25] 폴드는 프로필 원 안에 보인다
+        const kind = { FOLD: 'fold', CHECK: 'check', CALL: 'call', BET: 'bet', RAISE: 'raise', ALL_IN: 'allin', BLIND: 'blind' }[b.a] || 'bet';
+        const w = kind === 'blind' ? '' : t(kind);
+        const node = el('div', 'bubble mb sm act-' + kind);
+        // [BUB_LUX_0_10_25] 두 칸 캡슐 — 왼쪽 액션 칸(액션 색 그라데이션 · 칩 아이콘 · 글자) + 오른쪽 금액 칸(어두운 유리). 금액 없으면 한 칸
+        // [BUB_PLATE_0_10_26] 둥근 말풍선 대신 각진 명패 — 왼쪽 액션 색 빛 막대 · 위 작은 액션 글자 · 아래 굵은 금액(두 줄), 모서리 비스듬히 깎음.
+        //   아래 끝을 이름 상자 바로 위(top)에 맞춘다(translate -100%) — 한 줄(체크·폴드)이든 두 줄이든 같은 자리
+        if (!withAmt) node.classList.add('solo');
+        node.innerHTML = `<i class="bar"></i><span class="tx">${w ? `<span class="w">${esc(w)}</span>` : ''}${withAmt ? `<b class="v">${esc(dm(b.amt))}</b>` : ''}</span>`;
+        node.style.left = cx + 'px'; node.style.top = top + 'px'; node.style.transform = 'translate(-50%, -100%)';
+        if (S.hand) { node.classList.add('pop'); node.style.animationDelay = animDelay(`bub:${S.hand.handId}:${seat}:${b.at}`); }
+        parent.appendChild(node);
+        return;
+    }
+    const word = ACT_WORD[b.a] ?? '';
     const node = el('div', 'bubble' + (b.a === 'FOLD' ? ' fold' : '') + (b.a === 'ALL_IN' ? ' allin' : '') + (size ? ' ' + size : ''));
     node.innerHTML = (withAmt ? '<i class="dot"></i>' : '') + [word, withAmt ? dm(b.amt) : ''].filter(Boolean).map(esc).join(' ');
     node.style.left = cx + 'px'; node.style.top = top + 'px'; node.style.transform = 'translateX(-50%)';
@@ -2067,7 +2172,9 @@ function resultFor(parent, seat, cx, top, ax, ay, size = '') {
         parent.appendChild(n);
     }
     if (won && !(S.vfxHand && S.hand && S.vfxHand === S.hand.handId)) {   // [WINNER_SD_VFX_0_10_9] 경합 쇼다운은 원본 WINNER 연출이 대신한다
-        const w = el('div', 'winner-tag' + (size ? ' ' + size : ''), (hand ? `<small>${esc(seat === mySeat() || getLang() === 'en' ? bigHandName(hand) : localHand(hand, getLang()))}</small>` : '') + '<b>' + 'WINNER'.split('').map((c, i) => `<span style="--i:${i}">${c}</span>`).join('') + '</b>');
+        // [FOLDWIN_SMALL_0_10_25] 모바일 폴드승 WINNER 도 쇼다운 승자 연출처럼 — 족보 글자 없이, 영웅 20% · 상대 36% 작게(.mw / .mo)
+        const mob = S.layout === 'mobile';
+        const w = el('div', 'winner-tag' + (size ? ' ' + size : '') + (mob ? (seat === mySeat() ? ' mw' : ' mo') : ''), (hand && !mob ? `<small>${esc(seat === mySeat() || getLang() === 'en' ? bigHandName(hand) : localHand(hand, getLang()))}</small>` : '') + '<b>' + 'WINNER'.split('').map((c, i) => `<span style="--i:${i}">${c}</span>`).join('') + '</b>');
         w.style.left = ax + 'px'; w.style.top = (ay + 18) + 'px';
         parent.appendChild(w);
     }
@@ -2344,6 +2451,7 @@ function wireButtons() {
     //   누르고 있으면 0.4초 뒤부터 계속 올린다. 손가락이 버튼 밖으로 살짝 밀려도 끝까지 이 버튼(pointer capture)
     for (const [sel, dir] of [['.mg-plus', 1], ['.mg-minus', -1]]) {
         const b = $(sel);
+        if (!b) continue;   // [MG_SLEEK_0_10_25] 모바일 게이지에서 ± 버튼을 뺐다
         let rep = 0, hold = 0;
         const stop = () => { clearTimeout(hold); clearInterval(rep); hold = rep = 0; b.classList.remove('down'); };
         b.addEventListener('pointerdown', (e) => {
@@ -3479,7 +3587,7 @@ function winnerVfx(seat, handName, variant = 'main') {
     const r = avatarRect(seat);
     if (!r) return;
     const mobile = S.layout === 'mobile';
-    const base = mobile ? 264 : 440, k = (mobile ? 0.4 : 0.25) * (r.width / (mobile ? 77 : 122));
+    const base = mobile ? 264 : 440, k = (mobile ? (seat === mySeat() ? 0.32 : 0.269) : 0.25) * (r.width / (mobile ? 69.3 : 122));   /* [WIN_FX_OTHERS_0_10_25] 모바일 상대 자리는 20% 더 작게(0.32 → 0.256), 영웅 그대로 */   /* [AV_M_SMALL_0_10_25] 원형 프로필(상대·영웅)을 10% 줄여도 승자 연출 크기는 그대로 */   // [WIN_FX_SMALL_0_10_25] 모바일 0.4 → 0.32(20% 작게), PC 그대로
     const box = el('div', 'winner-fx-anchor');
     // [WINNER_CENTER_0_10_10] 좌우 가운데 = 그 자리 프로필(아바타 + 이름 상자) 묶음의 가운데. 종전엔 원본 화면 보정(+아바타 12~13%)을
     //   그대로 옮겨 오른쪽으로 밀렸다
@@ -3490,7 +3598,8 @@ function winnerVfx(seat, handName, variant = 'main') {
     box.style.top = (r.top + r.height / 2 + r.height * 0.26) + 'px';
     const title = variant === 'side' ? 'SIDE' : variant === 'uncalled' ? 'UNCALLED' : 'WINNER';
     const loc = seat !== mySeat() && localHand(handName, getLang()) !== String(handName || '').trim();   // [HAND_I18N_0_10_12]
-    const sub = variant === 'side' ? 'SIDE POT' : variant === 'uncalled' ? 'UNCALLED POT' : (loc ? localHand(handName, getLang()) : winHandLabel(handName));
+    let sub = variant === 'side' ? 'SIDE POT' : variant === 'uncalled' ? 'UNCALLED POT' : (loc ? localHand(handName, getLang()) : winHandLabel(handName));
+    if (mobile) sub = '';   // [WIN_FX_TITLE_ONLY_0_10_25] 모바일 — 족보 글자 없이 WINNER 만(운영 요청 11-20). 족보는 보드 아래·이름 상자 아래에 이미 보인다
     box.innerHTML = `<div class="winner-fx-scale" style="width:${base}px;transform:translate(-50%,-50%) scale(${k.toFixed(3)})">`
         + `<section class="winner-vfx winner-vfx--overlay winner-vfx--${variant}"><div class="winner-vfx__sequence">`
         + '<div class="winner-vfx__burst"></div><div class="winner-vfx__rays"></div><div class="winner-vfx__shockwaves"><i></i><i></i><i></i></div>'
@@ -3653,20 +3762,24 @@ function paintRoomLabel() {
 
 /** 타임뱅크 — 내 차례에, 한 차례에 한 장, 남은 장수가 있을 때만 보인다 */
 const TB_CHIP_SVG = '<svg class="tbc" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="49" class="rim"/><g class="inl"><rect x="45" y="1.8" width="10" height="12.5" rx="2.6" transform="rotate(0 50 50)"/><rect x="45" y="1.8" width="10" height="12.5" rx="2.6" transform="rotate(60 50 50)"/><rect x="45" y="1.8" width="10" height="12.5" rx="2.6" transform="rotate(120 50 50)"/><rect x="45" y="1.8" width="10" height="12.5" rx="2.6" transform="rotate(180 50 50)"/><rect x="45" y="1.8" width="10" height="12.5" rx="2.6" transform="rotate(240 50 50)"/><rect x="45" y="1.8" width="10" height="12.5" rx="2.6" transform="rotate(300 50 50)"/></g><circle cx="50" cy="50" r="48.2" class="rimline"/><circle cx="50" cy="50" r="36.2" class="ring"/><circle cx="50" cy="50" r="34.6" class="face"/><g class="tick"><line x1="50.00" y1="20.40" x2="50.00" y2="17.60" class=\"mj\"/><line x1="64.80" y1="24.37" x2="66.20" y2="21.94"/><line x1="75.63" y1="35.20" x2="78.06" y2="33.80"/><line x1="79.60" y1="50.00" x2="82.40" y2="50.00" class=\"mj\"/><line x1="75.63" y1="64.80" x2="78.06" y2="66.20"/><line x1="64.80" y1="75.63" x2="66.20" y2="78.06"/><line x1="50.00" y1="79.60" x2="50.00" y2="82.40" class=\"mj\"/><line x1="35.20" y1="75.63" x2="33.80" y2="78.06"/><line x1="24.37" y1="64.80" x2="21.94" y2="66.20"/><line x1="20.40" y1="50.00" x2="17.60" y2="50.00" class=\"mj\"/><line x1="24.37" y1="35.20" x2="21.94" y2="33.80"/><line x1="35.20" y1="24.37" x2="33.80" y2="21.94"/></g><text x="50" y="55.5" class="v">+20</text><text x="50" y="66.5" class="u">SEC</text></svg>';
-function timeBankButton(parent, x, y, size = '') {
+function timeBankButton(parent, x, y, size = '', always = false) {
     const tr = S.turn;
-    if (!S.me || !(S.me.timeBank > 0) || !tr || tr.seat !== mySeat()) return;
-    const key = tr.handId + ':' + tr.q;
-    if (S.tbUsed === key) return;
+    if (!S.me) return;
+    const key = tr ? tr.handId + ':' + tr.q : '';
+    const active = !!(S.me.timeBank > 0 && tr && tr.seat === mySeat() && S.tbUsed !== key);
+    // [TB_ALWAYS_0_10_25] 모바일 — 칩은 늘 그 자리에 두고 내 차례에만 켠다(운영 요청 11-20 · 종전엔 내 차례에만 나타났다 사라졌다). PC 는 그대로
+    if (!active && !always) return;
     // [TB_CHIP2_0_10_23] 타임 칩 — 고급 카지노 칩 한 장(운영 요청 「난잡하다 → 깔끔하게, 타임칩 느낌 정확히」).
     //   짙은 남흑 테두리 + 아이보리 인레이 6 · 얇은 금 링 · 안쪽 시계 눈금 12 · 금빛 +20 / SEC · 남은 장수는 금 테 작은 배지.
     //   움직임은 나타날 때 한 번 + 4.5초마다 은은한 광택 한 번뿐(종전: 빛 회전·빛 숨쉬기·떠다님·점선·모래시계가 한꺼번에)
     const b = el('button', 'tb tbchip' + (size ? ' ' + size : ''), `${TB_CHIP_SVG}<i class="tbc-shine"></i><span class="tb-n">×${S.me.timeBank}</span>`);
     b.type = 'button'; b.dataset.testid = 'timebank'; b.title = t('timeBank');
     b.style.left = x + 'px'; b.style.top = y + 'px';
+    if (always) b.style.animationDelay = animDelay('tbc:' + (active ? key : 'off'));   // 다시 그려도 나타나는 연출이 되풀이되지 않게
+    if (!active) { b.classList.add('off'); b.disabled = true; b.setAttribute('aria-disabled', 'true'); b.onclick = (e) => e.stopPropagation(); parent.appendChild(b); return; }
     b.onclick = async (e) => {
         e.stopPropagation();
-        S.tbUsed = key; b.remove();
+        S.tbUsed = key; if (always) render(); else b.remove();
         const r = await cmd('timebank');
         if (!r.ok) { S.tbUsed = ''; toastErr(r.error || ''); render(); }
     };
@@ -3711,7 +3824,7 @@ function onSession(d) {
 function renderGate() {
     const box = $('#ready-q');
     const g = S.gate;
-    const show = !!(g && g.active) && Date.now() >= S.gateShowAt && !!S.room;
+    const show = !!(g && g.active) && Date.now() >= S.gateShowAt && !!S.room && !choosingSeat();   // [SEAT_CHOOSE_0_10_26] 자리를 고른 뒤에 대기실
     if (box.hidden === show) {
         $('#table').classList.toggle('gate-open', show);
         if (show) {   // 대기실이 뜬다 — 지난 판 말풍선을 걷고, 미뤄 둔 게임 시간(준비 대기)을 보인다
@@ -3750,6 +3863,21 @@ function renderGate() {
         btn.classList.toggle('on', !!mine.ready);
         btn.disabled = S.rqBusy;
     }
+    // [SEAT_REPICK_0_10_26] 「자리 바꾸기」 — 들어와서 고른 자리를 첫 판 전에는 다시 고른다
+    let rp = $('.rq-repick', box);
+    if (!rp) {
+        rp = el('button', 'rq-repick', ''); rp.type = 'button'; rp.dataset.testid = 'rq-repick';
+        btn.insertAdjacentElement('afterend', rp);
+        rp.onclick = async () => {
+            if (S.rqBusy) return;
+            S.rqBusy = true; rp.disabled = true;
+            try { const r = await cmd('repick'); if (r && r.ok === false) toastErr(r.error || ''); else { const me = S.seats[mySeat()]; if (me) me.choosing = true; if (S.me) S.me.choosing = true; } } catch (_e) { /* */ }
+            S.rqBusy = false; rp.disabled = false; render(); renderGate();
+        };
+    }
+    const meSeat = S.seats && S.seats[mySeat()];
+    rp.hidden = !(mine && meSeat && meSeat.repick);
+    rp.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h13l-3-3M20 17H7l3 3"/></svg>${esc(t('sitChange'))}`;
     const left = g.startsAt ? Math.ceil((g.startsAt - (Date.now() + S.skew)) / 1000) : 0;
     const note = $('.rq-note', box);
     note.classList.toggle('go', left > 0);

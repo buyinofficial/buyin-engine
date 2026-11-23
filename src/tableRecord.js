@@ -29,7 +29,9 @@ function tableReport(store, tableId) {
         return seat;
     };
     const tips = store.tableTips(tableId).map((e) => ({ i: e.i, at: e.at, fromSeat: seatOf(e.fromOdc, e.i), toSeat: e.toSeat, amount: e.amount, type: e.type, signed: !!e.sig }));
-    return { hands, tips, allOk: hands.length > 0 && hands.every((h) => h.check.ok) };
+    // [UNIT_KRW_0_10_27] 금액 단위 = 이 테이블 좌석표의 칩 통화(원화 방은 KRW). 입장 줄이 보관 기간으로 지워졌으면 모른다고 적는다
+    const cur = store.tableCurrencies ? store.tableCurrencies(tableId) : [];
+    return { hands, tips, currency: cur.length ? cur.join('/') : null, allOk: hands.length > 0 && hands.every((h) => h.check.ok) };
 }
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -58,7 +60,7 @@ function tableRecordHtml(tableId, report, engine, base) {
         + `<h1>BUY-IN table record — produced inside the TEE</h1>`
         + `<p>Engine: ${esc(engine.name)} ${esc(engine.version)} · Source commit ${esc(engine.commit)} · engine key ${esc(engine.sigFp || '')}<br>`
         + `This page is served by the engine itself. Which public source this engine is, and its hardware attestation: ${link(base + '/ai.html')}</p>`
-        + `<p>Table: <b>${esc(tableId)}</b> · finished hands recorded: <b>${hands.length}</b> · amounts in USDT · chips per seat at the start and end of each hand.</p>`
+        + `<p>Table: <b>${esc(tableId)}</b> · finished hands recorded: <b>${hands.length}</b> · amounts in ${report.currency ? `<b>${esc(report.currency)}</b> (this table's chip currency, from its seat tickets)` : 'the table\'s chip currency (its seat-ticket lines are no longer kept)'} · chips per seat at the start and end of each hand.</p>`
         + `<h2>Deck and replay check</h2>`
         + `<p>Hands that passed: <b>${passed} / ${hands.length}</b> · all passed: <b>${allOk ? 'YES' : 'NO'}</b></p>`
         + `<p>For every hand below, this engine has just re-checked the hand's record with src/verify.js (verifyRecord):<br>`

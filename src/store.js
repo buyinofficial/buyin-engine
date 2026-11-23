@@ -106,6 +106,7 @@ class RecordStore {
             hand: q('SELECT line FROM chain WHERE hand_id = ?'),
             // [TABLE_RECORD_2026_11_10] 판 번호는 '<tableId>.<판 번호>' — '.' 다음 글자 '/' 앞까지가 그 테이블의 판이다
             tips: q("SELECT i, line FROM chain WHERE kind = 'tip' ORDER BY i"),
+            seatIns: q("SELECT line FROM chain WHERE kind = 'seat-in' ORDER BY i"),   // [UNIT_KRW_0_10_27]
             ofTable: q("SELECT i, line FROM chain WHERE kind = 'hand' AND hand_id >= ? AND hand_id < ? ORDER BY i LIMIT ?"),
             keys: q("SELECT line FROM chain WHERE kind = 'engine-key' ORDER BY i"),
             ofKey: q('SELECT hand_id FROM seat_keys WHERE sig_fp = ? ORDER BY i DESC LIMIT ?'),
@@ -253,6 +254,17 @@ class RecordStore {
     tableTips(tableId) {
         const t = String(tableId);
         return this.sql.tips.all().map((r) => JSON.parse(r.line)).filter((e) => e.tableId === t);
+    }
+
+    /** [UNIT_KRW_0_10_27] 한 테이블 칩의 통화 — 그 테이블 좌석표 입장 줄('seat-in')의 currency(KRW·USDT). 공개 기록 페이지의 금액 단위 */
+    tableCurrencies(tableId) {
+        const t = String(tableId);
+        const set = new Set();
+        for (const r of this.sql.seatIns.all()) {
+            const e = JSON.parse(r.line);
+            if (e.tableId === t && e.currency) set.add(String(e.currency).toUpperCase().slice(0, 8));
+        }
+        return [...set];
     }
 
     /** 공개 영수증 — 카드 없이 사슬 위치와 해시만 */

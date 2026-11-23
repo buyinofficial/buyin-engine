@@ -27,6 +27,9 @@ const L = {
         attOk: 'Intel TDX 증명서와 키가 묶여 있음', attNone: '없음(개발 모드)', attBad: '증명서와 키가 다름', records: '보관된 판',
         chainLen: '기록 사슬 줄 수', rollback: '이 브라우저가 전에 본 것보다 적습니다(되돌리기 의심)',
         open: '진행 중', openT: '아직 끝나지 않은 게임입니다', openD: '이 테이블이 끝나면 검증 결과가 나옵니다. 게임 중에는 판 기록과 검증 결과를 보여 주지 않습니다.',
+        doneOk: '검증 완료', doneBad: '검증 실패', engT: '엔진 검증 — 이 판은 끝났고 결과가 맞습니다', engBadT: '엔진 검증 실패',
+        engD: '증명된 TEE 안의 엔진이 이 판 기록을 공개 확인 코드(verify.js)로 처음부터 다시 계산했습니다 — 씨앗·섞기·카드 약속·액션·팟·레이크·서명.',
+        laterT: '전체 기록은 테이블이 끝난 뒤', laterD: '판 기록에는 폴드한 상대의 카드도 들어 있어, 같은 상대와 계속 치는 동안에는 열지 않습니다. 테이블이 끝나면 이 화면에서 기록을 받아 내 브라우저로 직접 다시 확인할 수 있습니다.',
     },
     en: {
         title: 'Verify my hands', lead: 'After a hand ends, this page fetches your hand record straight from the TEE and recomputes it in your browser. The operator is not involved.',
@@ -43,6 +46,9 @@ const L = {
         attOk: 'key bound to the Intel TDX quote', attNone: 'none (development)', attBad: 'key differs from the quote', records: 'Hands stored',
         chainLen: 'Record chain lines', rollback: 'fewer than this browser saw before (possible rollback)',
         open: 'In progress', openT: 'This game has not ended yet', openD: 'The check results appear after this table closes. Hand records and checks are not shown during the game.',
+        doneOk: 'Verified', doneBad: 'Check failed', engT: 'Engine check — this hand ended and the result is correct', engBadT: 'Engine check failed',
+        engD: 'The attested engine in the TEE replayed this hand record with the public checker (verify.js) — seed, shuffle, card commitments, actions, pots, rake and signatures.',
+        laterT: 'Full record after the table closes', laterD: 'A hand record also holds the cards of players who folded, so it stays closed while you keep playing the same opponents. When the table closes you can download it here and re-check it in your own browser.',
     },
 };
 const lang = (navigator.language || 'en').startsWith('ko') ? 'ko' : 'en';
@@ -90,7 +96,10 @@ async function boot() {
         const b = el('button', 'hand' + (h.open ? ' open' : ''));
         b.type = 'button';
         b.dataset.hand = h.handId;
-        b.append(el('span', 'when', new Date(h.endedAt || h.at).toLocaleString()), el('code', 'id', h.handId), el('span', 'tbl', h.open ? t('open') : `${t('table')} ${String(h.tableId).slice(0, 10)}`));
+        // [MINE_CHECK_0_10_26] 테이블이 열려 있어도 끝난 판 — 엔진 검증 결과 딱지(검증 완료 / 실패)
+        const tag = h.open ? (h.check ? el('span', 'tbl vtag ' + (h.check.ok ? 'ok' : 'bad'), h.check.ok ? `✓ ${t('doneOk')}` : `✕ ${t('doneBad')}`) : el('span', 'tbl', t('open')))
+            : el('span', 'tbl', `${t('table')} ${String(h.tableId).slice(0, 10)}`);
+        b.append(el('span', 'when', new Date(h.endedAt || h.at).toLocaleString()), el('code', 'id', h.handId), tag);
         b.onclick = () => openHand(k, h.handId);
         li.append(b);
         list.append(li);
@@ -133,6 +142,16 @@ async function openHand(k, handId) {
     const r = await mine(k, handId);
     // [MINE_OPEN_0_9_23] 끝나지 않은 게임 — 검증 결과 대신 안내만(TEE 가 기록을 주지 않는다)
     if (r.open) {
+        if (r.check) {   // [MINE_CHECK_0_10_26] 엔진 검증 결과 + 전체 기록은 테이블이 끝난 뒤
+            const ok = !!r.check.ok;
+            const a = el('li', 'check ' + (ok ? 'ok' : 'bad')); a.dataset.testid = 'engine-check';
+            a.append(el('b', '', ok ? t('engT') : t('engBadT')), el('span', 'd', ok ? t('engD') : `${t('engD')} — ${r.check.n || 1} ✕`));
+            const b2 = el('li', 'check later'); b2.dataset.testid = 'open';
+            b2.append(el('b', '', t('laterT')), el('span', 'd', t('laterD')));
+            ol.append(a, b2);
+            $('.actions', box).hidden = true;
+            return;
+        }
         const li = el('li', 'check warn'); li.dataset.testid = 'open';
         li.append(el('b', '', t('openT')), el('span', 'd', t('openD')));
         ol.append(li);

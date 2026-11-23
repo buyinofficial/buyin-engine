@@ -124,6 +124,30 @@ test('기록 보관소: 테이블 공개 기록은 그 테이블의 끝난 판�
     assert.deepStrictEqual(store.tableResults('nope'), []);
 });
 
+test('테이블 공개 기록: 금액 단위는 그 테이블 좌석표의 칩 통화(원화 방 KRW) [UNIT_KRW_0_10_27]', () => {
+    const { tableReport, tableRecordHtml } = require('../src/tableRecord');
+    const store = new RecordStore(tmpDir());
+    const rec = (handId, tableId) => ({ v: 1, handId, tableId, endedAt: 1, engine: { sigFp: 'x' }, seats: [{ seat: 0, odcId: '501', keys: null }],
+        stacksStart: { 0: 200000 }, stacksEnd: { 0: 203919 }, result: { type: 'showdown', rake: { perSeat: [] } } });
+    store.appendEvent('seat-in', { tid: 'a', roomId: 1, tableId: 'tK', sessionId: 's', odcId: '501', buyIn: 200000, currency: 'KRW' });
+    store.appendEvent('seat-in', { tid: 'b', roomId: 2, tableId: 'tU', sessionId: 's', odcId: '502', buyIn: 200, currency: 'USDT' });
+    store.appendHand(rec('tK.1', 'tK'), 's1');
+    store.appendHand(rec('tU.1', 'tU'), 's2');
+    store.appendHand(rec('tX.1', 'tX'), 's3');
+    assert.deepStrictEqual(store.tableCurrencies('tK'), ['KRW']);
+    assert.deepStrictEqual(store.tableCurrencies('tU'), ['USDT']);
+    assert.deepStrictEqual(store.tableCurrencies('tX'), []);
+    const eng = { name: 'buyin-engine', version: 't', commit: 'c', sigFp: 'x' };
+    const k = tableReport(store, 'tK');
+    assert.strictEqual(k.currency, 'KRW');
+    const html = tableRecordHtml('tK', k, eng, 'https://e');
+    assert.ok(html.includes('amounts in <b>KRW</b>') && !html.includes('amounts in USDT'), 'KRW table says KRW');
+    assert.ok(tableRecordHtml('tU', tableReport(store, 'tU'), eng, 'https://e').includes('amounts in <b>USDT</b>'));
+    const x = tableReport(store, 'tX');
+    assert.strictEqual(x.currency, null);
+    assert.ok(tableRecordHtml('tX', x, eng, 'https://e').includes("amounts in the table's chip currency"), 'unknown currency is not guessed');
+});
+
 test('테이블 공개 기록: 실제 판은 엔진 안 검증(src/verify.js)을 통과하고, 고친 기록은 실패로 나온다 — 카드·씨앗은 안 나간다 [TABLE_RECORD_2026_11_10]', () => {
     const { tableReport, tableRecordHtml } = require('../src/tableRecord');
     const store = new RecordStore(tmpDir());
@@ -176,6 +200,7 @@ test('끝나지 않은 게임은 내 판 검증에서도 기록을 주지 않는
         handsOfKey(fp) { return fp === 'me' ? ['tA.1', 'tA.2', 'tB.1'] : []; },
         receipt(id) { const h = this.hands[id]; return h ? { handId: id, tableId: h.tableId, i: 1, hash: 'h' } : null; },
         getHand(id) { return { handId: id, record: { holes: { 0: ['As', 'Kd'], 1: ['2c', '7h'] } } }; },
+        engineKeys() { return []; },
     };
     const isOpen = (tid) => tid === 'tA';
     const [c1, list] = mineResponse(fake, isOpen, 'me');
@@ -184,6 +209,10 @@ test('끝나지 않은 게임은 내 판 검증에서도 기록을 주지 않는
     const [c2, b2] = mineResponse(fake, isOpen, 'me', 'tA.1');
     assert.strictEqual(c2, 409);
     assert.ok(b2.open && !b2.entry && !JSON.stringify(b2).includes('holes'), 'open table: no record, no hole cards');
+    // [MINE_CHECK_0_10_26] 열린 테이블의 끝난 판 — 엔진 검증 통과/실패만, 카드 이름은 어디에도 없다
+    assert.ok(b2.check && typeof b2.check.ok === 'boolean' && Number.isInteger(b2.check.n));
+    for (const c of ['As', 'Kd', '2c', '7h']) assert.ok(!JSON.stringify(b2).includes(c) && !JSON.stringify(list).includes(c), 'no card names: ' + c);
+    assert.ok(list.hands[0].check && !list.hands[2].check, 'open-table hands carry the engine check');
     const [c3, b3] = mineResponse(fake, isOpen, 'me', 'tB.1');
     assert.strictEqual(c3, 200);
     assert.ok(b3.entry && b3.entry.record.holes, 'closed table: full record for the player who sat');

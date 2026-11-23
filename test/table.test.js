@@ -983,3 +983,123 @@ for (const [game, n, hole, maxPlayers] of [['holdem', 4, 2, 9], ['plo4', 4, 4, 9
         for (const r of out.filter((x) => x.kind === 'hand-record')) assert.deepStrictEqual(verifyRecord(r.record, r.sig, engine.call('info').keys.sig).errors, []);
     });
 }
+
+// [RESULT_HOLD_0_10_25] 올인 런아웃 결과 연출 동안 무엇이 _maybeStart 를 불러도 다음 판을 시작하지 않는다(승자 연출이 잘리지 않게)
+test('테이블: 올인 런아웃 뒤 결과 연출이 끝나기 전에는 다음 판이 시작되지 않는다 [RESULT_HOLD_0_10_25]', () => {
+    const env = setup(4);   // 한 명은 폴드 — 판 뒤에도 칠 사람이 2명 남아 다음 판이 열릴 수 있다
+    const { server, clock, players } = env;
+    waitHand(clock, () => server.rooms.get('r1'));
+    const folder = players[3];
+    const room = server.rooms.get('r1');
+    assert.ok(room.hand);
+    const hid = room.hand.handId;
+    for (let guard = 0; guard < 20 && room.hand && room.hand.handId === hid; guard++) {
+        const h = room.hand;
+        if (h.toAct === null) { clock.advance(10); continue; }
+        const p = players.find((x) => x.seat === h.toAct);
+        const t = lastTurn(p);
+        const action = p === folder ? 'FOLD' : t.toCall >= t.allIn ? 'CALL' : 'ALL_IN';
+        const r = server.command(p.token, { type: 'act', q: t.q, action, amount: 0, sig: C.sign(p.sig.privateKey, C.msgAction(t.handId, t.q, action, 0)) });
+        assert.ok(r.ok);
+    }
+    assert.ok(!room.hand || room.hand.handId !== hid, 'hand ended');
+    const ranOut = players[0].events.some((e) => e[0] === 'runout' && e[1].handId === hid);
+    assert.ok(ranOut, 'all-in preflop runs out');
+    const endAt = clock.now();
+    const hold = room.resumeAt - endAt;
+    assert.ok(hold >= 4000 + 7800, 'result pause covers the runout board (' + hold + 'ms)');
+    // 연출 도중 — 좌석·무작위 값 등이 부르는 것과 같다
+    for (let k = 0; k < Math.floor(hold / 1000); k++) { server._maybeStart(room); clock.advance(1000); assert.ok(!room.hand, 'no new hand during the result show (' + (clock.now() - endAt) + 'ms)'); }
+    // 결과를 보여 준 뒤에는 칠 사람이 남아 있으면(혹은 대기실) 예전처럼 이어진다
+    clock.advance(hold + 4000 - (clock.now() - endAt));
+    assert.ok(room.hand, 'next hand starts after the result show');
+});
+
+// [RESULT_HOLD_FIX_0_10_25] 연출 끝 타이머가 1ms 일찍 울려도(Node 실제 타이머) 판이 멈추지 않는다
+test('테이블: 결과 연출 끝 타이머가 1ms 일찍 울려도 다음 판이 시작된다 [RESULT_HOLD_FIX_0_10_25]', () => {
+    const env = setup(2);
+    const { server, clock, players } = env;
+    waitHand(clock, () => server.rooms.get('r1'));
+    const room = server.rooms.get('r1');
+    const hid = room.hand.handId;
+    // 실제 Node 타이머처럼 늘 1ms 일찍 울리게
+    const orig = server.clock.setTimeout;
+    server.clock.setTimeout = (f, ms) => orig(f, ms > 1 ? ms - 1 : ms);
+    // 한 명이 폴드 — 판이 끝나고 결과 연출 시간이 잡힌다
+    const h = room.hand, p = players.find((x) => x.seat === h.toAct), t = lastTurn(p);
+    assert.ok(server.command(p.token, { type: 'act', q: t.q, action: 'FOLD', amount: 0, sig: C.sign(p.sig.privateKey, C.msgAction(t.handId, t.q, 'FOLD', 0)) }).ok);
+    assert.ok(!room.hand && room.resumeAt > clock.now());
+    // 연출 끝 타이머가 1ms 일찍 울려도 — 아무도 다시 부르지 않는데 판이 열려야 한다
+    clock.advance(room.resumeAt - clock.now() + 4000);
+    assert.ok(room.hand && room.hand.handId !== hid, 'next hand started');
+});
+
+// [SEAT_PICK_0_10_25] 좌석표가 정한 자리(회원이 대기 중 고른 자리)가 비어 있으면 그 자리에, 찼으면 첫 빈자리에 앉는다
+test('테이블: 좌석표의 자리로 앉는다 — 찼으면 첫 빈자리 [SEAT_PICK_0_10_25]', () => {
+    const env = setup(0);
+    const { server, consoleKeys, clock } = env;
+    const R = { id: 'r1', name: 'T', sb: 1, bb: 2, maxPlayers: 6, rake: { percent: 5, minPot: 4 }, turnSec: 20, endsAt: 0 };
+    const tk = (i, seat) => signTicket({ v: 1, tid: 'tid_s' + i + '_' + crypto.randomBytes(4).toString('hex'), exp: clock.now() + 60000, room: R,
+        player: { sessionId: 'sess_s' + i + '_' + crypto.randomBytes(4).toString('hex'), odcId: 'us' + i, nickname: 'S' + i }, buyIn: 200, seat, currency: 'USDT' }, consoleKeys.privateKey);
+    assert.strictEqual(server.join(tk(1, 4)).seat, 4);
+    assert.strictEqual(server.join(tk(2, 4)).seat, 0, 'taken seat → first free');
+    assert.strictEqual(server.join(tk(3, 99)).seat, 1, 'bad seat → first free');
+    assert.strictEqual(server.join(tk(4)).seat, 2, 'no seat → first free');
+});
+
+// [SEAT_CHOOSE_0_10_26] 들어와서 빈자리를 고른다 — 고르기 전에는 판·준비에 들지 않고, 고르면 그 자리로 옮겨 준비할 수 있다. 판을 친 뒤에는 못 옮긴다
+test('테이블: 들어와서 자리를 고른 뒤 준비 — 고르기 전에는 판에 들지 않는다 [SEAT_CHOOSE_0_10_26]', () => {
+    const env = setup(0);
+    const { server, consoleKeys, clock } = env;
+    const R = { id: 'r1', name: 'T', sb: 1, bb: 2, maxPlayers: 6, rake: { percent: 5, minPot: 4 }, turnSec: 20, endsAt: 0 };
+    const tk = (i, pick) => signTicket({ v: 1, tid: 'tid_c' + i + '_' + crypto.randomBytes(4).toString('hex'), exp: clock.now() + 60000, room: R,
+        player: { sessionId: 'sess_c' + i + '_' + crypto.randomBytes(4).toString('hex'), odcId: 'uc' + i, nickname: 'C' + i }, buyIn: 200, ...(pick ? { pick: 1 } : {}), currency: 'USDT' }, consoleKeys.privateKey);
+    const a = client(server, tk(1, true)), b = client(server, tk(2, true));
+    const room = server.rooms.get('r1');
+    assert.ok(room.seats[a.seat].choosing && room.seats[b.seat].choosing);
+    clock.advance(6000);
+    assert.ok(!room.hand, 'no hand while both are choosing');
+    assert.throws(() => server.command(a.token, { type: 'ready' }), /choose a seat/);
+    assert.throws(() => server.command(a.token, { type: 'sit', seat: b.seat }), /taken/);
+    const r = server.command(a.token, { type: 'sit', seat: 4 });
+    assert.strictEqual(r.seat, 4); a.seat = 4;
+    assert.ok(!room.seats[0] || room.seats[0] === room.seats[b.seat], 'old seat freed');
+    assert.ok(a.events.some((e) => e[0] === 'seat' && e[1].seat && e[1].seat.seat === 0 && e[1].seat.empty), 'old seat broadcast empty');
+    server.command(b.token, { type: 'sit', seat: b.seat }); b.seat = room.seats.findIndex((x) => x && x.odcId === 'uc2');
+    assert.throws(() => server.command(a.token, { type: 'sit', seat: 5 }), /already chosen/);
+    // [SEAT_REPICK_0_10_26] 대기실에서 자리 바꾸기 — 첫 판 전이면 다시 고른다(준비 풀림)
+    server.command(a.token, { type: 'ready' });
+    assert.ok(server.command(a.token, { type: 'repick' }).ok);
+    assert.ok(room.seats[4].choosing && !room.seats[4].ready);
+    assert.strictEqual(server.command(a.token, { type: 'sit', seat: 5 }).seat, 5); a.seat = 5;
+    for (const p of [a, b]) server.command(p.token, { type: 'ready' });
+    waitHand(clock, () => server.rooms.get('r1'));
+    assert.ok(room.hand && room.hand.seats.includes(5), 'plays from the chosen seat');
+    assert.throws(() => server.command(a.token, { type: 'repick' }), /no longer/);   // 판을 친 뒤에는 못 바꾼다
+    // 고르지 않으면 90초 뒤 지금 자리로
+    const c = client(server, tk(3, true));
+    assert.ok(room.seats[c.seat].choosing);
+    clock.advance(91000);
+    assert.ok(!room.seats[c.seat].choosing, 'auto-confirmed after 90s');
+});
+
+// [MINE_CHECK_0_10_26] 테이블이 열려 있는 동안 끝난 판 — 내 키로 물으면 엔진 검증 통과만(기록·카드는 닫힌 뒤)
+test('테이블: 열린 테이블의 끝난 판은 엔진 검증 결과만 바로 준다 [MINE_CHECK_0_10_26]', () => {
+    const { mineResponse } = require('../src/mine');
+    const env = setup(2);
+    const { server, clock, players, store } = env;
+    waitHand(clock, () => server.rooms.get('r1'));
+    const room = server.rooms.get('r1');
+    const h = room.hand, p = players.find((x) => x.seat === h.toAct), t = lastTurn(p);
+    assert.ok(server.command(p.token, { type: 'act', q: t.q, action: 'FOLD', amount: 0, sig: C.sign(p.sig.privateKey, C.msgAction(t.handId, t.q, 'FOLD', 0)) }).ok);
+    const fp = C.fingerprint(C.publicJwk(players[0].sig.publicKey));
+    const isOpen = (tid) => server.isOpen(tid);
+    const [c1, list] = mineResponse(store, isOpen, fp);
+    assert.strictEqual(c1, 200);
+    const mineHand = list.hands.find((x) => x.handId === h.handId);
+    assert.ok(mineHand && mineHand.open && mineHand.check && mineHand.check.ok, 'listed with a passing engine check');
+    const [c2, b2] = mineResponse(store, isOpen, fp, h.handId);
+    assert.strictEqual(c2, 409);
+    assert.ok(b2.check.ok && !b2.entry, 'check only, no record');
+    assert.ok(!/"[2-9TJQKA][shdc]"/.test(JSON.stringify(b2)) && !/"[2-9TJQKA][shdc]"/.test(JSON.stringify(list)), 'no card in the answers');
+});

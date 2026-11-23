@@ -49,3 +49,9 @@ h2 { margin: 0 0 10px; font-size: 16px; color: var(--gold-hi); }
 .dl { padding: 9px 16px; border-radius: 10px; border: 1px solid var(--gold); background: linear-gradient(180deg, #2a2210, #120e05); color: var(--gold-hi); font: 700 14px var(--sans); cursor: pointer; }
 .foot { margin-top: 24px; text-align: center; }
 @media (max-width: 560px) { .hand { grid-template-columns: 1fr; gap: 2px; } .kv { grid-template-columns: 1fr; } }
+
+/* [MINE_CHECK_0_10_26] 끝난 판(테이블은 아직 열림) — 엔진 검증 딱지 */
+.hand .vtag { padding: 3px 9px; border-radius: 999px; font-weight: 800; font-size: 12px; }
+.hand .vtag.ok { color: #04130d; background: var(--ok); }
+.hand .vtag.bad { color: #1a0505; background: var(--bad); }
+.check.later { border-color: rgba(148, 163, 184, .35); } .check.later::before { content: 'i'; background: #94a3b8; color: #0b1220; font-style: italic; }

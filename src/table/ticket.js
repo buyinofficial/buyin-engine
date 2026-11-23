@@ -100,7 +100,11 @@ function verifyTicket(ticket, consoleKey, now = Date.now()) {
         for (const k of ['KRW', 'USDT', 'VND']) { const v = Number(d.rates[k]); if (v > 0 && v < 1e7) rates[k] = v; }
         if (Object.keys(rates).length) display.rates = rates;
     }
-    return { tid: String(p.tid), exp: Number(p.exp), room, player, buyIn, currency: String(p.currency || '').slice(0, 8), display, ...(watch ? { watch: true } : {}) };
+    // [SEAT_PICK_0_10_25] 콘솔이 정한 자리(회원이 대기 중에 고른 자리) — 비어 있으면 그 자리에 앉힌다. 자리 번호일 뿐 카드·칩·순서 규칙과 무관
+    const seat = !watch && Number.isInteger(p.seat) && p.seat >= 0 && p.seat < room.maxPlayers ? p.seat : -1;
+    // [SEAT_CHOOSE_0_10_26] 들어와서 테이블의 빈자리를 직접 고른다(콘솔이 정한 좌석표만) — 고르기 전에는 판·준비에 들지 않는다
+    const pick = !watch && (p.pick === 1 || p.pick === true);
+    return { tid: String(p.tid), exp: Number(p.exp), room, player, buyIn, seat, pick, currency: String(p.currency || '').slice(0, 8), display, ...(watch ? { watch: true } : {}) };
 }
 
 /** 시험·콘솔 구현 참고용 — 콘솔 개인키로 좌석표를 만든다 */
