@@ -253,8 +253,9 @@ S.zoom = 1;
 /** [OM_SORT_0_10_23] 오마하 내 카드 정렬 — off(받은 순서) · rank(높은 숫자부터) · suit(같은 무늬끼리, 많은 무늬부터). 이 브라우저에 기억 */
 S.omSort = 'rank';
 try { const v = localStorage.getItem('buyin.omSort'); if (v === 'off' || v === 'rank' || v === 'suit') S.omSort = v; } catch (_e) { /* */ }
-/** [SETTINGS2_0_10_23] 설정 스위치 — 목소리·내 차례 알림음은 기본 켬, 4색 카드·진동은 기본 끔 */
-S.voiceOn = true; S.turnAlert = true; S.fourColor = false; S.vibrate = false;
+/** [SETTINGS2_0_10_23] 설정 스위치 — 목소리·내 차례 알림음은 기본 켬, 4색 카드는 기본 끔, 진동은 기본 켬 */
+S.voiceOn = true; S.turnAlert = true; S.fourColor = false; S.vibrate = true;   // [M_READ_0_10_27] 진동 기본 켜짐(소리를 끈 회원도 내 차례를 안다). 끈 적 있으면 그 설정 그대로
+
 try { const v = localStorage.getItem('buyin.viewCur'); if (v === 'KRW' || v === 'USDT' || v === 'VND') S.viewCur = v; } catch (_e) { /* */ }   // [VIEW_CUR_0_10_23]
 for (const k of ['voiceOn', 'turnAlert', 'fourColor', 'vibrate']) { try { const v = localStorage.getItem('buyin.' + k); if (v === '1' || v === '0') S[k] = v === '1'; } catch (_e) { /* */ } }
 try { if (S.fourColor) document.body.classList.add('four-color'); } catch (_e) { /* */ }
@@ -637,7 +638,7 @@ function listen() {
                 S.preAct = '';
                 const auto = d.toCall > 0 ? 'FOLD' : 'CHECK';
                 setTimeout(() => act(auto), 150);
-            }
+            } else myTurnCue();
         }
         render();
     });
@@ -683,6 +684,13 @@ function listen() {
     });
     on('tip-cancel', (d) => { if (d.from === mySeat()) toast(t('tipCancel'), 3200, 'warn'); });
     on('chat', onChat);
+    // [RESEAT_0_10_27] 게임 시간이 끝났다 — 지난 판 화면을 걷고 앉기 전처럼 자리를 고른다(자리 번호가 바뀌므로 지난 판 표시를 남기지 않는다)
+    on('reseat', () => {
+        flushSeats();
+        S.hand = null; S.winners = null; S.reveal = {}; S.hole = null; S.rabbit = null; S.sd = null; S.keepHand = ''; S.canShow = ''; S.bubbles = {};
+        S.gateShowAt = 0; render();
+    });
+    on('moved', (d) => { if (S.me && Number.isInteger(d.seat)) S.me.seat = d.seat; });
     on('watch', (d) => { S.watchInfo = d || null; renderWatch(); });   // [WATCH_0_10_20] 지금 관전 중인 방장
     on('timebank', (d) => {
         if (d.seat === mySeat() && S.me) { S.me.timeBank = d.left; if (S.turn) S.tbUsed = S.turn.handId + ':' + S.turn.q; }
@@ -694,7 +702,7 @@ function listen() {
     on('runout', onRunout);
     on('result', onResult);
     on('aborted', () => { S.hand = null; S.turn = null; S.sd = null; flushSeats(); render(); });
-    on('settled', (d) => { sessionStorage.removeItem('buyin.token'); forgetSeat(S.seatRoom, { cash: d.cashOut }); es.close(); gate(`${t(d.reason === 'away' ? 'awayLeft' : 'settled')} ${dmCur(d.cashOut)}`, true); });   // [AWAY_0_10_16] 자리 비움 10분   // [RESUME_0_10_11] 다시 열려도 「정산 끝」
+    on('settled', (d) => { sessionStorage.removeItem('buyin.token'); forgetSeat(S.seatRoom, { cash: d.cashOut }); es.close(); gate(`${t(d.reason === 'away' ? 'awayLeft' : d.reason === 'kicked' ? 'kickedOut' : 'settled')} ${dmCur(d.cashOut)}`, true); });   // [AWAY_0_10_16] 자리 비움 10분   // [RESUME_0_10_11] 다시 열려도 「정산 끝」
     on('error', (d) => { if (d && d.code === 'auth') { sessionStorage.removeItem('buyin.token'); es.close(); gate(t('noTicket')); } else if (d && d.error) toast(d.error); });
     es.onopen = () => { S.retry = 0; S.offline = 0; paintNet(); };   // [NET_LEAVE_0_10_9] 다시 붙으면 연결 표시를 걷는다
 }
@@ -709,6 +717,9 @@ async function onSnapshot(d) {
     S.turn = d.turn; S.reveal = (d.hand && d.hand.reveal) || {};
     S.watch = !!d.me.watch;   // [WATCH_0_10_20]
     S.watchInfo = d.watch || null;
+    S.guest = !!d.me.guest;   // [GUEST_WATCH_0_10_27] 방 코드 관전 회원 — 보기만(방장 기능·채팅 입력 없음)
+    document.body.classList.toggle('guest', S.guest);
+    if (S.guest) forgetSeat(S.seatRoom);   // 자리가 아니다 — 다시 열 때 자리로 되돌아가려 하지 않게
     document.body.classList.toggle('watching', S.watch);
     S.darkNext = !!d.me.darkNext;
     if (S.hand && (S.hand.dark || []).includes(d.me.seat)) S.darkHand = S.hand.handId;
@@ -722,8 +733,11 @@ async function onSnapshot(d) {
         if (!d.me.keys || !S.keys || !S.keys.sigJwk) await registerKeys();
         if (d.hole && d.hole.envelope) await openHole(d.hole);
         await sendEntropy(d.hand ? d.hand.nextSeedCommit : d.seedCommit);
-    } else openHostPop(false);   // 바이인 신청 목록을 미리 띄워 둔다(숨긴 채) — 새 신청 수를 배지로
+    } else if (!S.guest) openHostPop(false);   // 바이인 신청 목록을 미리 띄워 둔다(숨긴 채) — 새 신청 수를 배지로
     S.live = true;   // 이제부터 오는 이벤트는 실시간 — 연출을 한다
+    // [VMARK_RESYNC] 이 브라우저에 남은 검증 예약을 로비에 한 번 더 보낸다 — 누른 순간 한 번만 보내면 로비 틀이 다 뜨기 전에
+    // 테이블을 나가거나(휴대폰) 그때 로비가 옛 판이면 로비 쪽에 남지 않았다. 로비는 받은 것을 합치기만 한다(같은 값이면 그대로)
+    if (!S.watch && Object.keys(vmarks()).length) setTimeout(() => toLobby({ src: 'buyin-tee', type: 'vmarks', marks: vmarks() }), 1500);
     // [PRELOAD_0_10_10] 입장하자마자 효과음을 받아 해독해 둔다(소리 장치는 첫 터치에 켜진다 — 종전엔 첫 터치에야 받기 시작해 첫 소리들이 늦거나 빠졌다)
     setTimeout(() => { if (audio()) preloadSfx(); }, 300);
     setTimeout(preloadImages, 1000);
@@ -858,6 +872,8 @@ async function checkPublic(handId, list) {
 
 function onResult(d) {
     if (!S.hand) return;
+    // [VMARK] 내가 앉았던 판이 끝나면 「전판 검증 체크」 대상이 된다(관전은 제외)
+    if (!S.watch && d.handId && S.hand.seats && S.hand.seats.some((x) => x.seat === mySeat())) { S.prevHand = { handId: String(d.handId) }; renderVmark(); }
     checkPublic(d.handId, [...Object.values(d.holes || {}).flat(), ...(d.board || []), ...(d.peekBoard || [])]);
     // [SHOWDOWN_SEQ_0_10_4] 아직 안 연 홀카드 — 레이즈홀덤처럼 한 자리씩 연다(패자 먼저, 승자 마지막). 올인 런아웃이면 onRunout 이 이미 순서를 정했다
     const fresh = Object.keys(d.holes || {}).map(Number).filter((seat) => !S.reveal[seat] && seat !== mySeat());
@@ -1240,6 +1256,62 @@ function renderNow() {
 }
 
 /**
+ * [VMARK] 전판 검증 체크 — 방금 끝난 내 판을 「검증 예약」해 둔다. 판 기록은 테이블이 닫힌 뒤에 열리므로(같은 상대와 치는 동안 폴드 카드 보호)
+ * 지금은 표시만 남기고, 게임이 끝나면 로비 「내 게임 기록」에서 그 판만 골라 검증 화면(verify.html#hand=)으로 연다.
+ *   ① 이 TEE 주소의 저장소 buyin.vmarks — verify.html 의 「검증 예약」 딱지
+ *   ② 로비 저장소 — 숨은 로비 틀(/verify-mark/, CSP frame-src 로 이미 허용된 로비 주소)에 postMessage. 보내는 것은 판 번호(공개 영수증에 있는 값)뿐
+ */
+const VMARK_KEY = 'buyin.vmarks';
+function vmarks() { try { const m = JSON.parse(localStorage.getItem(VMARK_KEY) || '{}'); return m && typeof m === 'object' ? m : {}; } catch (_e) { return {}; } }
+function renderVmark() {
+    const b = $('#btn-vmark'); if (!b) return;
+    const h = S.prevHand;
+    b.hidden = !h || !!S.watch;
+    if (b.hidden) return;
+    const done = !!vmarks()[h.handId];
+    b.classList.toggle('done', done);
+    $('span', b).textContent = done ? t('vmarked') : t('vmark');
+}
+let vmBridge = null, vmQueue = [];
+function toLobby(msg) {
+    const origin = new URL(LOBBY_URL).origin;
+    if (!vmBridge) {
+        vmBridge = el('iframe', 'vm-bridge'); vmBridge.hidden = true; vmBridge.setAttribute('aria-hidden', 'true'); vmBridge.tabIndex = -1;
+        vmBridge.src = `${LOBBY_URL}/verify-mark/`;
+        document.body.appendChild(vmBridge);
+    }
+    if (vmBridge.ready) vmBridge.contentWindow.postMessage(msg, origin); else vmQueue.push(msg);
+}
+/** 다리 페이지가 「받을 준비 됨」을 알리면 쌓아 둔 것을 보낸다(틀의 load 는 로비 스크립트가 귀를 열기 전에 온다) */
+function vmBridgeReady(src) {
+    if (!vmBridge || src !== vmBridge.contentWindow) return;
+    vmBridge.ready = true;
+    const origin = new URL(LOBBY_URL).origin;
+    for (const m of vmQueue.splice(0)) vmBridge.contentWindow.postMessage(m, origin);
+}
+function markPrevHand() {
+    const h = S.prevHand; if (!h) return;
+    const m = vmarks();
+    if (!m[h.handId]) {
+        m[h.handId] = Date.now();
+        const keep = Object.entries(m).sort((x, y) => y[1] - x[1]).slice(0, 300);   // 최근 300판만
+        try { localStorage.setItem(VMARK_KEY, JSON.stringify(Object.fromEntries(keep))); } catch (_e) { /* 사생활 보호 모드 */ }
+        play('minichip');
+        toast(t('vmarkToast').replace('{n}', String(h.handId).split('.').pop()), 3600);
+    }
+    toLobby({ src: 'buyin-tee', type: 'vmarks', marks: vmarks() });   // 전체를 보낸다(앞서 못 보낸 것도 같이)
+    renderVmark();
+}
+
+/** [WAIT_NEXT] 판이 진행 중인데 이 자리는 이번 판 카드가 없다 — 다음 판부터 들어오는 자리(자리 비움·올인 정리 중은 각자 표시가 따로 있다) */
+function waitsNextHand(s, seat) {
+    const h = S.hand;
+    if (!s || !h || !h.seats || S.winners) return false;
+    if (s.sitout || s.leaving || s.held || s.choosing || (s.busted && s.rebuy !== 'done') || !(s.stack > 0)) return false;
+    return !h.seats.some((x) => x.seat === seat);
+}
+
+/**
  * [REBUY_0_10_1] 칩을 다 잃은 내 자리(정산 0, 자리는 잡아 둠) — 「바이인 신청」을 누르면 말풍선을 띄우고
  * 로비의 바이인 신청(방장 승인 → 좌석표)으로 간다. 좌석표로 돌아오면 TEE 가 이 자리에 다시 앉힌다.
  * 금액은 방의 1바이인 금액(좌석표의 room.unit, 화면 표시용).
@@ -1302,6 +1374,7 @@ function renderWatch() {
     const bar = $('#watch-bar'), pill = $('#watch-pill');
     if (bar) {
         bar.hidden = !S.watch;
+        if (S.watch) $('.wb-t', bar).textContent = t(S.guest ? 'watchGuest' : 'watchTitle');
         if (S.watch) { const n = S.hostPending || 0; const b = $('.wb-n', bar); b.textContent = n > 99 ? '99+' : String(n); b.hidden = !(n > 0); bar.classList.toggle('has', n > 0); }
     }
     if (pill) {
@@ -1576,16 +1649,22 @@ function renderSeats() {
     $('#table').classList.toggle('choosing', ch);
     let sp = $('#sit-prompt');
     if (ch && !sp) { sp = el('div', '', ''); sp.id = 'sit-prompt'; sp.dataset.testid = 'sit-prompt'; $('#table').appendChild(sp); }
-    if (sp) { sp.hidden = !ch; if (ch) sp.innerHTML = `<i class="spp-dot"></i>${esc(t('sitPrompt'))}`; }
+    if (sp) { sp.hidden = !ch; if (ch) sp.innerHTML = `<i class="spp-dot"></i>${esc(t(S.seats[mySeat()].reseat ? 'sitAgain' : 'sitPrompt'))}`; }
     for (let seat = 0; seat < maxSeats(); seat++) {
         const s = S.seats[seat];
-        if (ch && (!s || seat === mySeat())) { box.appendChild(pickSeatEl(seat)); continue; }
-        if (!s) continue;
+        const open = s && s.choosing && s.reseat;   // [RESEAT_0_10_27] 게임 시간이 끝나 다시 고르는 중인 사람의 예전 자리 — 아직 빈자리
+        if (ch && (!s || open || seat === mySeat())) { box.appendChild(pickSeatEl(seat)); continue; }
+        if (!s || open) continue;
         const a = anchor(seat);
         const hero = seat === mySeat();
         const inHand = h && h.seats.find((x) => x.seat === seat);
         const node = el('div', 'seat' + (hero ? ' hero' : '') + (inHand && inHand.folded ? ' folded' : '') + (s.sitout ? ' sitout' : '') + (s.busted && s.rebuy !== 'done' ? ' busted' : '')
             + (S.winners && S.winners.seats[seat] ? ' winner-glow' : ''));
+        // [M_READ_0_10_27] 모바일 — 이번 판에 살아 있는 자리 / 폴드(0.4초에 걸쳐 어두워짐, 판당 한 번)
+        if (S.layout === 'mobile' && inHand) {
+            if (!inHand.folded) node.classList.add('live');
+            else node.style.setProperty('--fd', animDelay(`fold:${h.handId}:${seat}`));
+        }
         node.dataset.seat = seat;
         node.style.left = a.x + 'px';
         node.style.top = a.y + 'px';
@@ -1645,6 +1724,13 @@ function avatarEl(s, size, seat, ring = true) {
         const ov = el('div', 'away-ov', '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>' + esc(t('awayBubble')) + '</span>');
         ov.style.fontSize = Math.max(9, Math.round(size * 0.15)) + 'px';
         ov.dataset.testid = 'away-ov-' + seat;
+        av.appendChild(ov);
+    } else if (waitsNextHand(s, seat)) {
+        // [WAIT_NEXT] 판이 도는데 이번 판 카드가 없는 자리(자리 비움에서 돌아옴·재바이인 직후 등) — 참가 중처럼 보이지 않게 「다음 판」 덮개
+        av.classList.add('is-away', 'is-wait');
+        const ov = el('div', 'away-ov wait-ov', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10M7 21h10M8 3c0 5 8 5 8 9s-8 4-8 9M16 3c0 5-8 5-8 9s8 4 8 9"/></svg><span>' + esc(t('waitNext')) + '</span>');
+        ov.style.fontSize = Math.max(9, Math.round(size * 0.15)) + 'px';
+        ov.dataset.testid = 'wait-ov-' + seat;
         av.appendChild(ov);
     }
     // 팁 받을 사람 고르기 — 선물을 고른 뒤 상대 아바타가 깜빡이고, 누르면 보낸다
@@ -1756,6 +1842,12 @@ function seatFx(parent, seat, av, size, small = false) {
  * [TURN_RING_0_10_9] 차례 링 — 원본 PillBorderTimer: 바탕 링(흰 14%) 위에 금색 그라데이션, 남은 시간 44% 아래 주황·22% 아래 빨강 + 깜빡임·빛 번짐,
  * 둥근 끝. 값은 매 프레임(ringFrame)으로 부드럽게 줄인다(종전: 250ms 마다 뚝뚝, 단색).
  */
+/** [TURN_PLAIN_0_10_27] 모바일 내 차례 — 콜·레이즈·프리셋이 부드럽게 나타난다 */
+function myTurnCue() {
+    if (S.layout !== 'mobile') return;
+    const box = $('#actions');
+    box.classList.remove('my-turn'); void box.offsetWidth; box.classList.add('my-turn');
+}
 let ringSeq = 0;
 const RING_STOPS = { gold: ['#FFE9A8', '#C8942A'], warn: ['#FFC069', '#E0821F'], urgent: ['#FF7A66', '#C11324'] };
 function turnRing(size) {
@@ -1778,6 +1870,11 @@ function paintRing(svg, frac) {
     if (svg.dataset.st !== st) { svg.dataset.st = st; stops[0].setAttribute('stop-color', RING_STOPS[st][0]); stops[1].setAttribute('stop-color', RING_STOPS[st][1]); }
 }
 function ringFrame() {
+    // [M_READ_0_10_27] 내 시간이 22% 아래(링이 빨개질 때) — 모바일 화면 가장자리에 옅은 붉은빛
+    const hot = !!(S.layout === 'mobile' && S.turn && S.hand && S.turn.seat === mySeat() && ringFrac() < 0.22 && !document.body.classList.contains('watching'));
+    let edge = $('#turn-edge');
+    if (hot && !edge) { edge = el('div'); edge.id = 'turn-edge'; $('#table').appendChild(edge); }
+    if (edge && edge.classList.contains('on') !== hot) edge.classList.toggle('on', hot);
     if (S.turn) {
         const f = ringFrac();
         document.querySelectorAll('svg.ring').forEach((r) => paintRing(r, f));
@@ -1788,11 +1885,29 @@ function ringFrame() {
 }
 requestAnimationFrame(ringFrame);
 
+/** [M_READ_0_10_27] 굵은 글씨의 대략 폭(em) — 한글 1, 숫자 .7, 쉼표·점 .38 */
+function textEm(str) {
+    let w = 0;
+    for (const c of String(str)) w += c > '\u00ff' ? 1 : c === ',' || c === '.' || c === ' ' ? 0.38 : 0.7;
+    return Math.max(1, w);
+}
+/** [M_READ_0_10_27] 모바일 액션 버튼 — 금액은 통화 글자 없이(폭이 좁다), 글자가 버튼을 넘치면 그만큼만 줄인다 */
+const actAmt = (n) => (S.layout === 'mobile' ? compact(n) : dmCur(n));
+function fitActions() {
+    const mob = S.layout === 'mobile';
+    document.querySelectorAll('.act-main .t, .act-main .s').forEach((x) => {
+        const base = x.classList.contains('t') ? 13 : 12;
+        x.style.fontSize = mob ? Math.max(7, Math.min(base, 59 / textEm(x.textContent))).toFixed(1) + 'px' : '';
+    });
+}
 function nameboxEl(s, w, hgt, nmPx, stPx) {
     const nb = el('div', 'namebox');
     nb.style.width = w + 'px'; nb.style.height = hgt + 'px';
-    nb.innerHTML = `<i class="flag"></i><i class="fade"></i><div class="info"><span class="nm" style="font-size:${nmPx}px;line-height:${Math.round(nmPx * 1.33)}px">${esc(s.nickname)}</span>`
-        + `<span class="st" style="font-size:${stPx}px;line-height:${Math.round(stPx * 1.4)}px">${dm(s.stack)}</span></div>`;
+    // [M_READ_0_10_27] 모바일 — 금액을 크게(닉네임은 작게), 줄 간격은 촘촘히. 긴 금액은 상자 폭에 맞게만 줄인다
+    const mob = S.layout === 'mobile';
+    if (mob) stPx = Math.max(8, Math.min(stPx, (w - 6) / textEm(dm(s.stack))));
+    nb.innerHTML = `<i class="flag"></i><i class="fade"></i><div class="info"><span class="nm" style="font-size:${nmPx}px;line-height:${mob ? (nmPx * 1.2).toFixed(1) : Math.round(nmPx * 1.33)}px">${esc(s.nickname)}</span>`
+        + `<span class="st" style="font-size:${stPx}px;line-height:${mob ? (stPx * 1.12).toFixed(1) : Math.round(stPx * 1.4)}px">${dm(s.stack)}</span></div>`;
     // [REBUY_2026_11_11] 칩 0 = 「올인」 딱지
     // [BUYIN_UNITS_0_10_4] 그 밖에는 이 자리 총 바이인 개수(「총 3바이인」) — 재바이인 직후 한 번 초록으로 반짝
     const fresh = rbDoneFresh(s);
@@ -1922,7 +2037,7 @@ function otherSeatMobile(node, s, a, inHand) {
     const av = avatarEl(s, 62, seat); av.style.left = '-31px'; av.style.top = '-31px'; node.appendChild(av);
     seatFx(node, seat, av, 62, true);
     avatarCards(node, seat, inHand, a);
-    const nb = nameboxEl(s, 74, 25, 8, 9); nb.style.left = '-37px'; nb.style.top = '25px'; node.appendChild(nb);
+    const nb = nameboxEl(s, 74, 27, 7.5, 13); nb.style.left = '-37px'; nb.style.top = '25px'; node.appendChild(nb);
     const tag = blindTag(seat);
     if (tag) { const b = el('span', 'blind sm', tag); b.style.left = '-33px'; b.style.top = '27px'; node.appendChild(b); }
     if (S.hand && S.hand.dealer === seat) { const d = dealerEl(); d.classList.add('sm'); d.style.left = '-44px'; d.style.top = '17px'; node.appendChild(d); }
@@ -1957,7 +2072,7 @@ function heroSeatMobile(node, s, a, inHand) {
     const av = avatarEl(s, AV_M, seat, true); av.style.left = (cx - AV_M / 2) + 'px'; av.style.top = (cy - AV_M / 2) + 'px'; node.appendChild(av);
     seatFx(node, seat, av, AV_M, true);
     // [HERO_BOX_SLIM_0_10_25] 이름 상자 42 → 34(20% 줄임), 줄인 만큼 아래 감정·팁 줄을 28.6 → 36.6 으로(아래 끝 821.6 그대로)
-    const nb = nameboxEl(s, 92, 34, 12.5, 13.5); nb.style.left = L + 'px'; nb.style.top = '747px'; node.appendChild(nb);
+    const nb = nameboxEl(s, 92, 34, 10, 16.5); nb.style.left = L + 'px'; nb.style.top = '747px'; node.appendChild(nb);
     heroButtons(node, L, 785, true);   // 프로필 아래 줄 — 감정·팁·다크(예전 화면)
     const tag = blindTag(seat);
     if (tag) { const b = el('span', 'blind sm', tag); b.style.left = (L + 4) + 'px'; b.style.top = '751px'; node.appendChild(b); }
@@ -2100,6 +2215,17 @@ function heroButtons(parent, x, y, row) {
     parent.appendChild(box);
 }
 
+/** [RB_BUB_POS_0_10_27] 화면 끝 자리 풍선이 잘릴 때만 안쪽으로 — 꼬리는 프로필 가운데 그대로. 자리 묶음이 화면에 붙은 뒤 실제 폭으로 잰다 */
+function fitBubble(n, seat, cx) {
+    requestAnimationFrame(() => {
+        if (!n.isConnected) return;
+        const par = n.offsetParent || n.parentElement, st = $('#stage').getBoundingClientRect(), z = st.width / 390 || 1;
+        const k = (anchor(seat).scale || 1) * z, ox = par.getBoundingClientRect().left, half = n.offsetWidth / 2;   // 자리 묶음 기준점의 화면 위치
+        const bx = Math.min(Math.max(cx, (st.left + 4 * z - ox) / k + half), (st.left + 386 * z - ox) / k - half);
+        if (Math.abs(bx - cx) < 0.5) return;
+        n.style.left = bx + 'px'; n.style.setProperty('--tail', (cx - bx).toFixed(1) + 'px');
+    });
+}
 function bubbleFor(parent, seat, cx, top, size = '') {
     // 레이즈 금액을 고르는 중 — 말풍선 자리에 「Raising…」
     if (S.raising && S.raising.seat === seat && S.turn && S.turn.seat === seat) {
@@ -2123,8 +2249,15 @@ function bubbleFor(parent, seat, cx, top, size = '') {
         const n = el('div', 'rebuy-bubble ' + rb + (size ? ' ' + size : ''), esc(rb === 'ask' ? t('rbAsk') : st.biNew > 0 ? tn('rbDoneN', st.biNew) : t('rbDoneBubble')));
         n.dataset.testid = 'rebuy-bubble-' + seat;
         if (rb === 'done') n.style.animationDelay = rbDoneDelay(st);
-        n.style.left = cx + 'px'; n.style.top = top + 'px';
+        // [RB_BUB_POS_0_10_27] 이름 상자 바로 위(모바일 — top 은 이름 상자 2px 위, 꼬리 높이만큼 올려 아래 끝을 맞춘다) · PC 는 프로필 원 바로 위.
+        //   종전 모바일은 위 끝을 맞춰 이름 상자를 덮었고, 낮은 PC 화면의 내 자리는 왼쪽 옆에 떴다
+        let bx = cx, by = top;
+        if (S.layout === 'mobile') {
+            n.classList.add('up');
+        } else if (size === 'side') { n.classList.remove('side'); bx = cx + 150; by = -108.5; /* heroSeat 의 cx · cy − 71.5 − 36 */ n.style.setProperty('--tail', '0px'); }
+        n.style.left = bx + 'px'; n.style.top = by + 'px';
         parent.appendChild(n);
+        if (S.layout === 'mobile' && seat !== mySeat()) fitBubble(n, seat, cx);
         return;
     }
     if (!b) return;
@@ -2159,7 +2292,7 @@ function resultFor(parent, seat, cx, top, ax, ay, size = '') {
     // [SHOWDOWN_SEQ_0_10_4] 보통 쇼다운은 카드를 연 자리부터 족보 글자 — 승자·금액은 다 연 뒤에
     if (!S.winners) {
         const rk = S.sd && S.sd.ranks && S.hand && S.sd.handId === S.hand.handId && seat !== mySeat() && sdShown(seat) ? S.sd.ranks[seat] : '';
-        if (rk) { const n = el('div', 'seat-note sd-rank' + (size ? ' ' + size : ''), esc(localHand(rk, getLang())));   /* [HAND_I18N_0_10_12] */ n.style.left = cx + 'px'; n.style.top = top + 'px'; parent.appendChild(n); }
+        if (rk) { const n = el('div', 'seat-note sd-rank' + (size ? ' ' + size : ''), esc(localHand(rk, getLang())));   /* [HAND_I18N_0_10_12] */ n.style.animationDelay = animDelay(`sdr:${S.hand.handId}:${seat}`); /* [WIN_ONCE_0_10_27] */ n.style.left = cx + 'px'; n.style.top = top + 'px'; parent.appendChild(n); }
         return;
     }
     const won = S.winners.seats[seat];
@@ -2175,6 +2308,7 @@ function resultFor(parent, seat, cx, top, ax, ay, size = '') {
         // [FOLDWIN_SMALL_0_10_25] 모바일 폴드승 WINNER 도 쇼다운 승자 연출처럼 — 족보 글자 없이, 영웅 20% · 상대 36% 작게(.mw / .mo)
         const mob = S.layout === 'mobile';
         const w = el('div', 'winner-tag' + (size ? ' ' + size : '') + (mob ? (seat === mySeat() ? ' mw' : ' mo') : ''), (hand && !mob ? `<small>${esc(seat === mySeat() || getLang() === 'en' ? bigHandName(hand) : localHand(hand, getLang()))}</small>` : '') + '<b>' + 'WINNER'.split('').map((c, i) => `<span style="--i:${i}">${c}</span>`).join('') + '</b>');
+        if (S.hand) w.style.setProperty('--wd', animDelay(`win:${S.hand.handId}:${seat}`));   // [WIN_ONCE_0_10_27] 판당 한 번 — 카드 보여 주기·채팅·래빗 등으로 다시 그려도 처음부터 다시 돌지 않게
         w.style.left = ax + 'px'; w.style.top = (ay + 18) + 'px';
         parent.appendChild(w);
     }
@@ -2195,6 +2329,7 @@ function renderActions() {
     $('.room-label').classList.toggle('hide', S.layout === 'mobile');
     $('.a-fold').disabled = false; $('.a-call').disabled = false;   // [RAISE_ORIG_0_10_9] 게이지 잠금은 내 차례에서만 다시 건다
     if (!tr || tr.seat !== mySeat() || !S.hand) {
+        box.classList.remove('my-turn');
         S.mGauge = false; $('.mgauge').hidden = true; $('.presets').style.visibility = '';
         // 예약 액션 — 판에 들어 있고 아직 폴드·올인 전이면 폴드 자리가 「체크/폴드」 예약 버튼(예전 화면)
         if (S.hand && meP && !meP.folded && !meP.allIn && !S.winners) {
@@ -2208,6 +2343,7 @@ function renderActions() {
             $('.a-call .t').textContent = t('call'); $('.a-call .s').textContent = '';
             $('.a-raise .t').textContent = t('raise'); $('.a-raise .s').textContent = '';
             $('.room-label').classList.add('hide');
+            fitActions();
         } else { box.hidden = true; box.classList.remove('pre'); }
         return;
     }
@@ -2221,7 +2357,7 @@ function renderActions() {
     // [OMAHA_0_10_23] 팟 리밋 — 최대 베팅이 팟 한도이고 칩이 더 많으면 그 끝은 「올인」이 아니라 「팟」(엔진이 ALL_IN 을 한도까지 레이즈로 바꾼다)
     const capped = !!tr.potLimit && (Number(tr.allIn) || 0) > stackAll;
     S.rzCapped = capped;
-    if (tr.toCall > 0) { call.querySelector('.t').textContent = tr.toCall >= me.stack ? t('allin') : t('call'); call.querySelector('.s').textContent = dmCur(tr.toCall); call.dataset.act = tr.toCall >= me.stack ? 'ALL_IN' : 'CALL'; }
+    if (tr.toCall > 0) { call.querySelector('.t').textContent = tr.toCall >= me.stack ? t('allin') : t('call'); call.querySelector('.s').textContent = actAmt(tr.toCall); call.dataset.act = tr.toCall >= me.stack ? 'ALL_IN' : 'CALL'; }
     else { call.querySelector('.t').textContent = t('check'); call.querySelector('.s').textContent = ''; call.dataset.act = 'CHECK'; }
     // [MINRAISE_TO_0_10_23] 엔진 minRaise 는 「레이즈 후 합계」(HandCore.calculateMinRaise = 현재 베팅 + 직전 레이즈 폭)다.
     //   종전엔 현재 베팅을 한 번 더 더해 최소 레이즈가 BB 2,000 앞에서 6,000(3BB)으로 보였다(엔진은 4,000 을 받는다). 팟 리밋에서는 최소가 최대와 같아졌다
@@ -2334,7 +2470,8 @@ function paintRaise() {
     $('.gauge-handle').style.left = left + 'px';
     const allin = v >= max;
     raise.querySelector('.t').textContent = allin ? (S.rzCapped ? (isOmaha() ? t('potFull') : t('potMax')) : t('allin')) : (tr.currentBet > 0 && !(S.layout === 'mobile' && S.mGauge) ? t('raise') : t('bet'));
-    raise.querySelector('.s').textContent = dmCur(v);
+    raise.querySelector('.s').textContent = actAmt(v);
+    fitActions();
     const gb = $('.gauge-bubble'); gb.hidden = false; gb.querySelector('b').textContent = compact(v); gb.querySelector('.cur').textContent = curLabel(); gb.style.left = (left + 16) + 'px';
     // [PLO_SFX_0_10_23] 팟 한도 끝(칩이 더 남음)은 올인이 아니다 — 레이즈/베팅으로 보내 올인 소리·말풍선이 나지 않게(종전엔 ALL_IN 을 보내 엔진이 레이즈로 바꿨지만 내 화면은 올인 소리)
     raise.dataset.act = allin && !S.rzCapped ? 'ALL_IN' : (tr.currentBet > 0 ? 'RAISE' : 'BET');
@@ -2491,6 +2628,7 @@ function wireButtons() {
         if (e.origin !== new URL(LOBBY_URL).origin) return;
         const d = e.data || {};
         if (d.src !== 'buyin-lobby') return;
+        if (d.type === 'vmark-ready') { vmBridgeReady(e.source); return; }   // [VMARK]
         if (d.type === 'close') closeRebuyPop();
         else if (d.type === 'host-pending') {   // [WATCH_0_10_20] 대기 중인 바이인 신청 수(방장 관전)
             const n = Math.max(0, Number(d.n) || 0);
@@ -2680,6 +2818,8 @@ function wireButtons() {
     // 소리는 처음 손댈 때 켜진다(브라우저 규칙). 앱에 돌아온 뒤에도 첫 터치에서 다시 살린다
     document.addEventListener('pointerdown', () => { if (audio()) preloadSfx(); }, { passive: true });
     $('#btn-verify').onclick = () => window.open('verify.html', '_blank', 'noopener');
+    $('#btn-verify').title = t('verifyLive');
+    $('#btn-vmark').onclick = () => markPrevHand();   // [VMARK] 전판 검증 체크
     // 들어온 화면(로비)으로 — 이 화면은 새 주소를 알 필요 없이 브라우저 기록으로 돌아간다
     $('.gate-back').onclick = () => goLobby();
     $('.verify-badge button').onclick = () => showProof();

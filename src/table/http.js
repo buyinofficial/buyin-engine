@@ -5,6 +5,7 @@
  *   GET  /table/<파일>            화면 파일(js·css·그림·글꼴)
  *   POST /table/join              { ticket, auth?: { sig, proof } } → { token, seat, tableId, seedCommit }
  *   POST /table/resume            { tid, ts, auth: { sig, proof } } → 같은 키로 앉은 자리의 { token, seat, tableId, seedCommit } [RESUME_0_10_11]
+ *   POST /table/kick              { order } — 콘솔이 서명한 강퇴. 치던 판이 끝난 뒤 정산·퇴장 [KICK_0_10_27]
  *   GET  /table/events            이벤트 흐름(SSE, Authorization: Bearer <좌석 토큰>) — 접속하자마자 snapshot, 이후 판 진행
  *   POST /table/cmd               { token, type, ... } — 키 등록·무작위 값·액션·자리 비움·일어나기
  *   GET  /table/ws  (Upgrade)     [WS_0_10_10] 웹소켓 — 위 두 길(이벤트·명령)을 연결 하나로. 화면은 이것을 먼저 쓰고,
@@ -42,6 +43,7 @@ const MAX_BODY = 64 * 1024;
 const { RateLimiter } = require('../limits');
 // 요청 폭주 막기 — 입장은 전체, 명령은 좌석 토큰마다
 const JOIN_LIMIT = new RateLimiter(30, 60);
+const KICK_LIMIT = new RateLimiter(10, 40);   // [KICK_0_10_27]
 const CMD_LIMIT = new RateLimiter(20, 40);
 const KEEPALIVE_MS = 15000;
 const { acceptWebSocket } = require('./ws');
@@ -119,6 +121,14 @@ function tableRoutes(tables) {
                 if (!tables) return json(res, 503, { ok: false, code: 'off', error: 'table server is not enabled on this engine' });
                 if (!JOIN_LIMIT.take()) return json(res, 429, { ok: false, code: 'rate', error: 'too many requests' });
                 try { return json(res, 200, { ok: true, ...tables.resume(m) }); } catch (e) { return json(res, 400, { ok: false, code: e.code || 'error', error: e.message }); }
+            }, () => json(res, 400, { ok: false, error: 'bad json' }));
+            return true;
+        }
+        if (req.method === 'POST' && p === '/table/kick') {   // [KICK_0_10_27] 콘솔 서명 강퇴 — 판이 끝난 뒤 정산·퇴장
+            readJson(req).then((m) => {
+                if (!tables) return json(res, 503, { ok: false, code: 'off', error: 'table server is not enabled on this engine' });
+                if (!KICK_LIMIT.take()) return json(res, 429, { ok: false, code: 'rate', error: 'too many requests' });
+                try { return json(res, 200, { ok: true, ...tables.kick(m && m.order) }); } catch (e) { return json(res, 400, { ok: false, code: e.code || 'error', error: e.message }); }
             }, () => json(res, 400, { ok: false, error: 'bad json' }));
             return true;
         }

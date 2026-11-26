@@ -27,7 +27,7 @@ const L = {
         attOk: 'Intel TDX 증명서와 키가 묶여 있음', attNone: '없음(개발 모드)', attBad: '증명서와 키가 다름', records: '보관된 판',
         chainLen: '기록 사슬 줄 수', rollback: '이 브라우저가 전에 본 것보다 적습니다(되돌리기 의심)',
         open: '진행 중', openT: '아직 끝나지 않은 게임입니다', openD: '이 테이블이 끝나면 검증 결과가 나옵니다. 게임 중에는 판 기록과 검증 결과를 보여 주지 않습니다.',
-        doneOk: '검증 완료', doneBad: '검증 실패', engT: '엔진 검증 — 이 판은 끝났고 결과가 맞습니다', engBadT: '엔진 검증 실패',
+        doneOk: '검증 완료', doneBad: '검증 실패', vres: '검증 예약', engT: '엔진 검증 — 이 판은 끝났고 결과가 맞습니다', engBadT: '엔진 검증 실패',
         engD: '증명된 TEE 안의 엔진이 이 판 기록을 공개 확인 코드(verify.js)로 처음부터 다시 계산했습니다 — 씨앗·섞기·카드 약속·액션·팟·레이크·서명.',
         laterT: '전체 기록은 테이블이 끝난 뒤', laterD: '판 기록에는 폴드한 상대의 카드도 들어 있어, 같은 상대와 계속 치는 동안에는 열지 않습니다. 테이블이 끝나면 이 화면에서 기록을 받아 내 브라우저로 직접 다시 확인할 수 있습니다.',
     },
@@ -46,7 +46,7 @@ const L = {
         attOk: 'key bound to the Intel TDX quote', attNone: 'none (development)', attBad: 'key differs from the quote', records: 'Hands stored',
         chainLen: 'Record chain lines', rollback: 'fewer than this browser saw before (possible rollback)',
         open: 'In progress', openT: 'This game has not ended yet', openD: 'The check results appear after this table closes. Hand records and checks are not shown during the game.',
-        doneOk: 'Verified', doneBad: 'Check failed', engT: 'Engine check — this hand ended and the result is correct', engBadT: 'Engine check failed',
+        doneOk: 'Verified', doneBad: 'Check failed', vres: 'Check reserved', engT: 'Engine check — this hand ended and the result is correct', engBadT: 'Engine check failed',
         engD: 'The attested engine in the TEE replayed this hand record with the public checker (verify.js) — seed, shuffle, card commitments, actions, pots, rake and signatures.',
         laterT: 'Full record after the table closes', laterD: 'A hand record also holds the cards of players who folded, so it stays closed while you keep playing the same opponents. When the table closes you can download it here and re-check it in your own browser.',
     },
@@ -74,7 +74,27 @@ async function mine(k, handId) {
     return getJson('/records/mine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sig: k.sigJwk, ts, proof, handId }) });
 }
 
+/**
+ * [VMARK_RESYNC] 이 화면을 열 때도 검증 예약을 로비(내 게임 기록)에 다시 보낸다 — 테이블에서 누른 순간 로비 틀이 다 뜨기 전에
+ * 나가면 로비에 남지 않았다. 숨은 로비 틀(/verify-mark/, CSP frame-src 로 허용된 로비 주소)이 「ready」를 알리면 판 번호만 보낸다.
+ */
+const LOBBY_URL = 'https://buyinholdem.com';
+function syncMarksToLobby(marks) {
+    if (!marks || !Object.keys(marks).length) return;
+    const origin = new URL(LOBBY_URL).origin;
+    const f = document.createElement('iframe');
+    f.hidden = true; f.setAttribute('aria-hidden', 'true'); f.tabIndex = -1;
+    addEventListener('message', (e) => {
+        const d = e.data || {};
+        if (e.origin !== origin || e.source !== f.contentWindow || d.src !== 'buyin-lobby') return;
+        if (d.type === 'vmark-ready') f.contentWindow.postMessage({ src: 'buyin-tee', type: 'vmarks', marks }, origin);
+    });
+    f.src = `${LOBBY_URL}/verify-mark/`;
+    document.body.appendChild(f);
+}
+
 async function boot() {
+    try { syncMarksToLobby(JSON.parse(localStorage.getItem('buyin.vmarks') || '{}') || {}); } catch (_e) { /* 사생활 보호 모드 */ }   // [VMARK_RESYNC] 목록보다 먼저
     for (const n of document.querySelectorAll('[data-v]')) { const v = t(n.dataset.v); if (typeof v === 'string') n.textContent = v; }
     state.info = await getJson('/info');
     state.att = await V.checkAttestation(state.info);
@@ -91,6 +111,9 @@ async function boot() {
     }
     rows.sort((a, b) => b.h.at - a.h.at);
     if (!rows.length) { list.append(el('li', 'empty', t('none'))); return; }
+    // [VMARK] 테이블에서 예약한 판 — 딱지, 로비에서 #hand=<판> 으로 들어오면 그 판을 바로 연다
+    let marks = {}; try { marks = JSON.parse(localStorage.getItem('buyin.vmarks') || '{}') || {}; } catch (_e) { /* */ }
+    const want = new URLSearchParams(location.hash.slice(1)).get('hand');
     for (const { k, h } of rows) {
         const li = el('li');
         const b = el('button', 'hand' + (h.open ? ' open' : ''));
@@ -100,9 +123,14 @@ async function boot() {
         const tag = h.open ? (h.check ? el('span', 'tbl vtag ' + (h.check.ok ? 'ok' : 'bad'), h.check.ok ? `✓ ${t('doneOk')}` : `✕ ${t('doneBad')}`) : el('span', 'tbl', t('open')))
             : el('span', 'tbl', `${t('table')} ${String(h.tableId).slice(0, 10)}`);
         b.append(el('span', 'when', new Date(h.endedAt || h.at).toLocaleString()), el('code', 'id', h.handId), tag);
+        if (marks[h.handId]) { b.classList.add('reserved'); b.append(el('span', 'tbl vtag res', `★ ${t('vres')}`)); }   // [VMARK] 테이블에서 「전판 검증 체크」한 판
         b.onclick = () => openHand(k, h.handId);
         li.append(b);
         list.append(li);
+    }
+    if (want) {
+        const hit = rows.find((x) => x.h.handId === want);
+        if (hit) { openHand(hit.k, hit.h.handId); const btn = document.querySelector(`.hand[data-hand="${CSS.escape(want)}"]`); if (btn) btn.scrollIntoView({ block: 'center' }); }
     }
 }
 

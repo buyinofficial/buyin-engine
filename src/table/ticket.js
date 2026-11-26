@@ -19,6 +19,7 @@
  *   buyIn: 칩(=잠근 금액), currency
  *   watch: 1 (선택) — [WATCH_0_10_20] 관전 좌석표(방장). 자리·칩이 없고 판에 들지 않는다. buyIn 이 없다.
  *          받는 것은 모두에게 공개되는 이벤트·상태뿐(홀카드 봉투 없음), 할 수 있는 것은 채팅·나가기뿐이다
+ *          watch: 2 = [GUEST_WATCH_0_10_27] 방 코드로 들어온 관전 회원 — 받는 것은 같고, 할 수 있는 것은 나가기뿐(채팅 없음)
  * }
  *
  * 콘솔이 정할 수 있는 것은 "누가, 어느 방에, 얼마로 앉나"와 방 규칙뿐이다. 카드·차례·결과는 엔진이 정한다.
@@ -84,7 +85,8 @@ function verifyTicket(ticket, consoleKey, now = Date.now()) {
     };
     if (!/^[A-Za-z0-9_-]{8,64}$/.test(player.sessionId)) throw new TicketError('bad session id');
     if (!player.odcId || player.odcId.length > 64) throw new TicketError('bad player id');
-    const watch = p.watch === 1 || p.watch === true;   // [WATCH_0_10_20]
+    const guest = p.watch === 2;   // [GUEST_WATCH_0_10_27] 방 코드 관전 회원 — 보기만
+    const watch = guest || p.watch === 1 || p.watch === true;   // [WATCH_0_10_20]
     const buyIn = watch ? 0 : Number(p.buyIn);
     if (!watch && !money(buyIn)) throw new TicketError('bad buy-in');
     // [CHIP_UNIT_0_10_6] 칩 단위 1(원화 방) — 블라인드·바이인이 정수여야 스택이 언제나 정수로 남는다
@@ -104,7 +106,7 @@ function verifyTicket(ticket, consoleKey, now = Date.now()) {
     const seat = !watch && Number.isInteger(p.seat) && p.seat >= 0 && p.seat < room.maxPlayers ? p.seat : -1;
     // [SEAT_CHOOSE_0_10_26] 들어와서 테이블의 빈자리를 직접 고른다(콘솔이 정한 좌석표만) — 고르기 전에는 판·준비에 들지 않는다
     const pick = !watch && (p.pick === 1 || p.pick === true);
-    return { tid: String(p.tid), exp: Number(p.exp), room, player, buyIn, seat, pick, currency: String(p.currency || '').slice(0, 8), display, ...(watch ? { watch: true } : {}) };
+    return { tid: String(p.tid), exp: Number(p.exp), room, player, buyIn, seat, pick, currency: String(p.currency || '').slice(0, 8), display, ...(watch ? { watch: true } : {}), ...(guest ? { guest: true } : {}) };
 }
 
 /** 시험·콘솔 구현 참고용 — 콘솔 개인키로 좌석표를 만든다 */
@@ -113,4 +115,21 @@ function signTicket(payload, consolePrivateKey) {
     return body + '.' + C.sign(consolePrivateKey, body);
 }
 
-module.exports = { verifyTicket, signTicket, TicketError };
+/**
+ * [KICK_0_10_27] 강퇴 — 콘솔이 서명한 한 자리(좌석표 tid)의 퇴장 요청. 카드·판·칩 금액은 담지 않는다.
+ *   본문 { v: 1, typ: 'kick', tid, exp }  (좌석표와 같은 서명 방식, typ 이 달라 서로 바꿔 쓸 수 없다)
+ */
+function verifyKick(order, consoleKey, now = Date.now()) {
+    const t = String(order || '');
+    const dot = t.indexOf('.');
+    if (!t || t.length > MAX_TICKET || dot <= 0) throw new TicketError('bad kick order');
+    const body = t.slice(0, dot);
+    if (!C.verify(consoleKey, body, t.slice(dot + 1))) throw new TicketError('kick order signature is not the console\'s');
+    let p;
+    try { p = b64uJson(body); } catch (_e) { throw new TicketError('bad kick order'); }
+    if (!p || p.v !== 1 || p.typ !== 'kick' || !/^[A-Za-z0-9_-]{8,64}$/.test(String(p.tid || ''))) throw new TicketError('bad kick order');
+    if (!(Number(p.exp) > now) || Number(p.exp) > now + 10 * 60 * 1000) throw new TicketError('kick order expired');
+    return { tid: String(p.tid) };
+}
+
+module.exports = { verifyKick, verifyTicket, signTicket, TicketError };

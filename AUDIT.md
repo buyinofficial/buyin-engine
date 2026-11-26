@@ -42,7 +42,7 @@ Fetch `GET <engine>/info`. Then:
 | Attack | Why it fails | Code |
 |---|---|---|
 | Look at hole cards or the undealt board | Cards exist only in the TEE. Hole cards (two in hold'em, four or five in Omaha — same code, `HandCore` `holeCount`) leave encrypted to the player's browser key (ECDH P-256 → HKDF → AES-256-GCM). Board cards are released only when the betting round is over. | `crypto.js`, `HandCore.advance` |
-| Watch the table to see cards | A console-signed watch ticket (room host) joins without a seat: no `hole` envelope, no hole cards in its snapshot, not dealt in, chat only. It sees what every seat sees. | `TableServer._joinWatch`, `_watchCommand` |
+| Watch the table to see cards | A console-signed watch ticket (room host, or a member who watches with the room code — `watch: 2`, no chat) joins without a seat: no `hole` envelope, no hole cards in its snapshot, not dealt in, chat only. It sees what every seat sees. | `TableServer._joinWatch`, `_watchCommand` |
 | Take over a player's seat to receive their cards | Returning to a seat (`POST /table/resume`) must be signed by the key the seat was taken with, within 5 minutes. | `TableServer.resume`, `crypto.msgResume` |
 | Pick or re-roll the deck | `SHA-256(seed)` is committed before the hand; players add signed random values; shuffle = `HMAC-SHA256(seed, …)`. A started hand consumes the commitment even if voided. | `cards.js`, `Engine.startHand` |
 | Swap a card mid-hand | 52 card commitments are published at hand start; each revealed card comes with its salt and is checked in the browser. | `cards.js` |

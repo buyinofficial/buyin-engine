@@ -54,7 +54,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .card.black .rank { color: #000; }
 .card.black .pip, .card.black .big { color: #111827; }
 .card.d .big { font-size: 81cqw; transform: translate(calc(-50% + 12cqw), calc(-50% + 19cqw)) scaleX(1.1); }
-.card.dim { filter: grayscale(45%) saturate(60%) brightness(.68); opacity: .72; }
+/* [FOLD_SHADE] 운영 요청 11-23 — PC 폴드·족보 밖 카드: 반투명(opacity .72)이면 뒤 레일이 비쳐 지저분했다.
+   투명 없이 카드 전체를 고르게 어둡게(그림자 처리) — 모바일 [SD_SHADE2_0_10_25] 과 같은 톤 */
+.card.dim { opacity: 1; filter: brightness(.45) saturate(.75); }
 .card.back { border: 0; background: #0b1020 center/cover no-repeat; background-image: url('https://resource.buyinholdem.com/buyin-table/img/card_back.jpg?v=20261108'); }
 
 /* ── 좌석 (PC) ── */
@@ -78,6 +80,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
   color: #e0f2fe; font-weight: 800; line-height: 1; letter-spacing: -.01em; text-align: center; pointer-events: none; animation: away-pulse 2.4s ease-in-out infinite; }
 .avatar .away-ov svg { width: 1.6em; height: 1.6em; fill: none; stroke: #7dd3fc; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .avatar .away-ov span { white-space: nowrap; text-shadow: 0 1px 3px rgba(0, 0, 0, .8); }
+/* [WAIT_NEXT] 다음 판부터 들어오는 자리 — 자리 비움과 같은 덮개, 색만 금빛(대기) · 깜빡임 없음 */
+.avatar .away-ov.wait-ov { animation: none; box-shadow: inset 0 0 0 2px rgba(251, 191, 36, .6); color: #fef3c7; }
+.avatar .away-ov.wait-ov svg { stroke: #fbbf24; }
+.avatar.is-wait > img { filter: grayscale(.6) brightness(.55); }
 @keyframes away-pulse { 0%, 100% { box-shadow: inset 0 0 0 2px rgba(125, 211, 252, .55); } 50% { box-shadow: inset 0 0 0 2px rgba(125, 211, 252, .15), inset 0 0 14px rgba(125, 211, 252, .25); } }
 .namebox { display: flex; align-items: stretch; border-radius: 6px; border: 1px solid rgba(251, 191, 36, .4); overflow: hidden;
   box-shadow: 0 0 0 1px rgba(251, 191, 36, .4), inset 0 1px 0 rgba(255, 255, 255, .06), 0 10px 20px rgba(0, 0, 0, .55); background: #05070b; }
@@ -197,11 +203,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .mini.shown .mc .card .big { display: block; font-size: 30px; transform: translate(-40%, -20%); }
 .seat-note { z-index: 40; transform: translateX(-50%); white-space: nowrap; font: 700 13px/1 var(--sans); color: #f3f4f6; text-shadow: 0 1px 2px #000, 0 0 6px rgba(0, 0, 0, .8); }
 .seat-note b { color: var(--amber-300); font-weight: 800; }
-.winner-tag { z-index: 85; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; pointer-events: none; animation: win-in .5s cubic-bezier(.12, .9, .2, 1.15) both; }
+.winner-tag { z-index: 85; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; pointer-events: none; animation: win-in .5s cubic-bezier(.12, .9, .2, 1.15) var(--wd, 0s) both; }
 .winner-tag small { white-space: nowrap; font: 900 12px/1 Georgia, serif; letter-spacing: .04em; color: transparent; background: linear-gradient(180deg, #fff8d9, #ffe18a 32%, #b97514 68%, #ffe9a5); -webkit-background-clip: text; background-clip: text; filter: drop-shadow(0 1px 0 #4c2a05); margin-bottom: 2px; }
 .winner-tag b { display: flex; font: 900 30px/1 Georgia, 'Times New Roman', serif; letter-spacing: .02em; }
 .winner-tag b span { color: transparent; background: linear-gradient(180deg, #fff8d9 0%, #ffe18a 32%, #b97514 68%, #ffe9a5 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-stroke: 1px rgba(255, 235, 173, .62);
-  filter: drop-shadow(0 2px 0 #4c2a05) drop-shadow(0 4px 2px rgba(0, 0, 0, .78)); animation: win-letter .5s calc(.25s + var(--i) * .05s) cubic-bezier(.12, .9, .2, 1.15) both; }
+  filter: drop-shadow(0 2px 0 #4c2a05) drop-shadow(0 4px 2px rgba(0, 0, 0, .78)); animation: win-letter .5s calc(var(--wd, 0s) + .25s + var(--i) * .05s) cubic-bezier(.12, .9, .2, 1.15) both; }
 .win-hand { position: absolute; left: 50%; top: 100%; transform: translate(-50%, 14px); white-space: nowrap; font: 900 36px/1 Georgia, 'Times New Roman', serif; letter-spacing: .04em;
   color: transparent; background: linear-gradient(180deg, #fff8d9 0%, #ffe18a 32%, #b97514 68%, #ffe9a5 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-stroke: 1px rgba(255, 235, 173, .62);
   filter: drop-shadow(0 2px 0 #4c2a05) drop-shadow(0 5px 2px rgba(0, 0, 0, .78)) drop-shadow(0 0 16px rgba(255, 183, 45, .28)); animation: win-in .68s .2s cubic-bezier(.12, .9, .2, 1.15) both; }
@@ -595,6 +601,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #rebuy-bar .rb-go { flex-shrink: 0; height: 40px; padding: 0 18px; border-radius: 999px; border: 0; cursor: pointer; white-space: nowrap;
   font: 900 14px/1 var(--sans); color: #1a1205; background: linear-gradient(180deg, #fde68a, #f59e0b); box-shadow: 0 0 14px rgba(251, 191, 36, .45); }
 #rebuy-bar.asked .rb-go { color: var(--amber-100); background: rgba(255, 255, 255, .08); border: 1px solid rgba(251, 191, 36, .5); box-shadow: none; }
+/* [RB_PC_FIX] 0.10.25 부터 버튼 안이 칩 아이콘·글자·금액으로 나뉘었는데 PC 에는 크기가 없어 아이콘(svg)이 커다란 검은 타원으로 글자를 밀어냈다 */
+#rebuy-bar .rb-go { display: inline-flex; align-items: center; gap: 8px; }
+#rebuy-bar .rb-msg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#rebuy-bar .rb-go .cs { width: 16px; height: 16px; flex: none; fill: #fff7e0; stroke: #8a5a00; stroke-width: 1.3; }
+#rebuy-bar .rb-go .rb-a { display: inline-flex; align-items: center; height: 28px; margin-right: -12px; padding: 0 11px; border-radius: 999px; font-weight: 900; font-size: 13px;
+  color: #fde68a; background: rgba(26, 18, 5, .88); font-variant-numeric: tabular-nums; }
+#rebuy-bar.asked .rb-go .rb-a { color: var(--amber-100); background: rgba(255, 255, 255, .1); }
 #table.mobile #rebuy-bar { bottom: 18%; font-size: 12px; padding: 8px 8px 8px 14px; gap: 10px; }
 #table.mobile #rebuy-bar .rb-go { height: 34px; padding: 0 12px; font-size: 12px; }
 
@@ -1383,6 +1396,9 @@ html, body { overscroll-behavior: none; touch-action: manipulation; }
   padding: 5px 12px 5px 10px; border-radius: 999px; background: rgba(20, 14, 4, .72); border: 1px solid rgba(255, 196, 84, .4); font: 700 11px/1 var(--sans); color: #ffd27a; pointer-events: none; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #watch-pill .wb-eye { width: 13px; height: 13px; }
 body.watching #actions, body.watching #rebuy-bar, body.watching #away-bar { display: none !important; }
+/* [GUEST_WATCH_0_10_27] 방 코드 관전 회원 — 보기만 */
+body.guest #watch-bar button, body.guest .chat-form, body.watching #dark-dock { display: none !important; }
+body.guest #watch-bar .wb-t { display: inline !important; }
 /* 방장 채팅 — 밝은 금빛 주황, 「방장」 딱지 */
 .chat-line.host b, #chat-feed .cf-line.host b { color: #ffb547 !important; text-shadow: 0 0 8px rgba(255, 181, 71, .45); }
 .chat-line.host span:not(.tm), #chat-feed .cf-line.host span { color: #ffe4a8; font-weight: 600; }
@@ -1833,6 +1849,9 @@ body.watching #actions, body.watching #rebuy-bar, body.watching #away-bar { disp
 #table.mobile .avatar .away-ov span { margin-top: -3%; font-weight: 700; letter-spacing: .08em; color: #e0f2fe; text-shadow: 0 1px 2px rgba(0, 0, 0, .85); }
 @keyframes away-line { 50% { opacity: .45; } }
 #table.mobile .avatar.is-away { box-shadow: 0 0 0 1px rgba(125, 211, 252, .55), 0 0 10px rgba(56, 189, 248, .25); }
+#table.mobile .avatar.is-wait { box-shadow: 0 0 0 1px rgba(251, 191, 36, .6), 0 0 10px rgba(251, 191, 36, .22); }
+#table.mobile .avatar .away-ov.wait-ov svg { stroke: #fbbf24; }
+#table.mobile .avatar .away-ov.wait-ov span { color: #fef3c7; }
 
 /* ===== [GATE_FROST_0_10_25] 모바일 대기실 — 로비 프로스트 실버(밝은 은빛 카드 · 남색 글자 · 남색 준비 버튼) ===== */
 #table.mobile .rq-box { padding: 18px 16px 14px; border-radius: 22px; text-align: center; color: #0c173a;
@@ -1955,8 +1974,72 @@ body.watching #actions, body.watching #rebuy-bar, body.watching #away-bar { disp
 #table.mobile .avatar .away-ov { height: 44%; align-items: flex-start; padding-top: 9%; gap: 0; overflow: visible; }
 #table.mobile .avatar .away-ov svg { position: absolute; left: 50%; top: 0; width: 1.1em; height: 1.1em; margin: 0; transform: translate(-50%, -55%); padding: .12em;
   border-radius: 50%; background: #0b2238; box-shadow: 0 0 0 1px rgba(125, 211, 252, .8); }
+#table.mobile .avatar .away-ov.wait-ov svg { background: #2a1d06; box-shadow: 0 0 0 1px rgba(251, 191, 36, .85); }   /* [WAIT_NEXT] 모래시계 동그라미도 금빛 */
 #table.mobile .avatar .away-ov span { margin-top: 0; font-size: .9em; letter-spacing: 0; white-space: nowrap; }
 
 /* [NO_DEFAULT_SKIN_0_10_26] 메인 테이블 카드 딱지 */
 #skin-pick .sp-name .sp-main { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 4px; font: 800 9.5px/1.5 var(--sans); font-style: normal; letter-spacing: .06em;
   color: #2a1a02; background: linear-gradient(180deg, #ffe39a, #e9b44c); vertical-align: 1px; }
+
+/* [VMARK] 실시간 검증 방패 — 녹색으로 또렷하게(살짝 숨쉬는 빛) + 그 아래 「전판 검증 체크」 */
+#btn-verify { background: radial-gradient(circle at 50% 35%, #14532d, #052e16); border: 1.5px solid #22c55e; animation: vf-live 2.8s ease-in-out infinite; }
+#btn-verify:hover { background: radial-gradient(circle at 50% 35%, #166534, #052e16); }
+#btn-verify svg { stroke: #4ade80; stroke-width: 2.2; filter: drop-shadow(0 0 4px rgba(74, 222, 128, .65)); }
+@keyframes vf-live { 0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, .55), 0 0 10px rgba(34, 197, 94, .35); } 50% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0), 0 0 16px rgba(34, 197, 94, .55); } }
+#btn-vmark { position: absolute; top: calc(100% + 10px); right: 0; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+  font: 800 12px/1 var(--sans); color: #dcfce7; background: rgba(5, 46, 22, .92); border: 1px solid rgba(34, 197, 94, .75); }
+#btn-vmark:hover { background: rgba(20, 83, 45, .95); }
+#btn-vmark svg { width: 15px; height: 15px; fill: none; stroke: #4ade80; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+#btn-vmark.done { cursor: default; color: #052e16; background: #4ade80; border-color: #4ade80; }
+#btn-vmark.done svg { stroke: #052e16; }
+#btn-vmark[hidden] { display: none; }
+#table.mobile #btn-vmark { top: calc(100% + 6px); height: 22px; padding: 0 8px; gap: 4px; font-size: 10px; }
+#table.mobile #btn-vmark svg { width: 11px; height: 11px; }
+#table.mobile #btn-verify { border-width: 1px; }
+.vm-bridge { position: absolute; width: 0; height: 0; border: 0; }
+body.watching #btn-vmark { display: none !important; }
+
+/* [HOST_DESK2_0_10_27] 방장 관리 창 — 프로스트 실버(로비 창과 같은 톤), 창 높이를 넉넉히 해 손익표가 한 번에 보인다 */
+#rebuy-pop.host .rp-sheet { width: min(560px, 100%); height: calc(100dvh - 32px); background: #f8f9fc; border: 0; box-shadow: 0 24px 70px rgba(0, 0, 0, .55); }
+#rebuy-pop.host .rp-head { height: 48px; border-bottom: 1px solid #dde3ed; background: #fff; }
+#rebuy-pop.host .rp-title { color: #0c173a; font: 800 15px/1 var(--sans); letter-spacing: -.01em; }
+#rebuy-pop.host .rp-lobby { color: #3d4d6b; border-color: #cbd3e0; }
+#rebuy-pop.host .rp-x { width: 32px; height: 32px; border: 0; background: #e8ecf3; color: #3d4d6b; }
+#rebuy-pop.host .rp-wait { border-color: rgba(61, 90, 128, .2); border-top-color: #3d5a80; }
+@media (max-width: 760px) { #rebuy-pop.host .rp-sheet { width: 100%; height: 100%; } }
+
+/* ===== [M_READ_0_10_27] 모바일 — 금액 크게 · 내 차례 · 생존/폴드 (회원 의견 11-25) ===== */
+/* 금액: 금색 그라데이션 글자는 작은 크기에서 뭉개진다 → 밝은 단색. 닉네임은 한 톤 낮게, 국기는 옅게 */
+#table.mobile .namebox .st { background: none; color: #ffe9a8; letter-spacing: -.015em; text-shadow: 0 1px 2px rgba(0, 0, 0, .85); white-space: nowrap; }
+#table.mobile .namebox .nm { color: #b9c2d0; font-weight: 600; letter-spacing: 0; }
+#table.mobile .namebox .flag { opacity: .35; }
+#table.mobile .act-main { left: 106px; top: 772px; width: 204px; gap: 4px; }
+#table.mobile .act-main button { height: 50px; padding: 0; gap: 2px; }
+#table.mobile .act-main .t { font-size: 13px; line-height: 16px; white-space: nowrap; }
+#table.mobile .act-main .s { font-size: 12px; line-height: 14px; font-weight: 700; color: #bfe9dc; white-space: nowrap; letter-spacing: -.01em; text-shadow: 0 1px 2px rgba(0, 0, 0, .45); }
+#table.mobile .act-main .a-raise .s { color: #ffe9bd; }
+#table.mobile .act-main .s:empty { display: none; }
+#table.mobile .bubble.mb .v { font-size: 14.5px; }
+#table.mobile .bubble.mb .w { font-size: 8.5px; }
+#table.mobile .bubble.mb.solo .w { font-size: 10.5px; }
+#table.mobile .mg-box { font-size: 14px; }
+/* [TURN_PLAIN_0_10_27] 내 차례 — 표시를 덧붙이지 않고 버튼으로 구분한다(운영 요청 11-25): 내 차례가 아니면 체크/폴드 예약만, 내 차례에 콜·레이즈·프리셋이 나타난다 */
+#table.mobile #actions.pre .a-call, #table.mobile #actions.pre .a-raise { visibility: hidden; }
+#table.mobile #actions.my-turn .a-call, #table.mobile #actions.my-turn .a-raise, #table.mobile #actions.my-turn .presets { animation: mt-in .2s ease-out both; }
+@keyframes mt-in { from { opacity: 0; } }
+#turn-edge { position: absolute; inset: 0; z-index: 90; pointer-events: none; opacity: 0; transition: opacity .35s; box-shadow: inset 0 0 32px 2px rgba(255, 55, 45, .36); }
+#turn-edge.on { opacity: 1; }
+/* 생존 = 밝은 테두리 · 폴드 = 그림·이름·금액까지 함께 가라앉는다(내 자리는 내 금액을 읽게 덜) */
+#table.mobile .seat.live:not(.winner-glow) .avatar { border-color: rgba(255, 226, 150, .95); box-shadow: 0 0 0 1px rgba(255, 220, 140, .3), 0 6px 12px -3px rgba(0, 0, 0, .5); }
+#table.mobile .seat.live .namebox { border-color: rgba(255, 220, 140, .7); }
+#table.mobile .seat.folded .avatar { border-color: rgba(120, 130, 148, .4); }
+#table.mobile .seat.folded .avatar > img { filter: grayscale(1) brightness(.38); animation: fold-img .4s ease-out var(--fd, 0s) both; }
+#table.mobile .seat.folded:not(.hero) .namebox { filter: grayscale(1) brightness(.5); animation: fold-nb .4s ease-out var(--fd, 0s) both; }
+#table.mobile .seat.hero.folded .namebox { filter: grayscale(.7) brightness(.75); }
+@keyframes fold-img { from { filter: grayscale(0) brightness(1); } to { filter: grayscale(1) brightness(.38); } }
+@keyframes fold-nb { from { filter: grayscale(0) brightness(1); } to { filter: grayscale(1) brightness(.5); } }
+
+/* [RB_BUB_POS_0_10_27] 바이인 풍선 — 아래 끝(꼬리 포함)을 이름 상자 바로 위에 */
+.rebuy-bubble.up { transform: translate(-50%, calc(-100% - 6px)); }
+.rebuy-bubble::after { left: calc(50% + var(--tail, 0px)); }
+.rebuy-bubble.sm::after { border-width: 5px 5px 0; bottom: -6px; }

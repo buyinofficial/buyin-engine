@@ -54,4 +54,7 @@ h2 { margin: 0 0 10px; font-size: 16px; color: var(--gold-hi); }
 .hand .vtag { padding: 3px 9px; border-radius: 999px; font-weight: 800; font-size: 12px; }
 .hand .vtag.ok { color: #04130d; background: var(--ok); }
 .hand .vtag.bad { color: #1a0505; background: var(--bad); }
+.hand .vtag.res { color: #1a1205; background: #fbbf24; }   /* [VMARK] 검증 예약 */
+.hand.reserved { box-shadow: inset 3px 0 0 #fbbf24; }
+.hand.reserved { grid-template-columns: auto 1fr auto auto; }   /* 딱지 두 개를 한 줄에 */
 .check.later { border-color: rgba(148, 163, 184, .35); } .check.later::before { content: 'i'; background: #94a3b8; color: #0b1220; font-style: italic; }
