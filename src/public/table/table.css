@@ -87,7 +87,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @keyframes away-pulse { 0%, 100% { box-shadow: inset 0 0 0 2px rgba(125, 211, 252, .55); } 50% { box-shadow: inset 0 0 0 2px rgba(125, 211, 252, .15), inset 0 0 14px rgba(125, 211, 252, .25); } }
 .namebox { display: flex; align-items: stretch; border-radius: 6px; border: 1px solid rgba(251, 191, 36, .4); overflow: hidden;
   box-shadow: 0 0 0 1px rgba(251, 191, 36, .4), inset 0 1px 0 rgba(255, 255, 255, .06), 0 10px 20px rgba(0, 0, 0, .55); background: #05070b; }
-.namebox .flag { position: absolute; inset: 0; background: url('https://resource.buyinholdem.com/buyin-table/img/flag_kr.webp?v=20261108') right center/cover no-repeat; }
+.namebox .flag { position: absolute; inset: 0; background: transparent right center/cover no-repeat; }   /* [IP_FLAG_0_10_44] 그림은 자리마다(접속 IP 나라) — app.js flagCss */
+.namebox .flag.none { display: none; }
 .namebox .fade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(0, 0, 0, .85) 0%, rgba(0, 0, 0, .35) 50%, transparent 100%); }
 .namebox .info { position: relative; z-index: 2; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 0; }
 .namebox .nm { color: var(--gray-300); font-weight: 700; letter-spacing: .025em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
@@ -382,7 +383,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @keyframes fb-deal { 67%, to { visibility: hidden; } }
 .flip.river > .card:not(.bf) { animation: ff-river 2.3s linear both; }
 .flip.river > .card.bf { animation: fb-river 2.3s linear both; }
-@keyframes ff-river { from, 54% { visibility: hidden; } }
+@keyframes ff-river { from, 54% { visibility: hidden; } }   /* 54% = app.js RIVER_FACE_AT — 바꾸면 같이 [RIVER_RANK_0_10_29] */
 @keyframes fb-river { 54%, to { visibility: hidden; } }
 .flip.sd > .card:not(.bf) { animation: ff-sd .6s linear both; }
 .flip.sd > .card.bf { animation: fb-sd .6s linear both; }
@@ -643,7 +644,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #game-clock .gc-ring { width: 38px; height: 38px; transform: rotate(-90deg); flex-shrink: 0; }
 #game-clock .gc-ring circle { fill: none; stroke-width: 2.6; }
 #game-clock .gc-track { stroke: rgba(255, 255, 255, .08); }
-#game-clock .gc-arc { stroke: var(--amber-300); stroke-linecap: round; stroke-dasharray: 100 100; transition: stroke-dasharray .5s linear, stroke .4s; filter: drop-shadow(0 0 3px rgba(252, 211, 77, .55)); }
+#game-clock .gc-arc { stroke: var(--amber-300); stroke-linecap: round; stroke-dasharray: 100 100; transition: stroke .4s;   /* [PERF_0_10_38] 원 길이 전환 없앰 — 0.5초마다 다시 걸려 게임 시간 내내 매 프레임 다시 그렸다 */ filter: drop-shadow(0 0 3px rgba(252, 211, 77, .55)); }
 #game-clock .gc-ico { position: absolute; left: 12px; top: 12px; width: 20px; height: 20px; fill: none; stroke: var(--amber-200); stroke-width: 1.8; stroke-linecap: round; opacity: .85; }
 #game-clock .gc-txt { display: flex; flex-direction: column; line-height: 1; min-width: 74px; }
 #game-clock .gc-k { font: 700 9px/1 var(--sans); letter-spacing: .22em; color: rgba(245, 200, 110, .7); text-transform: uppercase; white-space: nowrap; }
@@ -2043,3 +2044,456 @@ body.watching #btn-vmark { display: none !important; }
 .rebuy-bubble.up { transform: translate(-50%, calc(-100% - 6px)); }
 .rebuy-bubble::after { left: calc(50% + var(--tail, 0px)); }
 .rebuy-bubble.sm::after { border-width: 5px 5px 0; bottom: -6px; }
+
+/* [SD_CARD_UP_0_10_28] 모바일 승자 연출(쇼다운) 상대 카드 — 9px 위로. 이름 상자에 가려지던 아래쪽이 14px → 5px(운영 요청 11-26) */
+.seat > .avc.shown { top: -29.5px; }
+
+/* [TURN_SEC_BIG_0_10_28] 차례 남은 초 — 크게, 어두운 원 위에 또렷하게, 5초부터 빨강 */
+.ring-sec { font-weight: 900; letter-spacing: -.02em; text-shadow: 0 2px 4px rgba(0, 0, 0, .95), 0 0 10px rgba(0, 0, 0, .7);
+  background: radial-gradient(circle, rgba(6, 10, 20, .62) 0 34%, rgba(6, 10, 20, .3) 46%, transparent 60%); border-radius: 50%; }
+.ring-sec.hot { color: #ff8a7a; }
+/* [PRESET_PCT_0_10_28] 올인이 되는 프리셋은 눌리지 않는다 */
+.presets button.allin-off { opacity: .35; }
+/* [WATCH_COUNT_0_10_28] 관전자 수 — 왼쪽 위 나가기 옆 작은 알약(PC·모바일 같은 줄) */
+#watch-pill, #table.mobile #watch-pill { position: relative; left: auto; top: auto; transform: none; align-self: center; pointer-events: auto; cursor: default;
+  height: 28px; padding: 0 11px 0 9px; gap: 5px; font: 800 12px/1 var(--sans); color: #e8eef8; background: rgba(8, 14, 28, .72); border: 1px solid rgba(200, 214, 236, .35); max-width: none; }
+#table.mobile #watch-pill { height: 24px; padding: 0 9px 0 7px; font-size: 11px; }
+#watch-pill .wb-eye { opacity: .9; }
+
+/* [PF_MENU_0_10_28] 모바일 — 앉아 있으면 상단 아이콘은 내 프로필 창 안으로. 왼쪽 위에는 게임 시간·관전자 수만 */
+#table.mobile.pf-menu-on #btn-leave, #table.mobile.pf-menu-on .corner.tr { display: none !important; }
+#pf-pop.menu { min-width: 236px; }
+#pf-pop .pf-menu { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+#pf-pop .pf-menu button, #pf-pop .pf-vmark, #pf-pop .pf-leave { display: flex; align-items: center; justify-content: center; gap: 6px; height: 36px; border-radius: 10px; cursor: pointer;
+  font: 700 12.5px/1 var(--sans); color: #e8eef8; background: rgba(255, 255, 255, .07); border: 1px solid rgba(255, 255, 255, .14); }
+#pf-pop .pf-menu button.off { color: #9ca3af; }
+#pf-pop .pf-menu svg, #pf-pop .pf-vmark svg, #pf-pop .pf-leave svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+#pf-pop .pf-vmark { width: 100%; margin-top: 6px; color: #86efac; border-color: rgba(52, 211, 153, .45); background: rgba(16, 80, 50, .35); }
+#pf-pop .pf-leave { width: 100%; margin-top: 6px; color: #fecaca; border-color: rgba(248, 113, 113, .4); background: rgba(127, 29, 29, .3); }
+
+/* [PF_MENU2_0_10_28] 내 프로필 메뉴 — 줄마다 같은 폭(첫 줄 3칸 · 둘째 줄 카드 검증 | 자리 비움) */
+#pf-pop.menu { min-width: 272px; }
+#pf-pop .pf-menu { display: flex; gap: 6px; margin-top: 6px; }
+#pf-pop .pf-menu:first-of-type { margin-top: 10px; }
+#pf-pop .pf-menu > button { flex: 1 1 0; min-width: 0; margin: 0; height: 38px; padding: 0 6px; white-space: nowrap; }
+#pf-pop .pf-menu .pf-away { width: auto; border-radius: 10px; font: 700 12.5px/1 var(--sans); }
+
+/* [AWAY_DIM_0_10_28] 자리 비움 — 폴드처럼 그림·이름·보유금까지 함께 어둡게(운영 요청 11-26). 「자리 비움」 글자 덮개는 그대로 밝게 */
+.seat.sitout .avatar > img, #table.mobile .avatar.is-away:not(.is-wait) > img { opacity: 1; filter: grayscale(1) brightness(.36); }
+.seat.sitout .avatar { border-color: rgba(120, 130, 148, .45); }
+.seat.sitout .namebox { filter: grayscale(1) brightness(.5); }
+.seat.hero.sitout .namebox { filter: grayscale(.8) brightness(.68); }
+
+/* [BUB_READ_0_10_28] 모바일 베팅 명패 — 액션 글자가 안 보인다·체크 때 오른쪽이 잘려 보인다(운영 요청 11-26).
+   글자: 액션 색을 흰색에 섞어 밝게, 크게, 자간 좁게, 그림자. 잘림: 최소 폭을 바깥 상자가 아닌 어두운 판(.tx)에 줘서 바깥 장식층(::after)이 판보다 넓어지지 않게 */
+#table.mobile .bubble.mb { min-width: 0; }
+#table.mobile .bubble.mb .tx { min-width: 54px; box-sizing: border-box; }
+#table.mobile .bubble.mb .w { font-size: 10px; letter-spacing: .04em; color: color-mix(in srgb, var(--bc) 55%, #fff); text-shadow: 0 1px 2px rgba(0, 0, 0, .9), 0 0 6px color-mix(in srgb, var(--bc) 45%, transparent); }
+#table.mobile .bubble.mb.solo .tx { align-items: center; padding: 5px 12px 5px 12px; }
+#table.mobile .bubble.mb.solo .w { font-size: 12.5px; letter-spacing: .06em; }
+#table.mobile .bubble.mb.act-bet .w, #table.mobile .bubble.mb.act-raise .w { color: #ffe39a; text-shadow: 0 1px 2px rgba(0, 0, 0, .9), 0 0 6px rgba(243, 196, 96, .45); }   /* 옛 알약 시절 어두운 갈색 글자를 덮는다 */
+/* [AWAY_FADE_0_10_28] 모바일 자리 비움 = PC 처럼 자리 전체 투명(PC 는 자리 비움이 폴드로 처리돼 .25) — 운영 요청 11-26.
+   어둡게 누르던 필터는 빼고 투명도로만(겹치면 너무 검다). 내 자리는 버튼·금액을 봐야 하니 그대로 */
+#table.mobile .seat.sitout:not(.hero) { opacity: .3; transition: opacity .5s; }
+#table.mobile .seat.sitout:not(.hero) .namebox { filter: none; }
+#table.mobile .seat.sitout:not(.hero) .avatar > img { filter: grayscale(.6); }
+/* [FOLD_FADE_0_10_29] 모바일 폴드 = 자리 비움과 같은 수준(운영 요청 11-26) — 다른 회원 자리 전체 opacity .3, 어둡게 누르던 필터는 빼고
+   투명도로만(겹치면 너무 검다), 그림은 회색조만. 폴드 순간 0.4초에 걸쳐(--fd, 판당 한 번). 내 자리는 금액을 읽어야 해 그대로 */
+#table.mobile .seat.folded:not(.hero) { opacity: .3; animation: fold-op .4s ease-out var(--fd, 0s) both; }
+#table.mobile .seat.folded:not(.hero) .namebox { filter: none; animation: none; }
+#table.mobile .seat.folded:not(.hero) .avatar > img { filter: grayscale(.6); animation: none; }
+#table.mobile .seat.folded.sitout:not(.hero) { animation: none; }
+@keyframes fold-op { from { opacity: 1; } to { opacity: .3; } }
+/* [DEALER_CORNER_0_10_29] 딜러 버튼 = 운영 그림(금테 원). 이름 상자 위쪽 모서리에 가운데를 맞춘다(app.js dealerAt) — 왼쪽 자리는 오른쪽 위, 오른쪽 자리는 왼쪽 위 */
+.dealer.corner { transform: translate(-50%, -50%); z-index: 36; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .75)); }
+.dealer.corner.pc { width: 30px; height: 30px; }
+.dealer.corner.pc-hero { width: 34px; height: 34px; }
+.dealer.corner.m { width: 22px; height: 22px; }
+.dealer.corner.m-hero { width: 24px; height: 24px; }
+.seat > .mini.shown { z-index: 37; }   /* [DEALER_CORNER_0_10_29] 딜러 버튼(36)은 카드 뒷면(.mini 35) 위, 쇼다운에 연 카드 아래 */
+/* [TOPUP_0_10_30] 내 프로필 「추가 바이인」 — 칩이 남아 있을 때 바이인 신청 창을 연다(금빛, 자리 비움 버튼과 구분) */
+#pf-pop .pf-topup { margin: 8px 0 2px; width: 100%; height: 36px; display: flex; align-items: center; justify-content: center; gap: 7px; border-radius: 999px; cursor: pointer;
+  font: 800 13px/1 var(--sans); color: #2a1a02; background: linear-gradient(180deg, #ffe7a3, #e9b34a); border: 1px solid rgba(255, 236, 180, .9); box-shadow: 0 4px 12px -4px rgba(233, 179, 74, .7); }
+#pf-pop .pf-topup .cs { width: 16px; height: 16px; fill: rgba(42, 26, 2, .18); stroke: #2a1a02; stroke-width: 1.2; }
+
+/* ===== [BOMB_POT_0_10_31] 붐팟 — 투표 상자 · 결과 안내 · BOMB POT 연출 · 붐팟 판 표시 ===== */
+#bomb-vote { position: absolute; left: 50%; top: 64px; transform: translateX(-50%); z-index: 120; width: min(360px, 92%); padding: 10px 12px 12px; border-radius: 16px;
+  background: linear-gradient(180deg, rgba(40, 14, 10, .94), rgba(18, 8, 8, .94)); border: 1px solid rgba(255, 140, 80, .55);
+  box-shadow: 0 10px 30px -8px rgba(0, 0, 0, .7), 0 0 0 1px rgba(255, 90, 40, .15), 0 0 24px -6px rgba(255, 110, 40, .55); color: #fff; font-family: var(--sans);
+  animation: bv-in .35s cubic-bezier(.2, 1.3, .4, 1) both; }
+@keyframes bv-in { from { opacity: 0; transform: translate(-50%, -10px) scale(.96); } }
+#bomb-vote .bv-head { display: flex; align-items: center; gap: 7px; }
+#bomb-vote .bv-ic { font-size: 18px; filter: drop-shadow(0 0 6px rgba(255, 120, 40, .8)); }
+#bomb-vote .bv-head b { font-size: 14.5px; font-weight: 900; letter-spacing: .02em; color: #ffd9b0; }
+#bomb-vote .bv-left { margin-left: auto; font-size: 11.5px; font-weight: 700; color: #ffb27a; font-variant-numeric: tabular-nums; }
+#bomb-vote .bv-x { width: 24px; height: 24px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .08); color: #fff; font-size: 16px; line-height: 1; cursor: pointer; }
+#bomb-vote .bv-q { margin: 6px 0 9px; font-size: 13px; font-weight: 700; line-height: 1.35; }
+#bomb-vote .bv-q small { display: block; margin-top: 2px; font-size: 11px; font-weight: 600; color: rgba(255, 220, 200, .72); }
+#bomb-vote .bv-btns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 7px; }
+#bomb-vote .bv-btns button { height: 38px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, .16); background: rgba(255, 255, 255, .07); color: #fff; font: 800 13.5px/1 var(--sans); cursor: pointer; transition: transform .1s; }
+#bomb-vote .bv-btns button:active { transform: scale(.96); }
+#bomb-vote .bv-btns .bv-yes.on { background: linear-gradient(180deg, #ff9a4a, #e8461f); border-color: #ffb37a; box-shadow: 0 0 14px -2px rgba(255, 110, 40, .8); }
+#bomb-vote .bv-btns .bv-no.on { background: linear-gradient(180deg, #64748b, #334155); border-color: #94a3b8; }
+#bomb-vote .bv-btns .bv-any.on { background: linear-gradient(180deg, #e2e8f0, #94a3b8); color: #0f172a; border-color: #f1f5f9; }
+#bomb-vote.min { width: auto; display: flex; align-items: center; gap: 7px; padding: 6px 12px 6px 9px; border-radius: 999px; cursor: pointer; }
+#bomb-vote.min b { font-size: 12.5px; font-weight: 900; color: #ffd9b0; }
+#bomb-vote.min .bv-pill { font-size: 11.5px; font-weight: 800; padding: 3px 8px; border-radius: 999px; background: rgba(255, 140, 80, .22); color: #ffd2ad; font-variant-numeric: tabular-nums; }
+#table.mobile #bomb-vote { top: 58px; }
+#notice.bomb { border-color: rgba(255, 120, 40, .85); box-shadow: 0 0 30px -4px rgba(255, 100, 30, .7); }
+#notice.bomb .nt-k { background: linear-gradient(180deg, #fff7ed, #fdba74 45%, #f97316); -webkit-background-clip: text; background-clip: text; }
+
+#bomb-fx { position: absolute; inset: 0; z-index: 160; pointer-events: none; display: grid; place-items: center; overflow: hidden; }
+#bomb-fx .bf-flash { position: absolute; inset: 0; background: radial-gradient(circle at 50% 46%, rgba(255, 240, 200, .95), rgba(255, 130, 40, .55) 28%, rgba(120, 20, 0, 0) 62%); animation: bf-flash .9s ease-out both; }
+@keyframes bf-flash { 0% { opacity: 0; } 8% { opacity: 1; } 100% { opacity: 0; } }
+#bomb-fx .bf-ring { position: absolute; left: 50%; top: 46%; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; border: 6px solid rgba(255, 190, 110, .9);
+  box-shadow: 0 0 24px rgba(255, 120, 40, .9), inset 0 0 18px rgba(255, 200, 120, .7); animation: bf-ring 1.1s cubic-bezier(.1, .7, .3, 1) both; }
+#bomb-fx .bf-ring.r2 { border-width: 3px; border-color: rgba(255, 255, 255, .8); animation-delay: .12s; animation-duration: 1.3s; }
+@keyframes bf-ring { 0% { transform: scale(.2); opacity: 1; } 100% { transform: scale(22); opacity: 0; } }
+#bomb-fx .bf-sparks { position: absolute; left: 50%; top: 46%; }
+#bomb-fx .bf-sparks i { position: absolute; width: var(--sz); height: var(--sz); margin: calc(var(--sz) / -2); border-radius: 50%;
+  background: radial-gradient(circle, #fff 0, #ffd27a 40%, #ff6a1f 70%, rgba(255, 60, 0, 0) 100%); box-shadow: 0 0 10px #ff8a3d;
+  animation: bf-spark 1s cubic-bezier(.15, .8, .3, 1) var(--dl) both; }
+@keyframes bf-spark { 0% { transform: translate(0, 0) scale(1.4); opacity: 1; } 100% { transform: translate(var(--tx), var(--ty)) scale(.2); opacity: 0; } }
+#bomb-fx .bf-title { position: relative; text-align: center; animation: bf-out .5s ease-in 2.6s both; }
+#bomb-fx.decided .bf-title { animation-delay: 2s; }
+@keyframes bf-out { to { opacity: 0; transform: scale(1.08); } }
+#bomb-fx .bf-bomb { font-size: 64px; line-height: 1; filter: drop-shadow(0 0 18px rgba(255, 120, 40, .9)); animation: bf-bomb .7s cubic-bezier(.2, 1.6, .4, 1) both; }
+@keyframes bf-bomb { 0% { transform: scale(0) rotate(-40deg); } 100% { transform: scale(1) rotate(0); } }
+#bomb-fx .bf-word { display: flex; justify-content: center; margin-top: 4px; font: 900 clamp(46px, 9vw, 108px)/1 var(--sans); letter-spacing: .04em; }
+#bomb-fx .bf-word span { display: inline-block; background: linear-gradient(180deg, #fffbeb 0%, #fde68a 30%, #fb923c 62%, #dc2626 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+  -webkit-text-stroke: 1.5px rgba(80, 10, 0, .55); filter: drop-shadow(0 4px 0 rgba(60, 8, 0, .85)) drop-shadow(0 0 22px rgba(255, 110, 30, .85));
+  animation: bf-letter .55s cubic-bezier(.2, 1.7, .4, 1) calc(.18s + var(--i) * .05s) both; }
+@keyframes bf-letter { 0% { transform: translateY(-120px) scale(1.8) rotate(-12deg); opacity: 0; } 60% { opacity: 1; } 100% { transform: none; opacity: 1; } }
+#bomb-fx .bf-sub { margin-top: 10px; font: 800 clamp(13px, 1.6vw, 19px)/1.2 var(--sans); color: #ffe4c4; letter-spacing: .06em; text-shadow: 0 2px 6px rgba(0, 0, 0, .9); animation: bv-in .4s ease-out .7s both; }
+#bomb-fx.decided .bf-bomb { font-size: 48px; }
+#bomb-fx.decided .bf-word { font-size: clamp(36px, 7vw, 80px); }
+#table.mobile #bomb-fx .bf-word { font-size: 50px; }
+#table.mobile #bomb-fx .bf-bomb { font-size: 52px; }
+#table.bomb-shake { animation: bomb-shake .6s cubic-bezier(.36, .07, .19, .97) both; }
+@keyframes bomb-shake { 10%, 90% { transform: translate(-2px, 1px); } 20%, 80% { transform: translate(4px, -2px); } 30%, 50%, 70% { transform: translate(-7px, 2px); } 40%, 60% { transform: translate(7px, -2px); } }
+#table.bomb-hand .pot-panel::before { content: 'BOMB POT'; position: absolute; left: 50%; top: -22px; transform: translateX(-50%); white-space: nowrap; padding: 3px 10px; border-radius: 999px;
+  font: 900 11px/1.2 var(--sans); letter-spacing: .08em; color: #fff7ed; background: linear-gradient(180deg, #f97316, #b91c1c); box-shadow: 0 0 14px -2px rgba(249, 115, 22, .9); }
+#table.bomb-hand .pot-panel { position: relative; }
+@media (prefers-reduced-motion: reduce) { #table.bomb-shake { animation: none; } }
+/* [BOMB_POT_0_10_31] 폭탄 그림(SVG) 크기 — 불꽃이 깜빡인다 */
+.bomb-ic { display: block; width: 100%; height: 100%; overflow: visible; }
+.bomb-ic .spark { animation: bomb-spark .35s steps(2) infinite; transform-origin: 55px 5px; }
+@keyframes bomb-spark { 50% { transform: scale(1.25) rotate(20deg); opacity: .8; } }
+#bomb-vote .bv-ic { width: 22px; height: 22px; flex: none; font-size: 0; }
+#bomb-fx .bf-bomb { width: 84px; height: 84px; margin: 0 auto; font-size: 0; }
+#bomb-fx.decided .bf-bomb { width: 64px; height: 64px; }
+#table.mobile #bomb-fx .bf-bomb { width: 66px; height: 66px; }
+/* PC — 투표 상자는 오른쪽 위(아이콘 아래), 가운데 안내 글(5분 남았습니다)을 가리지 않게 */
+#table:not(.mobile) #bomb-vote { left: auto; right: 20px; top: 78px; transform: none; width: 340px; animation-name: bv-in-r; }
+@keyframes bv-in-r { from { opacity: 0; transform: translateY(-10px) scale(.96); } }
+/* [DEALER_AVATAR_0_10_31] 딜러 자리 — 프로필 원 안을 딜러 버튼 그림이 꽉 채운다(테두리 금빛) */
+.avatar.is-dealer > img { object-fit: cover; border-radius: 50%; background: #0b0b0b; }
+.avatar.is-dealer { border-color: rgba(233, 190, 92, .95); }
+/* [AVATAR_LIVE_0_10_32] 내 프로필 「프로필 변경」 */
+#pf-pop .pf-edit { margin: 8px 0 2px; width: 100%; height: 34px; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 999px; cursor: pointer;
+  font: 800 12.5px/1 var(--sans); color: #e2e8f0; background: rgba(148, 163, 184, .14); border: 1px solid rgba(203, 213, 225, .45); }
+#pf-pop .pf-edit svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+/* [BOARD_110_0_10_34] 모바일 커뮤니티 카드만 10% 더 크게 — 위 팟 자리는 그대로, 아래로 커진다(딜·뒤집기 연출은 실제 카드 자리를 재므로 따라온다) */
+#table.mobile .board { transform: scale(1.067); transform-origin: 50% 0; }   /* [BOARD_107_0_10_43] 1.1 에서 3% 줄임(운영 요청 11-27) */
+
+/* ===== [BOMB_TICKER_0_10_40] 붐팟 투표 띠 — 화면 위쪽 가로 띠, 공지처럼 글자가 흘러간다(PC·모바일·관전 공통)
+   먹색 유리 + 위아래 가는 금빛 선 · 왼쪽 고정 딱지(붉은 금속 · 폭탄 · BOMB POT · 남은 시간) · 오른쪽 흐르는 글(숫자 금빛) · 지나가는 빛 ===== */
+#bomb-ticker { position: absolute; left: 50%; top: 72px; transform: translateX(-50%); z-index: 119; width: min(760px, calc(100% - 24px)); height: 38px;
+  display: flex; align-items: stretch; border-radius: 999px; overflow: hidden; pointer-events: none;
+  background: linear-gradient(180deg, rgba(28, 12, 8, .92), rgba(10, 4, 3, .9));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 196, 120, .38), inset 0 1px 0 rgba(255, 230, 190, .16), 0 0 22px rgba(255, 110, 40, .18);
+  animation: bt-in .55s cubic-bezier(.2, .9, .3, 1.15) both; }
+#bomb-ticker::before, #bomb-ticker::after { content: ''; position: absolute; left: 18px; right: 18px; height: 1px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255, 214, 150, .85) 20%, rgba(255, 244, 214, 1) 50%, rgba(255, 214, 150, .85) 80%, transparent); }
+#bomb-ticker::before { top: 0; } #bomb-ticker::after { bottom: 0; opacity: .55; }
+#bomb-ticker .bt-tag { position: relative; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 14px 0 8px; z-index: 2;
+  background: linear-gradient(180deg, #a8230f 0%, #6e1206 55%, #4a0b03 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 200, 160, .45), inset -1px 0 0 rgba(255, 196, 120, .5), 6px 0 14px rgba(0, 0, 0, .55);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 9px) 100%, 0 100%); padding-right: 20px; }
+#bomb-ticker .bt-tag::after { content: ''; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 30%, rgba(255, 236, 200, .35) 48%, transparent 62%);
+  background-size: 260% 100%; animation: bt-sheen 3.2s ease-in-out infinite; }
+#bomb-ticker .bt-ic { width: 24px; height: 24px; display: grid; place-items: center; filter: drop-shadow(0 0 5px rgba(255, 150, 60, .8)); }
+#bomb-ticker .bt-ic svg { width: 22px; height: 22px; }
+#bomb-ticker .bt-tag b { font: 900 13px/1 var(--sans); letter-spacing: .12em; color: transparent;
+  background: linear-gradient(180deg, #fff6dc 0%, #ffd98a 45%, #e8a640 100%); -webkit-background-clip: text; background-clip: text; text-shadow: none; }
+#bomb-ticker .bt-left { font: 800 12px/1 var(--sans); color: #ffe7c2; font-variant-numeric: tabular-nums; padding: 4px 8px; border-radius: 999px;
+  background: rgba(0, 0, 0, .35); box-shadow: inset 0 0 0 1px rgba(255, 210, 150, .35); }
+#bomb-ticker .bt-view { position: relative; flex: 1; min-width: 0; overflow: hidden;
+  -webkit-mask: linear-gradient(90deg, transparent 0, #000 22px, #000 calc(100% - 26px), transparent); mask: linear-gradient(90deg, transparent 0, #000 22px, #000 calc(100% - 26px), transparent); }
+#bomb-ticker .bt-track { position: absolute; left: 0; top: 0; bottom: 0; display: flex; align-items: center; white-space: nowrap; width: max-content;
+  animation: bt-scroll 16s linear infinite; will-change: transform; }
+#bomb-ticker .bt-msg { display: inline-flex; align-items: center; gap: 12px; padding: 0 56px 0 28px; font: 800 14px/1 var(--sans); color: #fff3e0; letter-spacing: .02em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .8); }
+#bomb-ticker .bt-msg i { font-style: normal; }
+#bomb-ticker .bt-sep { width: 6px; height: 6px; transform: rotate(45deg); background: linear-gradient(135deg, #ffe3a3, #d98a2b); box-shadow: 0 0 8px rgba(255, 170, 70, .8); }
+#bomb-ticker .bt-b { color: #ffe0b8; }
+#bomb-ticker .bt-b em { font-style: normal; font-weight: 900; font-size: 16px; color: transparent; padding: 0 1px;
+  background: linear-gradient(180deg, #fffbe8 0%, #ffd76a 50%, #f0a030 100%); -webkit-background-clip: text; background-clip: text;
+  filter: drop-shadow(0 0 6px rgba(255, 190, 80, .55)); }
+#bomb-ticker.bump .bt-b em { animation: bt-bump .7s ease-out; display: inline-block; }
+#table.mobile #bomb-ticker { top: 50px; height: 32px; width: calc(100% - 16px); }   /* 아래 [BOMB_TICKER_TOP_0_10_48] 가 덮는다 */
+#table.mobile #bomb-ticker .bt-tag { gap: 4px; padding-left: 6px; padding-right: 16px; }
+#table.mobile #bomb-ticker .bt-tag b { font-size: 10.5px; letter-spacing: .08em; }
+#table.mobile #bomb-ticker .bt-ic, #table.mobile #bomb-ticker .bt-ic svg { width: 18px; height: 18px; }
+#table.mobile #bomb-ticker .bt-left { font-size: 10.5px; padding: 3px 6px; }
+#table.mobile #bomb-ticker .bt-msg { font-size: 12px; gap: 9px; padding: 0 40px 0 18px; }
+#table.mobile #bomb-ticker .bt-b em { font-size: 14px; }
+#table.mobile #bomb-ticker .bt-track { animation-duration: 12s; }
+/* [BOMB_TICKER_TOP_0_10_48] 띠를 맨 위로 — 왼쪽 위 게임 시계·관전 인원 자리를 덮는다(시간은 띠에 같이 나온다, 투표 동안 관전 인원은 안 보여도 된다 · 운영 요청 11-27).
+   PC 는 나가기 버튼은 그대로 두고 그 오른쪽부터, 모바일은 맨 위 한 줄 전체. 투표 상자는 원래 자리로 */
+#table.bomb-ticking #game-clock, #table.bomb-ticking #watch-pill { visibility: hidden; }
+#table:not(.mobile) #bomb-ticker { top: 16px; left: 72px; transform: none; width: min(760px, calc(100% - 320px)); height: 44px; animation-name: bt-in-l; }
+#table.mobile #bomb-ticker { top: max(6px, env(safe-area-inset-top)); height: 36px; width: calc(100% - 20px); }
+#table.bomb-ticking:not(.mobile) #bomb-vote { top: 120px; }   /* 오른쪽 위 「전판 검증 체크」 아래 */
+#table.mobile.bomb-ticking #bomb-vote { top: 50px; }
+@keyframes bt-in-l { from { opacity: 0; transform: translateY(-14px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes bt-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes bt-in { from { opacity: 0; transform: translate(-50%, -14px) scale(.96); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+@keyframes bt-sheen { 0%, 55% { background-position: 130% 0; } 100% { background-position: -130% 0; } }
+@keyframes bt-bump { 0% { transform: scale(1); } 35% { transform: scale(1.45); filter: drop-shadow(0 0 12px rgba(255, 200, 90, .95)); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { #bomb-ticker .bt-track { animation: none; } }
+
+/* [BOMB_VFX_0_10_41] 붐팟 판 시작 영상 — 테이블 가운데, 3:2 그대로(PC 최대 820px), 클릭은 통과 */
+#bomb-vfx { position: absolute; left: 50%; top: 50%; width: var(--bw); height: var(--bh); transform: translate(-50%, -50%); z-index: 130; pointer-events: none;
+  transition: opacity .3s ease; }
+#bomb-vfx video, #bomb-vfx canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+#bomb-vfx.out { opacity: 0; }
+#table.mobile #bomb-vfx { top: 42%; }
+#table:not(.mobile) #bomb-vfx { top: 44%; }
+
+/* [TOPUP_SHOW_0_10_47] 추가 바이인 딱지 — 자리 위 금빛 알약, 모두에게 5초 */
+.topup-badge { position: fixed; z-index: 99; transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 6px 14px 7px; border-radius: 12px; pointer-events: none; white-space: nowrap;
+  background: linear-gradient(180deg, rgba(46, 30, 6, .94), rgba(14, 9, 2, .94)); border: 1px solid rgba(252, 211, 77, .85);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .6), 0 0 18px rgba(251, 191, 36, .35), inset 0 1px 0 rgba(255, 240, 200, .25);
+  animation: tu-pop .5s cubic-bezier(.2, 1.4, .4, 1) both; transition: opacity .4s ease, transform .4s ease; }
+.topup-badge small { font: 700 10.5px/1 var(--sans); letter-spacing: .06em; color: #fde9b5; }
+.topup-badge b { font: 900 17px/1 var(--sans); color: transparent; background: linear-gradient(180deg, #fffbe8, #ffd76a 55%, #f0a030); -webkit-background-clip: text; background-clip: text;
+  filter: drop-shadow(0 0 6px rgba(255, 190, 80, .5)); font-variant-numeric: tabular-nums; }
+.topup-badge.out { opacity: 0; transform: translate(-50%, -120%); }
+@keyframes tu-pop { from { opacity: 0; transform: translate(-50%, -60%) scale(.7); } to { opacity: 1; transform: translate(-50%, -100%) scale(1); } }
+
+/* [PF_QUICK_0_10_50] 프로필 변경 창 — 그림 격자를 넉넉히(화면 높이만큼, 모바일은 가로도 꽉) */
+#rebuy-pop.pf .rp-sheet { height: calc(100dvh - 32px); width: min(560px, 100%); }
+#rebuy-pop.pf .rp-lobby { display: none; }
+@media (max-width: 600px) { #rebuy-pop.pf { padding: 8px; } #rebuy-pop.pf .rp-sheet { height: calc(100dvh - 16px); width: 100%; } }
+
+/* [DEALER_FOLD_0_10_53] 딜러가 폴드해도 딜러 프로필 원(딜러 버튼 그림)은 회색·투명 처리하지 않는다 — 누가 딜러인지 한눈에(운영 요청 11-27).
+   이름 상자·카드 등 나머지는 다른 폴드 자리와 같이 어둡게. PC 다른 자리 폴드는 자리 전체 opacity 라 딜러 자리만 자식별로 */
+/* [DEALER_SIDE_0_10_55] 딜러 표시가 이름 상자 모서리 버튼으로 돌아가 — 폴드해도 그 버튼은 밝게(자리 전체 opacity 대신 버튼 밖 자식만 어둡게) */
+/* [BET_PANEL_0_10_64] 폴드 자리 전체를 흐리게 하지 않게 되어 자식별 opacity 규칙은 지웠다 */
+.dealer.corner img { width: 100%; height: 100%; display: block; border-radius: 50%; }
+.seat.folded .avatar.is-dealer, .seat.folded:not(.hero) .avatar.is-dealer, #table.mobile .seat.folded .avatar.is-dealer { filter: none; border-color: rgba(233, 190, 92, .95); }
+.seat.folded .avatar.is-dealer > img, #table.mobile .seat.folded .avatar.is-dealer > img { filter: none; animation: none; opacity: 1; }
+.seat.hero.folded .avatar.is-dealer::after { display: none; }
+
+/* [BOMB_REVOTE_0_10_54] 띠 왼쪽 딱지는 버튼 — 눌러서 투표 상자를 다시 연다(앉은 회원). 접힌 투표 알약은 쓰지 않는다 */
+#bomb-ticker .bt-tag { border: 0; margin: 0; font: inherit; color: inherit; cursor: default; pointer-events: none; }
+#bomb-ticker.can-vote .bt-tag { pointer-events: auto; cursor: pointer; }
+#bomb-ticker.can-vote .bt-tag:active { filter: brightness(1.15); }
+#bomb-ticker .bt-chev { display: none; width: 7px; height: 7px; margin-left: 2px; border-right: 2px solid #ffe7c2; border-bottom: 2px solid #ffe7c2; transform: rotate(45deg) translateY(-2px); }
+#bomb-ticker.can-vote .bt-chev { display: inline-block; }
+
+/* ===== [CARD_TRY_0_10_56] 카드 디자인 시험(운영 요청 11-27 「잠시 변경해 보자」) — 숫자 밑 작은 무늬 없앰, 숫자 5% 크게(27.5 → 28.875cqw).
+   ★ 되돌리기: 이 블록만 지우면 0.10.55(커밋 6dd4fedb) 카드 그대로 — [CARD_REF_0_10_23]·[BIG_SUIT_IN_0_10_23]·[CARD_DEPTH_0_10_23] 가 기준 ===== */
+.card.card:not(.back) .pip { display: none; }
+.card.card:not(.back) .rank,
+.mini .mc .card.card:not(.back) .rank, .mini.shown .mc .card.card:not(.back) .rank, .mini.m.shown .mc .card.card:not(.back) .rank { font-size: 28.875cqw; }
+/* [CARD_TRY_0_10_59] 보드 카드 숫자 5 아래로(위 12.5 → 17.5cqw — PC 보드 카드 폭 100px 에서 5px), 보드·내 카드 큰 무늬 10% 작게(오른쪽 아래 기준) */
+.board .card.card:not(.back) .rank { top: 17.5cqw; }
+.board .card.card:not(.back) .big, .hole .card.card:not(.back) .big { transform: scale(.9); transform-origin: 100% 100%; }
+/* [CARD_TRY_HERO_0_10_60] 내 카드(히어로, PC·모바일 .hole) 숫자 5px 아래로(운영 요청 11-27) — 기준 위 12.5cqw + 5px */
+.hole .card.card:not(.back) .rank { top: calc(12.5cqw + 5px); }
+/* [CARD_TRY_BOARD_0_10_58] 커뮤니티(보드) 카드 숫자만 10% 더(28.875 → 31.76cqw, 운영 요청 11-27) — 내 카드·작은 카드는 그대로. 이 블록 안이라 지우면 함께 되돌아간다 */
+.board .card.card:not(.back) .rank { font-size: 31.76cqw; }
+/* [CARD_TRY_5P_0_10_63] 게임 전체 카드 숫자 5% 더 크게(운영 요청 11-27) — 내 카드·상대·작은 카드 28.875 → 30.32cqw, 보드 31.76 → 33.35cqw. 이 블록 안이라 지우면 함께 되돌아간다 */
+.card.card:not(.back) .rank,
+.mini .mc .card.card:not(.back) .rank, .mini.shown .mc .card.card:not(.back) .rank, .mini.m.shown .mc .card.card:not(.back) .rank { font-size: 30.32cqw; }
+.board .card.card:not(.back) .rank { font-size: 33.35cqw; }
+
+/* [BOARD_GAP_0_10_57] 커뮤니티 카드 사이를 아주 살짝 더(운영 요청 11-27) — PC 8 → 9px, 모바일 2 → 3px(보드 배율을 거쳐 화면에서 약 1px) */
+.board { gap: 9px; }
+#table.mobile .board { gap: 3px; }
+
+/* [DEALER_NEON_0_10_60] 딜러 버튼 = 형광색(운영 요청 11-27 「바로 잘 보이게」) — 검정·금 그림은 금빛 테이블에 묻혀 그림 대신 CSS 로 그린다:
+   형광 연두 원 + 검정 굵은 D + 형광 빛. 크기 10% 크게(PC 30 → 33, 내 자리 34 → 37, 모바일 22 → 24, 모바일 내 자리 24 → 26.4).
+   ★ 되돌리기: 이 블록만 지우면 0.10.59 그림 버튼 그대로 */
+.dealer.corner { display: grid; place-items: center; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #f6ffb0 0%, #e4ff1a 38%, #c6f000 100%);
+    border: 1.5px solid #0d1200;
+    box-shadow: 0 0 0 1.5px #eaff3c, 0 0 8px 2px rgba(214, 255, 0, .9), 0 0 18px 4px rgba(190, 255, 0, .55);
+    filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .6)); }
+.dealer.corner img { display: none; }
+.dealer.corner::after { content: 'D'; color: #0a0d00; font-family: Inter, 'Noto Sans KR', Arial, sans-serif; font-weight: 900; line-height: 1; font-size: 19px; transform: translateY(.5px); }
+.dealer.corner.pc { width: 33px; height: 33px; }
+.dealer.corner.pc-hero { width: 37.4px; height: 37.4px; }
+.dealer.corner.pc-hero::after { font-size: 21.5px; }
+.dealer.corner.m { width: 24.2px; height: 24.2px; }
+.dealer.corner.m::after { font-size: 14px; }
+.dealer.corner.m-hero { width: 26.4px; height: 26.4px; }
+.dealer.corner.m-hero::after { font-size: 15.5px; }
+
+/* [DEALER_FOLD_NEON_0_10_61] 딜러가 폴드해도 형광 딜러 버튼은 그대로 밝게(운영 요청 11-27) — PC·모바일 모두.
+   자리 전체 opacity(모바일은 fold-op 애니메이션)를 풀고, 딜러 버튼 밖 자식만 다른 폴드 자리와 같이 어둡게 */
+.seat.folded .dealer.corner, #table.mobile .seat.folded .dealer.corner { opacity: 1; animation: none;
+    filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .6)); }
+
+/* [FOLD_STACK_HIDE_0_10_62] 폴드한 상대 회원은 보유머니(노란 금액) 숨김 — 폴드해도 노란 숫자가 눈에 걸려 방해(운영 요청 11-27).
+   자리는 visibility 로 남겨 닉네임 위치가 흔들리지 않게. 내 자리(히어로)는 그대로 보인다. 다음 판에 다시 보인다 */
+/* [BET_PANEL_0_10_64] 0.10.64 운영 시안 「폴드해도 닉네임·보유머니는 읽을 수 있게」로 숨김을 되돌렸다(보유머니는 이제 노란색이 아닌 흰색) */
+/* [OPP_STACK_DOWN_0_10_62] 상대 플레이어 보유머니 숫자 3px 아래로(PC·모바일, 운영 요청 11-27) */
+.seat:not(.hero) .namebox .str { position: relative; top: 3px; }   /* [BET_PANEL_0_10_64] 「보유」 + 금액 줄 전체 */
+
+/* ===== [BET_PANEL_0_10_64] 프로필 원 안 베팅 표시 · 차콜 명패(운영 시안 11-27) — 자세한 규칙은 app.js seatPanel =====
+   베팅판: 원 전체를 아이보리 판으로 덮고 위 행동 글자(색 알약) · 가운데 큰 검정 금액. 아래 --cov 만큼은 이름 상자가 덮는 자리라 비운다.
+   체크·폴드·올인(금액 없음)은 원 아래 안쪽 띠. 폴드는 캐릭터만 흑백·어둡게, 닉네임·보유머니는 그대로 읽힌다 */
+.bet-pnl { position: absolute; inset: 0; border-radius: 50%; z-index: 6; box-sizing: border-box; pointer-events: none;
+    background: #F5E8CB; box-shadow: inset 0 0 0 1.5px #C8A76B, inset 0 3px 5px rgba(255, 255, 255, .7), inset 0 -5px 9px rgba(140, 105, 45, .2);
+    display: flex; flex-direction: column; align-items: center; padding: 14% 6% var(--pb, var(--cov, 0)); animation: pnl-in .18s ease-out both; }
+.bet-pnl .pl { font-size: var(--pl); font-weight: 800; color: #fff; line-height: 1; padding: .24em .62em .22em; border-radius: .55em; background: #284F70;
+    letter-spacing: .02em; white-space: nowrap; max-width: 86%; box-sizing: border-box; overflow: hidden; flex: none; }
+.bet-pnl .pa { font-size: var(--pa); font-weight: 900; color: #111111; line-height: 1; letter-spacing: -.01em; white-space: nowrap; margin: auto 0;
+    font-variant-numeric: lining-nums tabular-nums; }
+.bet-pnl.pk-bet .pl { background: #284F70; }
+.bet-pnl.pk-call .pl { background: #17616A; }
+.bet-pnl.pk-raise .pl { background: #A84312; }
+.bet-pnl.pk-allin .pl { background: #971F36; }
+.bet-pnl.pk-check .pl { background: #1D6B3A; }
+.bet-pnl.pk-blind .pl { background: #4A5160; }
+.avatar:has(> .bet-pnl) { border-color: #C8A76B; }
+@keyframes pnl-in { from { opacity: 0; } to { opacity: 1; } }
+.act-band { position: absolute; left: 0; right: 0; bottom: var(--cov, 0); height: 25%; z-index: 36; display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 800; letter-spacing: .04em; line-height: 1; pointer-events: none; animation: pnl-in .18s ease-out both;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18); }
+.act-band span { white-space: nowrap; text-shadow: 0 1px 2px rgba(0, 0, 0, .45); }
+.act-band.band-check { background: #1D6B3A; }
+.act-band.band-fold { background: #2B2D31; color: #D7DADF; }
+.act-band.band-allin { background: #971F36; }
+/* 폴드 — 캐릭터만 흑백·어둡게. 자리 전체 opacity·이름 상자 흑백·히어로 검은 덮개는 쓰지 않는다 */
+#table .seat.folded:not(.hero), #table.mobile .seat.folded:not(.hero) { opacity: 1; animation: none; }
+#table .seat.folded .avatar, #table.mobile .seat.folded .avatar, #table .seat.folded:not(.hero) .avatar { filter: none; }
+#table .seat.folded .namebox, #table .seat.folded:not(.hero) .namebox, #table.mobile .seat.folded .namebox,
+#table.mobile .seat.folded:not(.hero) .namebox, #table.mobile .seat.hero.folded .namebox { filter: none; animation: none; }
+#table .avatar.is-fold > img, #table.mobile .seat.folded .avatar > img, #table.mobile .seat.folded:not(.hero) .avatar > img { filter: grayscale(1) brightness(.45); animation: none; opacity: 1; }
+#table .seat.hero.folded .avatar::after { display: none; }
+#table.mobile .seat.folded .avatar { border-color: rgba(150, 156, 166, .45); }
+/* 명패 — 차콜, 윗줄 국기·닉네임, 아랫줄 「보유」(회색) + 보유머니(흰색) */
+#table .namebox.np, #table.mobile .namebox.np, #table.mobile .seat.live .namebox.np { background: #202124; border: 1px solid rgba(255, 255, 255, .14);
+    box-shadow: 0 6px 12px -4px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .05); }
+.namebox.np .info { padding: 0 4px; }
+.namebox.np .nm, #table.mobile .namebox.np .nm { color: #E3E5E8; display: flex; align-items: center; justify-content: center; gap: .3em; overflow: hidden; }
+.namebox.np .nmt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.namebox.np .flag, #table.mobile .namebox.np .flag { position: static; inset: auto; display: block; flex: none; width: 1.4em; height: .92em; border-radius: 2px;
+    background-color: #1a1c22; background-repeat: no-repeat; background-size: auto 100%; background-position: 96% center; opacity: 1; box-shadow: 0 0 0 .5px rgba(255, 255, 255, .25); }   /* 국기 그림은 오른쪽에 국기가 있는 배경 그림 — 작은 칩에는 그 오른쪽만 */
+.namebox.np .str { display: flex; align-items: baseline; justify-content: center; gap: .28em; white-space: nowrap; max-width: 100%; }
+.namebox.np .hl { font-size: .62em; color: #9AA0A6; font-weight: 700; letter-spacing: 0; }
+.namebox.np .st, #table.mobile .namebox.np .st { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: #FFFFFF; text-shadow: none; letter-spacing: 0; }
+.seat.busted .namebox.np .st { opacity: .55; }
+/* 링(차례)은 베팅판 위 — 자리 안(seat 쌓임 맥락)에서 7, 이름 상자(26) 아래 그대로 */
+.avatar:has(> .bet-pnl) > svg.ring { z-index: 7; }
+/* SB·BB 딱지가 명패 왼쪽 위에 있는 자리 — 닉네임·보유 줄을 그만큼 오른쪽으로 */
+#table .namebox.np.bl .info { padding-left: 24px; }
+#table.mobile .namebox.np.bl .info { padding-left: 13px; }
+/* PC 내 자리는 .hero-wrap(따로 쌓이는 묶음) 안 — 명패·SB/BB 딱지가 베팅판(6)·링(7) 위에 오게 */
+.hero-wrap > .namebox { z-index: 8; }
+.hero-wrap > .blind { z-index: 9; }
+/* 모바일 자리 비움은 그대로 흐리게(폴드와 다른 상태) — 단 딜러 D 는 가리지 않게 자리 대신 자식만 */
+#table.mobile .seat.sitout:not(.hero):has(> .dealer) { opacity: 1; }
+#table.mobile .seat.sitout:not(.hero):has(> .dealer) > :not(.dealer) { opacity: .3; }
+
+/* [BOARD_GAP2_0_10_65] 커뮤니티 카드 사이를 2px 더(운영 요청 11-27) — PC 9 → 11px, 모바일 3 → 5px */
+.board { gap: 11px; }
+#table.mobile .board { gap: 5px; }
+
+/* [FOLD_PLATE_0_10_66] 명패 아랫줄 = 금액만 가운데(「보유」 없음) · 폴드는 그 자리에 차분한 회색 「폴드」 */
+.namebox.np .str { justify-content: center; text-align: center; }
+.namebox.np .st.fd, #table.mobile .namebox.np .st.fd { color: #8E939B; font-weight: 700; letter-spacing: .04em; }
+
+/* ===== [MADE_CARD_0_10_68] 족보 카드 강조(운영 시안 11-27) — 확대·들림·기울기 없이 제자리에서 테두리·밑줄·명암 =====
+   glow = 결과의 메인 팟 승자 족보 5장, made = 판 진행 중 내 족보(트리플 이상), dim = 결과 때 족보에 안 쓰인 카드 */
+.card.glow, .card.card.glow:not(.back), .card.made, .card.card.made:not(.back) { transform: none; z-index: auto;
+    box-shadow: 0 0 0 1.5px #D7B56D, 0 0 8px 1px rgba(215, 181, 109, .20); }
+.card.card.glow:not(.back) { animation: wl-once .7s ease-out var(--wl-d, 0s) 1 both; }
+.card.card.made:not(.back) { animation: wl-once .7s ease-out var(--md-d, 0s) 1 both; }
+@keyframes wl-once { 0% { box-shadow: 0 0 0 1.5px #D7B56D, 0 0 0 0 rgba(215, 181, 109, 0); }
+    40% { box-shadow: 0 0 0 1.5px #E9CD8C, 0 0 14px 3px rgba(215, 181, 109, .45); }
+    100% { box-shadow: 0 0 0 1.5px #D7B56D, 0 0 8px 1px rgba(215, 181, 109, .20); } }
+/* 쓰이지 않은 카드 — 약하게 어둡게(숫자·무늬는 읽힌다). 투명하게 하지 않는다 */
+.card.dim, #table.mobile .card.dim { opacity: 1; filter: brightness(.6) saturate(.85); box-shadow: none; }
+/* 카드마다 아래 짧은 금색 밑줄 — 카드 상자 밖(감싸는 칸)에 그려 카드 크기·간격은 그대로 */
+.slot:has(.card.glow)::after, .slot:has(.card.made)::after, .hc:has(.card.glow)::after, .hc:has(.card.made)::after, .mc:has(.card.glow)::after {
+    content: ''; position: absolute; left: 30%; right: 30%; top: calc(100% + 5px); height: 2px; border-radius: 2px; background: #E6C77D; pointer-events: none; z-index: 1;
+    animation: none; opacity: 1; mix-blend-mode: normal; box-shadow: none; bottom: auto; }
+.hc:has(.card.glow), .hc:has(.card.made) { position: relative; }
+.mini .mc:has(.card.glow), .avc .mc:has(.card.glow) { overflow: visible; position: relative; }
+#table.mobile .slot:has(.card.glow)::after, #table.mobile .slot:has(.card.made)::after, #table.mobile .mc:has(.card.glow)::after { top: calc(100% + 3px); height: 1.5px; }
+/* 족보 이름 — 큰 입체 금색 글자 대신 작은 차콜 배지(보드 밑줄과 띄움) */
+.win-hand, #table.mobile .win-hand { font: 700 14px/1 Inter, 'Noto Sans KR', system-ui, sans-serif; letter-spacing: .01em; color: #E8EAED;
+    background: #202124; border: 1px solid rgba(215, 181, 109, .45); border-radius: 999px; padding: 6px 12px; text-shadow: none; -webkit-text-fill-color: currentColor;
+    background-clip: border-box; -webkit-background-clip: border-box; -webkit-text-stroke: 0; filter: none; animation: pnl-in .2s ease-out both; transform: translate(-50%, 34px); }
+#table.mobile .win-hand { font-size: 11px; padding: 4px 9px; transform: translate(-50%, 9px); }
+.handrank, .handrank.hr-hi, .handrank.hr-sf, .handrank.hr-royal, .handrank.made-hand-rank, .handrank.made-hand-rank.hr-hi, .handrank.made-hand-rank.hr-sf, .handrank.made-hand-rank.hr-royal {
+    background: #202124; background-image: none; color: #E8EAED; border: 1px solid rgba(215, 181, 109, .45); box-shadow: 0 4px 10px -4px rgba(0, 0, 0, .6);
+    font: 700 15px/1 Inter, 'Noto Sans KR', system-ui, sans-serif; letter-spacing: .01em; height: 28px; padding: 0 12px; text-shadow: none; animation: pnl-in .2s ease-out both; }
+.handrank.m, #table.mobile .handrank.m { font-size: 12px; height: 23px; padding: 0 10px; }
+/* 모바일 보드 카드 사이 — 작은 화면(360)에서도 약 4~6px(보드 배율을 거쳐) */
+#table.mobile .board { gap: 6px; }
+
+/* [BAND_UNDER_CARDS_0_10_69] PC 상대 자리 — 프로필 원 아래 「체크」·「올인」 띠(36)가 원 오른쪽 아래에 겹친 뒷면 카드(.mini 35)를 덮었다(운영 11-28).
+   띠를 카드 바로 아래(34)로 — 이름 상자(26)보다는 위 그대로 */
+#table.pc .act-band { z-index: 34; }
+
+/* [FOLD_HALF_0_10_69] 폴드하면 그 플레이어(프로필·명패·카드)를 50% 투명하게(운영 11-28). 딜러 버튼은 그대로 */
+#table .seat.folded > :not(.dealer), #table.mobile .seat.folded > :not(.dealer) { opacity: .5; }
+
+/* [NP_FLAG_BG_0_10_70] 명패 배경 국기(접속 IP 나라) — 국기는 오른쪽에 또렷이, 닉네임·금액 쪽은 차콜로 덮어 읽히게 */
+#table .namebox.np .flag.npbg, #table.mobile .namebox.np .flag.npbg { position: absolute; inset: 0; width: auto; height: auto; display: block; border-radius: inherit; z-index: 0;
+    background-color: #202124; background-repeat: no-repeat; background-size: cover; background-position: right center; opacity: 1; box-shadow: none; pointer-events: none; }
+#table .namebox.np .flag.npbg::after { content: ''; position: absolute; inset: 0; border-radius: inherit;
+    background: linear-gradient(90deg, rgba(32, 33, 36, .82) 0%, rgba(32, 33, 36, .55) 55%, rgba(32, 33, 36, .1) 100%); }
+#table .namebox.np:has(> .flag.npbg) > .info { position: relative; z-index: 1; }
+#table .namebox.np:has(> .flag.npbg) .nm, #table .namebox.np:has(> .flag.npbg) .st { text-shadow: 0 1px 2px rgba(0, 0, 0, .85); }
+
+/* ===== [REVOTE_CUE_0_10_71] 붐팟 투표 — 모바일 띠 30% 낮게 맨 위에 딱 붙임 · 다시 투표 단추 (운영 요청 11-28) =====
+   띠 오른쪽 끝 단추: 투표 전 「투표하기」(금빛 숨쉼) / 투표 뒤 「내 표 찬성 · 바꾸기 ✎」(내 표 색). 상자는 접힐 때 그 단추 쪽으로 빨려 들어간다 */
+#table.mobile #bomb-ticker { top: 0; left: 0; right: 0; width: 100%; height: 25px; transform: none; border-radius: 0 0 12px 12px; animation-name: bt-in-top; }
+#table.mobile #bomb-ticker::before { display: none; }
+#table.mobile #bomb-ticker .bt-tag { gap: 3px; padding: 0 10px 0 6px; }
+#table.mobile #bomb-ticker .bt-tag b { font-size: 9.5px; }
+#table.mobile #bomb-ticker .bt-ic, #table.mobile #bomb-ticker .bt-ic svg { width: 14px; height: 14px; }
+#table.mobile #bomb-ticker .bt-left { font-size: 9.5px; padding: 2px 5px; }
+#table.mobile #bomb-ticker .bt-msg { font-size: 10.5px; gap: 7px; padding: 0 30px 0 14px; }
+#table.mobile #bomb-ticker .bt-b em { font-size: 12px; }
+#table.mobile #bomb-ticker .bt-chev { width: 5px; height: 5px; }
+#table.mobile.bomb-ticking #bomb-vote { top: 30px; }
+@keyframes bt-in-top { from { opacity: 0; transform: translateY(-100%); } to { opacity: 1; transform: none; } }
+#bomb-ticker .bt-act { position: relative; z-index: 3; flex: none; align-self: center; display: inline-flex; align-items: center; gap: 6px; margin: 0 5px 0 4px; height: calc(100% - 8px);
+  padding: 0 11px; border-radius: 999px; border: 1px solid rgba(255, 214, 150, .7); pointer-events: auto; cursor: pointer; white-space: nowrap;
+  font: 800 12px/1 var(--sans); color: #2a1404; background: linear-gradient(180deg, #ffe39a, #f6a83a); box-shadow: 0 0 10px rgba(255, 170, 60, .55); }
+#bomb-ticker .bt-act[hidden] { display: none; }
+#bomb-ticker .bt-act.todo { animation: ba-breathe 1.6s ease-in-out infinite; }
+#bomb-ticker .bt-act .ba-go::after { content: ' ›'; }
+#bomb-ticker .bt-act.mine { color: #fff; background: rgba(255, 255, 255, .08); border-color: rgba(255, 255, 255, .28); box-shadow: none; padding-right: 4px; }
+#bomb-ticker .bt-act.mine .ba-mine { font-weight: 700; color: rgba(255, 236, 214, .82); }
+#bomb-ticker .bt-act.mine .ba-mine b { font-weight: 900; color: #fff; }
+#bomb-ticker .bt-act.v-yes { border-color: #ff9a5a; background: linear-gradient(180deg, rgba(255, 140, 70, .32), rgba(200, 60, 20, .32)); }
+#bomb-ticker .bt-act.v-no { border-color: #94a3b8; background: rgba(100, 116, 139, .35); }
+#bomb-ticker .bt-act.v-any { border-color: #cbd5e1; background: rgba(226, 232, 240, .16); }
+#bomb-ticker .bt-act .ba-chg { display: inline-flex; align-items: center; gap: 3px; height: calc(100% - 4px); padding: 0 8px; border-radius: 999px; background: #ffe39a; color: #2a1404; font-weight: 900; }
+#bomb-ticker .bt-act .ba-chg svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+#bomb-ticker .bt-act.flash { animation: ba-flash .9s ease-out 2; }
+#table.mobile #bomb-ticker .bt-act { height: 19px; margin: 0 3px; padding: 0 8px; font-size: 10px; gap: 4px; }
+#table.mobile #bomb-ticker .bt-act.mine { padding-right: 2px; }
+#table.mobile #bomb-ticker .bt-act .ba-chg { padding: 0 6px; height: 15px; }
+#table.mobile #bomb-ticker .bt-act .ba-chg svg { width: 9px; height: 9px; }
+@keyframes ba-breathe { 0%, 100% { box-shadow: 0 0 6px rgba(255, 170, 60, .4); transform: scale(1); } 50% { box-shadow: 0 0 16px rgba(255, 190, 80, .95); transform: scale(1.05); } }
+@keyframes ba-flash { 0% { box-shadow: 0 0 0 0 rgba(255, 220, 140, .9); } 100% { box-shadow: 0 0 0 10px rgba(255, 220, 140, 0); } }
+/* 상자 안 — 지금 내 표 안내 · 고른 단추 ✓ · 「내 표」 딱지 */
+#bomb-vote .bv-mine { margin: -3px 0 8px; padding: 6px 9px; border-radius: 9px; background: rgba(255, 200, 120, .12); border: 1px dashed rgba(255, 200, 120, .45);
+  font-size: 11.5px; font-weight: 700; color: #ffe0b8; line-height: 1.35; }
+#bomb-vote .bv-btns button { position: relative; }
+#bomb-vote .bv-btns button .bv-ck { font-style: normal; margin-right: 4px; font-weight: 900; }
+#bomb-vote .bv-btns button .bv-tag { position: absolute; top: -7px; right: -4px; font-style: normal; font: 900 9px/1 var(--sans); padding: 3px 5px; border-radius: 6px;
+  background: #fff3dc; color: #7a2c06; box-shadow: 0 2px 6px rgba(0, 0, 0, .4); }
+#bomb-vote .bv-btns button:not(.on) { opacity: .92; }
+@media (prefers-reduced-motion: reduce) { #bomb-ticker .bt-act.todo, #bomb-ticker .bt-act.flash { animation: none; } }

@@ -69,6 +69,14 @@ class HandCore {
         const rk = o.rake || {};
         this.rake = { percent: Number(rk.percent) || 0, minPot: Number(rk.minPot) || 0 };
         if (Number(rk.unit) === 1) this.rake.unit = 1;   // [CHIP_UNIT_0_10_6] 원화 방 — 판 기록 rake 에 남아 verify 도 같은 단위로 다시 계산한다
+        if (Number(rk.cap) > 0) this.rake.cap = Number(rk.cap);   // [RAKE_CAP_0_10_29] 한 판 레이크 상한
+        // [BOMB_POT_0_10_31] 붐팟 — 블라인드 대신 모두 같은 앤티(bomb, 칩)를 내고, 프리플랍 베팅 없이 바로 플랍, 플랍부터 딜러 다음 사람이 먼저.
+        //   앤티가 모자라면 가진 만큼 내고 올인. 판 기록 bomb·antes 에 남아 verify 가 같은 규칙으로 다시 계산한다
+        if (o.bomb !== undefined && o.bomb !== null && Number(o.bomb) !== 0) {
+            const b = Number(o.bomb);
+            if (!(Number.isFinite(b) && b > 0)) throw new HandError('input', 'bad bomb ante');
+            this.bomb = b;
+        }
 
         const list = [...o.seats].sort((a, b) => a.seat - b.seat);
         if (list.length < 2) throw new HandError('seats', 'at least two seats');
@@ -104,8 +112,8 @@ class HandCore {
 
         this.stage = 'preflop';
         this.pot = 0;
-        this.currentBet = this.bigBlind;          // 이전 게임 서버 6단계와 같다 (BB 가 모자라 올인해도 테이블 베팅은 BB)
-        this.lastRaiseAmount = this.bigBlind;
+        this.currentBet = this.bomb ? 0 : this.bigBlind;          // 이전 게임 서버 6단계와 같다 (BB 가 모자라 올인해도 테이블 베팅은 BB) · [BOMB_POT_0_10_31] 붐팟은 0
+        this.lastRaiseAmount = this.bomb ? 0 : this.bigBlind;
         this.acted = new Set();
         this.turns = 0;                            // 차례를 쓴 액션 수 — 서명에 들어가는 q
         this.board = [];                           // 공개된 보드의 덱 위치
@@ -114,8 +122,25 @@ class HandCore {
         this.usedNonces = new Set();
         this.result = null;
 
-        this._postBlinds();
+        if (this.bomb) this._postAntes(); else this._postBlinds();
         this._dealHoles();
+    }
+
+    /** [BOMB_POT_0_10_31] 붐팟 앤티 — 모두 같은 금액(모자라면 가진 만큼·올인). 이번 라운드 베팅(currentBet)이 아니라 죽은 돈(blind 와 같게 레이크 기준에 든다) */
+    _postAntes() {
+        this.antes = {};
+        for (const seat of this.order) {
+            const p = this.seats.get(seat);
+            const a = Math.min(p.stack, this.bomb);
+            p.stack = roundMoney(p.stack - a);
+            p.totalHandBet = a;
+            p.blind = a;
+            p.ante = a;
+            this.pot = roundMoney(this.pot + a);
+            if (p.stack === 0) p.isAllIn = true;
+            this.antes[seat] = a;
+        }
+        this.blinds = { sbSeat: this.sb, sbAmount: 0, bbSeat: this.bb, bbAmount: 0 };
     }
 
     // ------------------------------------------------------------ 시작
@@ -193,6 +218,7 @@ class HandCore {
             if (roundMoney(betting[0].currentBet) < roundMoney(this.currentBet)) return 'continue';
             return 'runout';
         }
+        if (this.bomb && this.stage === 'preflop') return 'advance';   // [BOMB_POT_0_10_31] 프리플랍 베팅 없음 — 바로 플랍
         const allMatched = betting.every(p => roundMoney(p.currentBet) === roundMoney(this.currentBet));
         if (allMatched && betting.every(p => this.acted.has(p.seat))) {
             return this.stage === 'river' ? 'showdown' : 'advance';
@@ -255,6 +281,8 @@ class HandCore {
         const p = this.seats.get(Number(e.seat));
         if (!p) throw new HandError('seat', `seat ${e.seat} is not in this hand`);
         const k = String(e.k || '');
+        // [BOMB_POT_0_10_31] 붐팟 프리플랍에는 베팅이 없다 — 자리를 떠나는 폴드(leave)만
+        if (this.bomb && this.stage === 'preflop' && k !== 'leave') throw new HandError('stage', 'no preflop betting in a bomb pot');
 
         if (k === 'leave') {
             if (p.isFolded || p.isAllIn) throw new HandError('state', 'leave: seat already folded or all-in');
@@ -533,10 +561,11 @@ class HandCore {
         const contestedPot = perSeat.reduce((s, x) => s + x.basis, 0);
         let feeBase = contestedPot;
         if (rakeBase !== undefined && rakeBase !== null) feeBase = Math.max(0, Math.min(contestedPot, Number(rakeBase)));
-        const out = { percent: this.rake.percent, minPot: this.rake.minPot, contestedPot, feeBase, totalRake: 0, effectiveRate: 0, perSeat };
+        const out = { percent: this.rake.percent, minPot: this.rake.minPot, ...(this.rake.cap ? { cap: this.rake.cap } : {}), contestedPot, feeBase, totalRake: 0, effectiveRate: 0, perSeat };
         if (!(this.rake.percent > 0) || feeBase <= 0 || !perSeat.length || !contestedPot || contestedPot < this.rake.minPot) return out;
         const U = this.rake.unit;   // [CHIP_UNIT_0_10_6] 원화 방 1 — 레이크를 1원 단위로 버린다(없으면 0.001)
-        const floorTotal = floorUnit(feeBase * this.rake.percent / 100, U);
+        // [RAKE_CAP_0_10_29] 상한이 있으면 그 판 레이크는 상한까지만 — 넘는 금액은 떼지 않는다. 사람별 몫은 줄어든 총액을 같은 비율로 나눈다
+        const floorTotal = this.rake.cap ? Math.min(floorUnit(feeBase * this.rake.percent / 100, U), floorUnit(this.rake.cap, U)) : floorUnit(feeBase * this.rake.percent / 100, U);
         if (floorTotal <= 0) return out;
         const attrRate = contestedPot > 0 ? (floorTotal / contestedPot) : 0;
         const basisSum = perSeat.reduce((s, x) => s + x.basis, 0);
@@ -595,14 +624,25 @@ class HandCore {
         //   남은 레이크가 음수 지급으로 잘려, 장부 레이크보다 칩에서 적게 떼였다(소켓 서버 시절부터 있던 어긋남 — 11-06 발견).
         let lastReal = -1;
         winners.forEach((w, i) => { if (!w.isUncalledReturn && !w.isChop && (w.amount || 0) > 0.0005) lastReal = i; });
+        // [BOMB_POT_0_10_31] 붐팟 판은 앤티가 고르지 않아 아주 작은 사이드 팟(예: 2칩)이 끝에 생긴다 — 끝전을 가장 큰 진짜 팟이 맡는다
+        //   (끝 팟이 끝전보다 작으면 음수 지급이 0 으로 잘려 장부 레이크보다 칩에서 적게 떼였다). 옛 판 기록 재현을 바꾸지 않게 붐팟 판에서만
+        if (this.bomb) {
+            let big = -1;
+            winners.forEach((w, i) => { if (!w.isUncalledReturn && !w.isChop && (w.amount || 0) > 0.0005 && (big < 0 || (w.amount || 0) > (winners[big].amount || 0))) big = i; });
+            lastReal = big;
+        }
         let distributed = 0;
+        if (this.bomb && lastReal >= 0) {   // [BOMB_POT_0_10_31] 끝전 팟(가장 큰 팟)보다 뒤에 오는 팟의 몫도 먼저 센다
+            winners.forEach((w, i) => { if (i !== lastReal && !w.isUncalledReturn && !w.isChop) distributed += floorUnit((w.amount || 0) * rake.effectiveRate, this.rake.unit); });
+        }
+        const preCounted = !!(this.bomb && lastReal >= 0);
         winners.forEach((w, i) => {
             let net;
             if (w.isUncalledReturn || w.isChop) net = w.amount || 0;
             else if (i === lastReal) net = (w.amount || 0) - (rake.totalRake - distributed);
             else {
                 const share = floorUnit((w.amount || 0) * rake.effectiveRate, this.rake.unit);
-                distributed += share;
+                if (!preCounted) distributed += share;   // 붐팟은 위에서 이미 셌다
                 net = (w.amount || 0) - share;
             }
             if (net < 0) net = 0;
@@ -693,6 +733,7 @@ class HandCore {
             dealer: this.dealer, sb: this.sb, bb: this.bb,
             smallBlind: this.smallBlind, bigBlind: this.bigBlind,
             blinds: this.blinds,
+            ...(this.bomb ? { bomb: this.bomb, antes: this.antes } : {}),   // [BOMB_POT_0_10_31]
             holes: Object.fromEntries(this.order.map(s => [s, this._cards(this.seats.get(s).hole)])),
             board: this._cards(this.board),
             stacksStart: Object.fromEntries(this.order.map(s => [s, this.seats.get(s).startStack])),

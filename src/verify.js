@@ -50,6 +50,7 @@ function verifyRecord(record, sig, engineSigJwk) {
             smallBlind: record.smallBlind, bigBlind: record.bigBlind,
             peek: record.peek, allowUnsigned: record.allowUnsigned, rake: record.rake, strictOrder: !!record.strictOrder,
             game: record.game || 'holdem',   // [OMAHA_0_10_23] 오마하 — 같은 규칙(홀 4·5장, 팟 리밋, 홀 2 + 보드 3)으로 다시 계산
+            ...(record.bomb ? { bomb: record.bomb } : {}),   // [BOMB_POT_0_10_31] 붐팟 — 앤티·프리플랍 베팅 없음
         });
         for (const e of record.log || []) {
             if (e.k === 'board') { core.advance(); continue; }

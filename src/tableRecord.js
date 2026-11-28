@@ -29,9 +29,11 @@ function tableReport(store, tableId) {
         return seat;
     };
     const tips = store.tableTips(tableId).map((e) => ({ i: e.i, at: e.at, fromSeat: seatOf(e.fromOdc, e.i), toSeat: e.toSeat, amount: e.amount, type: e.type, signed: !!e.sig }));
+    // [TOPUP_0_10_30] 게임 중 추가 바이인 — 판과 판 사이에 그 자리 칩이 늘었다(콘솔이 서명한 좌석표)
+    const topups = store.tableTopups ? store.tableTopups(tableId).map((e) => ({ i: e.i, at: e.at, seat: seatOf(e.odcId, e.i), amount: e.amount })) : [];
     // [UNIT_KRW_0_10_27] 금액 단위 = 이 테이블 좌석표의 칩 통화(원화 방은 KRW). 입장 줄이 보관 기간으로 지워졌으면 모른다고 적는다
     const cur = store.tableCurrencies ? store.tableCurrencies(tableId) : [];
-    return { hands, tips, currency: cur.length ? cur.join('/') : null, allOk: hands.length > 0 && hands.every((h) => h.check.ok) };
+    return { hands, tips, topups, currency: cur.length ? cur.join('/') : null, allOk: hands.length > 0 && hands.every((h) => h.check.ok) };
 }
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -47,7 +49,9 @@ function tableRecordHtml(tableId, report, engine, base) {
         + h.seats.map((s) => `seat ${s.seat}: ${n3(s.start)} &rarr; ${n3(s.end)} (${net(s)}), rake ${n3(s.rake)}`).join('<br>')
         + `</td><td>${h.check.ok ? '<b>PASS</b>' : '<b>FAIL</b>: ' + esc(h.check.errors.join('; '))}</td><td>${link(`${base}/records/receipt/${h.handId}`)}</td></tr>`;
     const tipRow = (t) => `<tr><td>tip</td><td></td><td>${new Date(t.at).toISOString().replace('.000', '')}</td><td>#${t.i}</td><td>tip</td><td>seat ${t.fromSeat ?? '?'} &rarr; seat ${t.toSeat}: ${n3(t.amount)} (${esc(t.type || '')}), signed by the sender's own key: ${t.signed ? 'yes' : 'no'}</td><td>between hands</td><td></td></tr>`;
-    const rows = [...hands.map((h) => ({ i: h.i, h })), ...tips.map((t) => ({ i: t.i, t }))].sort((a, b) => a.i - b.i).map((x) => (x.t ? tipRow(x.t) : handRow(x.h))).join('\n');
+    const topupRow = (u) => `<tr><td>buy-in</td><td></td><td>${new Date(u.at).toISOString().replace('.000', '')}</td><td>#${u.i}</td><td>top-up</td><td>seat ${u.seat ?? '?'}: +${n3(u.amount)} (added between hands from a console-signed buy-in ticket)</td><td></td><td></td></tr>`;   // [TOPUP_0_10_30]
+    const rows = [...hands.map((h) => ({ i: h.i, h })), ...tips.map((t) => ({ i: t.i, t })), ...(report.topups || []).map((u) => ({ i: u.i, u }))].sort((a, b) => a.i - b.i)
+        .map((x) => (x.u ? topupRow(x.u) : x.t ? tipRow(x.t) : handRow(x.h))).join('\n');
     const seats = [...new Set(hands.flatMap((h) => h.seats.map((s) => s.seat)))].sort((a, b) => a - b).map((seat) => {
         const mine = hands.filter((h) => h.seats.some((s) => s.seat === seat));
         const f = mine[0].seats.find((s) => s.seat === seat), l = mine[mine.length - 1].seats.find((s) => s.seat === seat);

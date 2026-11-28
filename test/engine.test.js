@@ -337,6 +337,104 @@ test('칩 단위 1(원화 방) — 무작위 판 1500개, 레이크·나눠 갖�
     assert.ok(!r.ok);
 });
 
+test('[RAKE_CAP_0_10_29] 레이크 상한 — 무작위 판 1000개, 판마다 레이크 ≤ 상한·칩 보존·재현 검증 통과, 상한이 기록에 남는다', () => {
+    const rnd = mulberry(20261126);
+    let capped = 0;
+    for (let i = 0; i < 1000; i++) {
+        const n = 2 + Math.floor(rnd() * 8);
+        const { engine, tableId, players } = setupTable(n);
+        const stacks = players.map(() => Math.round(50000 + rnd() * 900000));
+        const cap = 10000;   // 5BB
+        const h = start(engine, tableId, players, stacks, { smallBlind: 1000, bigBlind: 2000, rake: { percent: 5, minPot: 0, unit: 1, cap } });
+        const f = playRandom(engine, h, players, rnd);
+        assert.ok(f.ok, f.error);
+        const rk = f.record.result.rake;
+        assert.strictEqual(f.record.rake.cap, cap, '판 기록 규칙에 상한');
+        assert.ok(rk.totalRake <= cap, `레이크 ${rk.totalRake} ≤ 상한 ${cap}`);
+        if (Math.floor(rk.feeBase * 5 / 100) > cap) { capped++; assert.strictEqual(rk.totalRake, cap, '넘으면 정확히 상한'); }
+        const before = Object.values(f.record.stacksStart).reduce((s, v) => s + v, 0);
+        const after = Object.values(f.record.stacksEnd).reduce((s, v) => s + v, 0);
+        assert.strictEqual(before - after, rk.totalRake);
+        const v = verifyRecord(f.record, f.sig, engine.call('info').keys.sig);
+        assert.ok(v.ok, v.errors.join('; '));
+    }
+    assert.ok(capped > 50, `상한에 걸린 판 ${capped}`);
+    // 상한을 고친 기록은 검증에서 걸린다
+    {
+        const { engine, tableId, players } = setupTable(2);
+        const h = start(engine, tableId, players, [900000, 900000], { smallBlind: 1000, bigBlind: 2000, rake: { percent: 5, minPot: 0, unit: 1, cap: 10000 } });
+        const f = playRandom(engine, h, players, mulberry(7));
+        const forged = JSON.parse(JSON.stringify(f.record)); forged.rake.cap = 999999;
+        assert.ok(!verifyRecord(forged, f.sig, engine.call('info').keys.sig).ok, '상한을 바꾼 기록은 서명이 맞지 않는다');
+    }
+    // 잘못된 상한 — 음수·소수(원화 방)는 받지 않는다
+    const { engine, tableId, players } = setupTable(2);
+    const base = { tableId, handNo: 1, seats: players.map((p) => ({ seat: p.seat, odcId: p.odcId, stack: 100 })), dealer: 0, sb: 0, bb: 1, smallBlind: 1, bigBlind: 2 };
+    assert.ok(!engine.call('startHand', { ...base, rake: { percent: 5, minPot: 0, unit: 1, cap: -5 } }).ok);
+    assert.ok(!engine.call('startHand', { ...base, rake: { percent: 5, minPot: 0, unit: 1, cap: 2.5 } }).ok);
+});
+
+test('[BOMB_POT_0_10_31] 붐팟 — 모두 앤티(모자라면 올인), 프리플랍 베팅 없이 바로 플랍, 플랍은 딜러 다음부터 · 무작위 1000판 칩 보존·재현 검증', () => {
+    // 정해진 판 — 3명, 한 명은 앤티보다 칩이 적다
+    {
+        const { engine, tableId, players } = setupTable(3);
+        const h = start(engine, tableId, players, [100, 100, 5], { bomb: 20 });
+        const core = engine.hands.get(h.handId).core;
+        assert.deepStrictEqual(h.antes, { [players[0].seat]: 20, [players[1].seat]: 20, [players[2].seat]: 5 }, '앤티 — 모자라면 가진 만큼');
+        assert.strictEqual(core.pot, 45);
+        assert.strictEqual(core.seats.get(players[2].seat).isAllIn, true);
+        assert.strictEqual(core.status(), 'advance', '프리플랍 베팅 없음 — 바로 플랍');
+        assert.strictEqual(core.toAct(), null);
+        assert.ok(!engine.call('act', { handId: h.handId, entry: { k: 'act', seat: players[1].seat, q: core.turns, action: 'CHECK', amount: 0, sig: players[1].signAct(h.handId, core.turns, 'CHECK', 0) } }).ok, '프리플랍에는 액션을 받지 않는다');
+        const b = engine.call('board', { handId: h.handId });
+        assert.ok(b.ok); assert.strictEqual(b.stage, 'flop'); assert.strictEqual(b.cards.length, 3);
+        const order = core.order, d = order.indexOf(players[0].seat);
+        assert.strictEqual(core.toAct(), order[(d + 1) % order.length], '플랍은 딜러 다음 사람부터');
+        assert.strictEqual(core.currentBet, 0);
+    }
+    // 앤티로 둘 다 올인 → 바로 런아웃
+    {
+        const { engine, tableId, players } = setupTable(2);
+        const h = start(engine, tableId, players, [10, 15], { bomb: 20 });
+        assert.strictEqual(engine.hands.get(h.handId).core.status(), 'runout');
+    }
+    const rnd = mulberry(20261131);
+    let flopFirst = 0;
+    for (let i = 0; i < 1000; i++) {
+        const n = 2 + Math.floor(rnd() * 8);
+        const { engine, tableId, players } = setupTable(n);
+        const stacks = players.map(() => (rnd() < 0.15 ? Math.round(1 + rnd() * 19) : Math.round(20 + rnd() * 400)));
+        const h = start(engine, tableId, players, stacks, { bomb: 20, rake: { percent: 5, minPot: 0, unit: 1 } });
+        const f = playRandom(engine, h, players, rnd);
+        assert.ok(f.ok, f.error);
+        const rec = f.record;
+        assert.strictEqual(rec.bomb, 20, '판 기록에 붐팟 앤티');
+        assert.deepStrictEqual(rec.blinds.sbAmount + rec.blinds.bbAmount, 0, '블라인드 없음');
+        const firstAct = (rec.log || []).findIndex((e) => e.k !== 'board' && e.k !== 'runout');
+        const firstBoard = (rec.log || []).findIndex((e) => e.k === 'board' || e.k === 'runout');
+        if (firstAct >= 0) { assert.ok(firstBoard >= 0 && firstBoard < firstAct, '첫 액션은 보드 뒤(프리플랍 베팅 없음)'); flopFirst++; }
+        for (const s of rec.seats) assert.strictEqual(rec.antes[s.seat], Math.min(rec.stacksStart[s.seat], 20));
+        const before = Object.values(rec.stacksStart).reduce((a, v) => a + v, 0);
+        const after = Object.values(rec.stacksEnd).reduce((a, v) => a + v, 0);
+        assert.strictEqual(before - after, rec.result.rake.totalRake, '칩 보존');
+        const v = verifyRecord(rec, f.sig, engine.call('info').keys.sig);
+        assert.ok(v.ok, v.errors.join('; '));
+    }
+    assert.ok(flopFirst > 500, `액션이 있었던 판 ${flopFirst}`);
+    // 앤티를 고친 기록은 검증에서 걸린다 · 잘못된 앤티는 받지 않는다
+    {
+        const { engine, tableId, players } = setupTable(2);
+        const h = start(engine, tableId, players, [300, 300], { bomb: 20 });
+        const f = playRandom(engine, h, players, mulberry(3));
+        const forged = JSON.parse(JSON.stringify(f.record)); forged.bomb = 2;
+        assert.ok(!verifyRecord(forged, f.sig, engine.call('info').keys.sig).ok);
+    }
+    const { engine, tableId, players } = setupTable(2);
+    const base = { tableId, handNo: 1, seats: players.map((p) => ({ seat: p.seat, odcId: p.odcId, stack: 100 })), dealer: 0, sb: 0, bb: 1, smallBlind: 1, bigBlind: 2 };
+    assert.ok(!engine.call('startHand', { ...base, bomb: -5 }).ok);
+    assert.ok(!engine.call('startHand', { ...base, bomb: 2.5, rake: { percent: 5, minPot: 0, unit: 1 } }).ok);
+});
+
 // ------------------------------------------------------------ [OMAHA_0_10_23] 오마하 (PLO4·PLO5, 팟 리밋, 하이만)
 const HandEvaluator = require('../src/HandEvaluator');
 

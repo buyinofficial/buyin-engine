@@ -168,7 +168,7 @@ class Engine {
      * 새 판. 운영 서버가 좌석·스택·버튼 위치를 넘긴다. 엔진이 블라인드를 걷고 카드를 나눈다.
      * @returns 판 번호, 공개 약속, 좌석별 홀카드 봉투, 다음 판 씨앗 약속
      */
-    startHand({ tableId, handNo, seats, dealer, sb, bb, smallBlind, bigBlind, peek, rake, strictOrder, game }) {
+    startHand({ tableId, handNo, seats, dealer, sb, bb, smallBlind, bigBlind, peek, rake, strictOrder, game, bomb }) {
         const t = this._table(tableId);
         if (t.liveHandId) {
             const live = this.hands.get(t.liveHandId);
@@ -192,6 +192,18 @@ class Engine {
             rakeRule.unit = 1;
         }
         if (!(rakeRule.percent >= 0 && rakeRule.percent <= 20) || !(rakeRule.minPot >= 0 && rakeRule.minPot < MAX_MONEY)) throw new HandError('input', 'bad rake rule');
+        // [RAKE_CAP_0_10_29] 한 판 레이크 상한(칩) — 테이블 규칙, 판 기록에 남아 verify 가 같은 상한으로 다시 계산한다. 없으면 상한 없음(옛 기록과 같은 모양)
+        if (rake && rake.cap !== undefined && rake.cap !== null && Number(rake.cap) !== 0) {
+            const cap = Number(rake.cap);
+            if (!validMoney(cap) || cap >= MAX_MONEY || (rakeRule.unit === 1 && !Number.isInteger(cap))) throw new HandError('input', 'bad rake cap');
+            rakeRule.cap = cap;
+        }
+        // [BOMB_POT_0_10_31] 붐팟 앤티(칩) — 양수, 원화 방(칩 단위 1)은 정수
+        let bombAnte = 0;
+        if (bomb !== undefined && bomb !== null && Number(bomb) !== 0) {
+            bombAnte = Number(bomb);
+            if (!validMoney(bombAnte) || bombAnte >= MAX_MONEY || (rakeRule.unit === 1 && !Number.isInteger(bombAnte))) throw new HandError('input', 'bad bomb ante');
+        }
         // 키가 없는 좌석(접속 안 한 토너먼트 참가자 등)도 판에는 들어간다 — 카드는 아무에게도 안 나가고(봉투 없음),
         // 칩이 나가는 액션은 서명이 없으니 할 수 없다. 운영 서버가 대신 할 수 있는 건 체크·폴드뿐이다.
         for (const s of list) {
@@ -217,6 +229,7 @@ class Engine {
         const core = new HandCore({
             handId, seed, deck, seats: list, dealer: Number(dealer), sb: Number(sb), bb: Number(bb),
             smallBlind, bigBlind, peek: !!peek, allowUnsigned: this.allowUnsigned, rake: rakeRule, strictOrder: !!strictOrder, game: gameName,
+            ...(bombAnte ? { bomb: bombAnte } : {}),
         });
 
         // 다음 판 씨앗은 지금 정해 약속만 알린다 — 이번 판 동안 회원들이 그 약속에 무작위 값을 보탠다
@@ -247,6 +260,7 @@ class Engine {
             commitments,
             entropySeats: entropy.map(e => e.seat),
             blinds: core.blinds,
+            ...(core.bomb ? { bomb: core.bomb, antes: core.antes } : {}),   // [BOMB_POT_0_10_31]
             rake: core.rake,
             envelopes,
             nextSeedCommit: t.seedCommit,
@@ -326,6 +340,7 @@ class Engine {
             allowUnsigned: h.core.allowUnsigned,
             ...(h.core.strictOrder ? { strictOrder: true } : {}),
             ...(h.core.game !== 'holdem' ? { game: h.core.game } : {}),   // [OMAHA_0_10_23] 홀덤 판 기록은 예전 모양 그대로
+            ...(h.core.bomb ? { bomb: h.core.bomb, antes: s.antes } : {}),   // [BOMB_POT_0_10_31] 붐팟 판 — 앤티·규칙. 아닌 판은 예전 모양 그대로
             blinds: s.blinds,
             holes: s.holes,
             board: s.board,

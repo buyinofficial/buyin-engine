@@ -19,6 +19,8 @@
  *   GET  /table/engine/<파일>     검증 화면이 그대로 돌리는 엔진 소스(지금 도는 그 파일)
  *
  * 테이블 화면은 다른 사이트의 틀(iframe) 안에서 열리지 않는다(frame-ancestors 'none') — 운영 화면이 덮어씌우지 못하게.
+ *   [WATCH_FRAME_0_10_70] 예외 하나: GET /table/watch.html(같은 화면) 은 회원 로비 사이트(방장 센터 모니터링) 틀 안에서만 열린다.
+ *   이 주소의 화면은 관전 좌석표만 연다(app.js WATCH_FRAME) — 관전에는 액션·서명이 없어 덮어씌울 것이 없다.
  * 화면이 부를 수 있는 곳은 이 TEE 와, 받은 채팅 한 줄을 번역하는 주소 하나뿐이다(카드·게임 정보는 보내지 않는다).
  */
 
@@ -92,7 +94,21 @@ const BUILD = (() => {
     return (v + '-' + Date.now().toString(36)).replace(/[^A-Za-z0-9._-]/g, '');
 })();
 
+/** [WATCH_FRAME_0_10_70] 방장 모니터링 틀을 허용할 사이트 — 회원 로비(개발 배포는 사본의 주소를 개발 주소로 바꾼다) */
+const WATCH_FRAME_ANCESTORS = 'https://buyinholdem.com';
+
 function serveFile(req, res, rel) {
+    if (rel === 'watch.html') {   // [WATCH_FRAME_0_10_70] 같은 화면 — 틀 허용만 다르다
+        const h = pageHeaders(req);
+        const csp = h['Content-Security-Policy'].replace("frame-ancestors 'none'", `frame-ancestors ${WATCH_FRAME_ANCESTORS}`);
+        const extra = { ...h, 'Content-Security-Policy': csp };
+        delete extra['X-Frame-Options'];
+        return serveWith(req, res, 'index.html', extra);
+    }
+    return serveWith(req, res, rel, pageHeaders(req));
+}
+
+function serveWith(req, res, rel, headers) {
     const file = path.normalize(path.join(PUBLIC_DIR, rel || 'index.html'));
     if (!file.startsWith(PUBLIC_DIR + path.sep) && file !== PUBLIC_DIR) return false;
     let data;
@@ -100,7 +116,7 @@ function serveFile(req, res, rel) {
     const type = TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream';
     if (type.startsWith('text/html')) data = Buffer.from(data.toString('utf8').split('__BUILD__').join(BUILD));   // [CACHE_BUST_0_10_9]
     // 화면 코드는 no-cache — 배포하면 브라우저가 바로 새 코드를 받는다(파일이 작다)
-    res.writeHead(200, { 'Content-Type': type, 'Content-Length': data.length, 'Cache-Control': type.startsWith('text/html') ? 'no-store' : 'no-cache', ...pageHeaders(req) });
+    res.writeHead(200, { 'Content-Type': type, 'Content-Length': data.length, 'Cache-Control': type.startsWith('text/html') ? 'no-store' : 'no-cache', ...headers });
     res.end(data);
     return true;
 }
@@ -121,6 +137,30 @@ function tableRoutes(tables) {
                 if (!tables) return json(res, 503, { ok: false, code: 'off', error: 'table server is not enabled on this engine' });
                 if (!JOIN_LIMIT.take()) return json(res, 429, { ok: false, code: 'rate', error: 'too many requests' });
                 try { return json(res, 200, { ok: true, ...tables.resume(m) }); } catch (e) { return json(res, 400, { ok: false, code: e.code || 'error', error: e.message }); }
+            }, () => json(res, 400, { ok: false, error: 'bad json' }));
+            return true;
+        }
+        if (req.method === 'POST' && p === '/table/avatar') {   // [AVATAR_LIVE_0_10_32] 콘솔 서명 — 게임 중 프로필 그림 바꾸기
+            readJson(req).then((m) => {
+                if (!tables) return json(res, 503, { ok: false, code: 'off', error: 'table server is not enabled on this engine' });
+                if (!KICK_LIMIT.take()) return json(res, 429, { ok: false, code: 'rate', error: 'too many requests' });
+                try { return json(res, 200, { ok: true, ...tables.setAvatar(m && m.order) }); } catch (e) { return json(res, 400, { ok: false, code: e.code || 'error', error: e.message }); }
+            }, () => json(res, 400, { ok: false, error: 'bad json' }));
+            return true;
+        }
+        if (req.method === 'POST' && p === '/table/bomb-test') {   // [BOMB_TEST_0_10_31] 시험용 다음 판 붐팟(콘솔 서명, 개발 엔진만)
+            readJson(req).then((m) => {
+                if (!tables) return json(res, 503, { ok: false, code: 'off', error: 'table server is not enabled on this engine' });
+                if (!KICK_LIMIT.take()) return json(res, 429, { ok: false, code: 'rate', error: 'too many requests' });
+                try { return json(res, 200, { ok: true, ...tables.bombTest(m && m.order) }); } catch (e) { return json(res, 400, { ok: false, code: e.code || 'error', error: e.message }); }
+            }, () => json(res, 400, { ok: false, error: 'bad json' }));
+            return true;
+        }
+        if (req.method === 'POST' && p === '/table/stop-next') {   // [STOP_NEXT_0_10_69] 방장 「다음 판 뒤 게임 종료 · 모두 대기」(콘솔 서명)
+            readJson(req).then((m) => {
+                if (!tables) return json(res, 503, { ok: false, code: 'off', error: 'table server is not enabled on this engine' });
+                if (!KICK_LIMIT.take()) return json(res, 429, { ok: false, code: 'rate', error: 'too many requests' });
+                try { return json(res, 200, { ok: true, ...tables.stopNext(m && m.order) }); } catch (e) { return json(res, 400, { ok: false, code: e.code || 'error', error: e.message }); }
             }, () => json(res, 400, { ok: false, error: 'bad json' }));
             return true;
         }

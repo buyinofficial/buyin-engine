@@ -106,6 +106,7 @@ class RecordStore {
             hand: q('SELECT line FROM chain WHERE hand_id = ?'),
             // [TABLE_RECORD_2026_11_10] 판 번호는 '<tableId>.<판 번호>' — '.' 다음 글자 '/' 앞까지가 그 테이블의 판이다
             tips: q("SELECT i, line FROM chain WHERE kind = 'tip' ORDER BY i"),
+            topups: q("SELECT i, line FROM chain WHERE kind = 'topup' ORDER BY i"),   // [TOPUP_0_10_30]
             seatIns: q("SELECT line FROM chain WHERE kind = 'seat-in' ORDER BY i"),   // [UNIT_KRW_0_10_27]
             ofTable: q("SELECT i, line FROM chain WHERE kind = 'hand' AND hand_id >= ? AND hand_id < ? ORDER BY i LIMIT ?"),
             keys: q("SELECT line FROM chain WHERE kind = 'engine-key' ORDER BY i"),
@@ -218,7 +219,7 @@ class RecordStore {
     /** 테이블 서버 사건 — 'seat-in'(좌석표로 앉음), 'settle'(정산서), 'tip'(보낸 사람 서명이 붙은 팁, 판과 판 사이에 옮김).
      *  판 기록과 같은 사슬에 남아 재시작 뒤에도 돈이 정산된다 */
     appendEvent(kind, body) {
-        if (!['seat-in', 'settle', 'tip'].includes(kind)) throw new Error('unknown event kind');
+        if (!['seat-in', 'settle', 'tip', 'topup-ask', 'topup', 'session'].includes(kind)) throw new Error('unknown event kind');   // [TOPUP_0_10_30] 게임 중 추가 바이인(받음·칩에 넣음) · [SESSION_LOG_0_10_45] 게임 시간 시작·끝(시각만)
         return this._append({ kind, at: Date.now(), ...body });
     }
 
@@ -254,6 +255,12 @@ class RecordStore {
     tableTips(tableId) {
         const t = String(tableId);
         return this.sql.tips.all().map((r) => JSON.parse(r.line)).filter((e) => e.tableId === t);
+    }
+
+    /** [TOPUP_0_10_30] 한 테이블의 게임 중 추가 바이인(칩에 넣은 줄) — 공개 기록에 「어디서 칩이 늘었나」를 보인다 */
+    tableTopups(tableId) {
+        const t = String(tableId);
+        return this.sql.topups.all().map((r) => JSON.parse(r.line)).filter((e) => e.tableId === t);
     }
 
     /** [UNIT_KRW_0_10_27] 한 테이블 칩의 통화 — 그 테이블 좌석표 입장 줄('seat-in')의 currency(KRW·USDT). 공개 기록 페이지의 금액 단위 */

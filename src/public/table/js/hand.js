@@ -110,7 +110,7 @@ export function madeHand(hole, board, omaha = false) {
         if (!five) return null;
         const sc = score5(five);
         if (sc[0] < 3) return null;
-        return { tier: sc[0] - 2, hole: hole.map((c, i) => (five.includes(c) ? i : -1)).filter((i) => i >= 0) };
+        return { tier: sc[0] - 2, five, hole: hole.map((c, i) => (five.includes(c) ? i : -1)).filter((i) => i >= 0) };   // [MADE_CARD_0_10_68] five = 족보 5장
     }
     const all = [...hole, ...board].filter(Boolean);
     if (hole.length < 2 || all.length < 5) return null;
@@ -122,7 +122,7 @@ export function madeHand(hole, board, omaha = false) {
         if (!best || cmp(sc, best) > 0) { best = sc; bestSet = five; }
     }
     if (!best || best[0] < 3) return null;   // 트리플 이상만(원본 madeHandTier ≥ 1)
-    return { tier: best[0] - 2, hole: hole.map((c, i) => (bestSet.includes(c) ? i : -1)).filter((i) => i >= 0) };
+    return { tier: best[0] - 2, five: bestSet, hole: hole.map((c, i) => (bestSet.includes(c) ? i : -1)).filter((i) => i >= 0) };
 }
 function cmp(x, y) { for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d; } return 0; }
 /** 5장 점수 [종류, 비교값…] — 8 스트레이트 플러시, 7 포카드, 6 풀하우스, 5 플러시, 4 스트레이트, 3 트리플, 2 투페어, 1 원페어, 0 하이 */
